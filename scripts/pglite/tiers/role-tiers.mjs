@@ -402,6 +402,14 @@ console.log("\n=== Functional: role tiers (20261111140000) ===");
         )),
       {},
     );
+    check(
+      "a tier name of only whitespace is refused (#4756)",
+      await refused(
+        `insert into role_tiers (chapter_id, position, name, permissions)
+           values ('${A}', 9, E'\\t\\n ', '{}')`,
+      ),
+      {},
+    );
   } catch (e) {
     check("the tier ran to the end", false, {
       error: String(e?.message ?? e).split("\n")[0],

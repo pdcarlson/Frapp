@@ -7,17 +7,19 @@
  *
  * - `tier:<role_tiers.id>`: every role in that tier.
  * - `role:<roles.id>`: that role.
+ * - `group:<chapter_groups.id>`: that group's members (#4076), a manual
+ *   group's picked members or an automatic one's (a pledge class, a
+ *   graduation year).
  *
- * Groups (#4076) add `group:<id>` by adding their kind to
- * {@link CHANNEL_ACCESS_ENTRY_KINDS}, the database's
- * `chat_access_list_valid`, and the member's held entries in the API
- * (`RbacService`). Nothing else branches on the kind.
+ * A new kind is added here, in the database's `chat_access_list_valid`, and
+ * in the member's held entries in the API (`RbacService`). Nothing else
+ * branches on the kind.
  *
  * The API owns the decision (`canAccessChannel`); this module is the shared
  * spelling, so the editor never sends an entry the server can't parse.
  */
 
-export const CHANNEL_ACCESS_ENTRY_KINDS = ["tier", "role"] as const;
+export const CHANNEL_ACCESS_ENTRY_KINDS = ["tier", "role", "group"] as const;
 
 export type ChannelAccessEntryKind =
   (typeof CHANNEL_ACCESS_ENTRY_KINDS)[number];

@@ -69,13 +69,14 @@ export const PRESENCE_HEARTBEAT_MS = 30 * 1000;
  * invisible member publishes nothing, so everyone else sees them Offline, and
  * only the member's own client says `invisible`, about themselves.
  */
-export type PresenceStatus = "online" | "idle" | "dnd" | "invisible" | "offline";
+export type PresenceStatus =
+  "online" | "idle" | "dnd" | "invisible" | "offline";
 
 /**
  * The status a member picked that rides their presence entry. Online is the
  * absence of one, and Invisible never rides at all (it publishes nothing).
  */
-export type PickedPresence = "idle" | "dnd";
+type PickedPresence = "idle" | "dnd";
 
 /** One member's entry on `presence:chapter:<id>`, as far as we trust it. */
 export type PresenceEntry = {
@@ -92,7 +93,6 @@ export type PresenceEntry = {
    */
   away: boolean;
 };
-
 
 /**
  * Status for a member, given the presence entry we hold for them.
@@ -114,7 +114,6 @@ export function presenceStatusFor(
   return now - entry.ts > IDLE_AFTER_MS ? "idle" : "online";
 }
 
-
 /** Human-readable label. Also the accessible name — screen readers get these words. */
 export function presenceLabel(status: PresenceStatus): string {
   return status === "offline" ? "Offline" : MEMBER_STATUS_LABEL[status];
@@ -133,12 +132,14 @@ export type RawPresenceState = Record<string, readonly unknown[]>;
  * same rules, but the payload is whatever their client published, so it is
  * re-checked here rather than trusted.
  */
-export function presenceLineFrom(value: unknown): string | null {
+function presenceLineFrom(value: unknown): string | null {
   if (typeof value !== "string") return null;
   // Control characters and the Unicode line and paragraph separators become
   // spaces, so a crafted payload cannot break the row it renders in.
-  // eslint-disable-next-line no-control-regex
-  const flat = value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").trim();
+  const flat = value
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .trim();
   if (flat.length === 0) return null;
   return Array.from(flat).slice(0, CUSTOM_STATUS_MAX).join("");
 }

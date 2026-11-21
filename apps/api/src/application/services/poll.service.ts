@@ -26,6 +26,7 @@ import type {
   PollMetadata,
   PollWithResults,
 } from '#domain/entities/poll-vote.entity';
+import { stampCardClosed } from './card-close';
 import { ChannelAccessService } from './channel-access.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedPoll } from './chat-block-mask';
@@ -338,24 +339,27 @@ export class PollService {
 
   /**
    * Manual early close (`spec/behavior/polls.md`: "Once expired (or manually
-   * closed by the creator), the poll is locked"). Creator-only, enforced by
-   * the `sender_id` check below — channel access is authorized as a `vote`
-   * (like `vote`/`removeVote`, exempt from the Alumni post restriction) even
-   * though `close` isn't a vote, because gating it as a `post` would strand
-   * an open-ended (no `expires_at`) poll forever the moment its creator loses
-   * post rights in the channel (e.g. transitions to Alumni): `isPollExpired`
-   * never trips without a deadline, and nothing else may close it.
+   * closed), the poll is locked"). Its creator may close it whatever their
+   * permissions now, and so may a member who holds `channels:manage`
+   * (`canModerate`, asked only when the caller isn't the creator), so a poll
+   * with no deadline whose creator lost `polls:create` or left the chapter can
+   * still end with its tally kept (#4046). Channel access is authorized as a
+   * `close`: read access, with archive and the audit log refusing it, but not
+   * who can post nor the Alumni rule, which would strand an open-ended poll
+   * the moment its creator lost post rights there. `isPollExpired` never trips
+   * without a deadline.
    */
   async close(
     messageId: string,
     userId: string,
     chapterId: string,
+    canModerate: () => Promise<boolean> = () => Promise.resolve(false),
   ): Promise<ChatMessage> {
     const message = await this.loadPollForOperation(
       messageId,
       chapterId,
       userId,
-      'vote',
+      'close',
       { allowCard: true },
     );
 
@@ -368,8 +372,10 @@ export class PollService {
       throw new BadRequestException('Cannot close a deleted poll');
     }
 
-    if (message.sender_id !== userId) {
-      throw new ForbiddenException('Only the poll creator can close it');
+    if (message.sender_id !== userId && !(await canModerate())) {
+      throw new ForbiddenException(
+        'Only the poll creator or a member who manages channels can close it',
+      );
     }
 
     if (message.kind === 'poll') return this.closeCard(message, userId);
@@ -401,7 +407,7 @@ export class PollService {
    * UPDATE, which is how both cards draw it closed live, and the card vote
    * path (`ChatReactionService`) refuses a vote once `closed_at` is set.
    *
-   * Creator, deletion and access checks are `close`'s, shared with the REST
+   * Who-may-close, deletion and access checks are `close`'s, shared with the REST
    * shape; only the storage differs.
    */
   private async closeCard(
@@ -420,20 +426,20 @@ export class PollService {
       throw new BadRequestException('Poll has expired');
     }
 
-    return this.messageRepo.update(message.id, {
-      payload: {
-        ...payload,
-        closed_at: new Date().toISOString(),
-        closed_by: userId,
-      },
-    });
+    return stampCardClosed(
+      this.messageRepo,
+      message,
+      payload as Record<string, unknown>,
+      userId,
+      'Cannot close a deleted poll',
+    );
   }
 
   /**
    * Post a `system_audit` notice into the poll's channel announcing that it
    * expired (#404). Uses `messageRepo.create` directly rather than
-   * `ChatService.sendMessage` — the same reason `notifyInviterOfAcceptance`
-   * and `postWelcomeMessage` bypass it: that path would reject
+   * `ChatService.sendMessage` — the same reason `postWelcomeMessage`
+   * bypasses it: that path would reject
    * `SYSTEM_SENDER_ID` as a poster. `push-rules.ts` already suppresses push
    * for `system_audit`, so this is visible in the channel without paging
    * anyone — the sweep's caller (`ScheduledJobsService`) is what decides

@@ -5,10 +5,7 @@ import { Search } from "lucide-react";
 import { useChannels } from "@repo/hooks";
 import { cn } from "@/lib/utils";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
-import {
-  FindDialog,
-  FIND_PLACEHOLDER,
-} from "@/components/layout/find-dialog";
+import { FindDialog, FIND_PLACEHOLDER } from "@/components/layout/find-dialog";
 
 /**
  * The top bar's Find entry: a field-shaped button that opens the centered Find
@@ -26,6 +23,10 @@ import {
  * be mounted. `components.md` §7 bans a hint for a binding that is NOT wired;
  * an unadvertised binding that is wired breaks nothing.
  *
+ * **It only searches** (#5476, Paul, 2026-11-18). From #4904 (2026-11-13) it
+ * read "Search or ask Frapp" for a member with Ask and its dialog asked too;
+ * Ask now has its own bar (`ask/ask-bar.tsx`).
+ *
  * The query lives here, not in the dialog, so closing the dialog (Escape or a
  * click outside) and reopening it keeps what was typed.
  */
@@ -34,6 +35,7 @@ export function FindBar({ className }: { className?: string }) {
   const [query, setQuery] = useState("");
   // False only when a keystroke on the field opened the dialog; see FindDialog.
   const [selectOnOpen, setSelectOnOpen] = useState(true);
+  const placeholder = FIND_PLACEHOLDER;
   /*
    * Read here, while the dialog is closed, on purpose. It keeps `["channels"]`
    * warm on every dashboard route, so the dialog's Channels group is instant
@@ -114,7 +116,7 @@ export function FindBar({ className }: { className?: string }) {
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={FIND_PLACEHOLDER}
+        aria-label={placeholder}
         onClick={() => {
           returnFocusRef.current = null;
           setSelectOnOpen(true);
@@ -139,7 +141,7 @@ export function FindBar({ className }: { className?: string }) {
           setOpen(true);
         }}
         className={cn(
-          "flex h-[34px] items-center gap-2.5 rounded-[10px] border border-input bg-surface-1 px-3 text-left text-sm text-muted-foreground transition hover:text-foreground",
+          "flex h-[34px] items-center gap-2.5 rounded-[10px] border border-control-edge bg-surface-1 px-3 text-left text-sm text-muted-foreground transition hover:text-foreground",
           FOCUS_RING_SHELL,
           className,
         )}
@@ -149,7 +151,7 @@ export function FindBar({ className }: { className?: string }) {
           {query.trim() ? (
             <span className="text-foreground">{query}</span>
           ) : (
-            FIND_PLACEHOLDER
+            placeholder
           )}
         </span>
       </button>

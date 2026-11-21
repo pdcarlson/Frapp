@@ -1,6 +1,6 @@
 import { parseInstant } from "@repo/formatting";
 import { moduleRefusalFromServerMessage } from "@repo/validation";
-import { canActOnMessage, isOwnMessage } from "./message-actions";
+import { canCloseCard, isCardClosed } from "./card-closing";
 import type { ChatMessage } from "./types";
 import {
   POLL_VOTE_ACTION_TYPE,
@@ -188,53 +188,37 @@ export function readPollPayload(message: ChatMessage): PollPayload | null {
 }
 
 /**
- * Whether a poll card takes no more votes: its creator closed it early
- * (`closed_at`, #3794), or its deadline has passed. The API refuses a vote on
- * either (`ChatReactionService`); this is the same answer for the cards to
- * draw. A card with no deadline (#3896), or one that doesn't parse, never
- * closes on its own, as on the server.
- */
-export function isPollCardClosed(payload: PollPayload, now: number): boolean {
-  if (payload.closed_at) return true;
-  const deadline = parseInstant(payload.closes_at);
-  return deadline ? deadline.getTime() < now : false;
-}
-
-/**
  * The card's eyebrow on both clients: "Poll", "Poll · Closed", or, for an
  * open poll with no deadline (#3896), "Poll · No end date", so a member can
  * tell it won't close by itself. A timed, open poll reads plain "Poll", as it
  * always has.
  */
 export function pollCardEyebrow(payload: PollPayload, now: number): string {
-  if (isPollCardClosed(payload, now)) return "Poll · Closed";
+  if (isCardClosed(payload, now)) return "Poll · Closed";
   return parseInstant(payload.closes_at) ? "Poll" : "Poll · No end date";
 }
 
 /**
- * Whether the viewer is offered Close poll on this card (#3794): it is their
- * own poll (`isOwnMessage`), the server has it and it isn't deleted
- * (`canActOnMessage`), it is still open, and the close route would take it.
- * That route (`POST /v1/polls/{messageId}/close`) also requires `polls:create`
- * and the Polls module, which posting a card does not (#3007), so a creator
- * without the permission, or any creator while Polls is off or not yet
- * known to be on, isn't offered a control the API would refuse every time.
- * The API enforces all of it (`PollService.close`); this only keeps the card
- * honest.
+ * Whether the viewer is offered Close poll on this card (#3794): the server
+ * has it and it isn't deleted (`canActOnMessage`), it is still open, the
+ * Polls module is known to be on (the close route requires it), and the
+ * viewer may close it. Its creator may (`isOwnMessage`), whatever their
+ * permissions now, and so may a member who holds `channels:manage`, so a poll
+ * with no deadline whose creator lost `polls:create` or left can still end
+ * with its tally kept (#4046). That is every card's Close rule
+ * (`canCloseCard`) plus the module gate. The API enforces all of it
+ * (`PollService.close`); this only keeps the card honest.
  */
 export function canClosePoll(
   message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
   payload: PollPayload,
   viewerId: string | null,
   now: number,
-  gates: { pollsGate: PollsGate; canCreatePolls: boolean },
+  gates: { pollsGate: PollsGate; canManageChannels: boolean },
 ): boolean {
   return (
-    isOwnMessage(message, viewerId) &&
-    canActOnMessage(message) &&
-    !isPollCardClosed(payload, now) &&
-    gates.pollsGate === "on" &&
-    gates.canCreatePolls
+    canCloseCard(message, payload, viewerId, now, gates.canManageChannels) &&
+    gates.pollsGate === "on"
   );
 }
 

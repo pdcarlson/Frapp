@@ -34,9 +34,8 @@ import { join } from 'node:path';
  * deliberately in #867 after a two-day silent-delivery bug; do not delete it
  * on the strength of a test that only ever looked at `apps/api/src`.
  *
- * Subscribing is untouched and must stay allowed: `chat-bridge-worker` and
- * `chat-push-worker` both open `postgres_changes` subscriptions, and the push
- * worker additionally reads Presence (the bridge worker does not). That is
+ * Subscribing is untouched and must stay allowed: `chat-push-worker` opens
+ * `postgres_changes` subscriptions and reads Presence. That is
  * exactly how the sanctioned design works — only *emitting* a broadcast from
  * the API is what this catches.
  *

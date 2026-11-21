@@ -1,11 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  onlineManager,
-  QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query";
-import React from "react";
+import { onlineManager, QueryClient } from "@tanstack/react-query";
 import {
   chatBlockKeys,
   confirmedBlockChangesKey,
@@ -20,41 +15,24 @@ import {
   CHANNEL_LATEST_MESSAGES_KEY,
   CHANNEL_UNREAD_COUNTS_KEY,
 } from "./use-chat";
-import { FrappClientProvider } from "./use-frapp-client";
 import { notificationKeys } from "./use-notifications";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const CHAPTER = "chapter-1";
 const ALICE = "11111111-1111-4111-8111-111111111111";
 const BOB = "22222222-2222-4222-8222-222222222222";
-
-function createTestQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-}
 
 function createWrapper(
   queryClient: QueryClient,
   mockClient: unknown,
   chapterId: string | null = CHAPTER,
 ) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId={chapterId}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId,
+    displayName: "Wrapper",
+  });
 }
 
 /** What openapi-fetch resolves for a 2xx. */
@@ -109,7 +87,9 @@ describe("useBlockedUserIds", () => {
     expect(result.current.readAt).toBe(0);
     await waitFor(() => expect(result.current.status).toBe("ready"));
 
-    expect(GET).toHaveBeenCalledWith("/v1/chat/blocks");
+    expect(GET).toHaveBeenCalledWith("/v1/chat/blocks", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.readAt).toBeGreaterThan(0);
     expect([...result.current.ids]).toEqual([ALICE]);
     expect(result.current.unblocked.size).toBe(0);

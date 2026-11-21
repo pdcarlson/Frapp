@@ -10,6 +10,8 @@ export interface IMemberRepository {
     chapterId: string,
   ): Promise<Member | null>;
   findByChapter(chapterId: string): Promise<Member[]>;
+  /** How many members a chapter has, counted in the database (#5625). */
+  countByChapter(chapterId: string): Promise<number>;
   /**
    * Every member of a chapter as `user_id` + `display_name` + `role_ids`, in
    * one query (`role_ids` since 2026-11-06, for role mentions).
@@ -33,6 +35,38 @@ export interface IMemberRepository {
   ): Promise<ChapterMemberIdentity[]>;
   create(data: Partial<Member>): Promise<Member>;
   update(id: string, data: Partial<Member>): Promise<Member>;
+  /**
+   * Set `has_completed_onboarding` true, only when it is still false (#5627).
+   * `changed` is true for the one request that turned it, so two clients
+   * finishing at once announce the member once.
+   */
+  completeOnboarding(id: string): Promise<{ member: Member; changed: boolean }>;
+  /**
+   * Write a member's `role_ids` through the `set_member_role_ids` RPC: only
+   * when the row still holds `expectedRoleIds` (the value the caller read) and
+   * every id it newly gives names a live role of the chapter, under the role
+   * locks `delete_role` takes (#4830). Resolves to the written row, or `null`
+   * when the row moved or a given role was deleted since the read, so the
+   * caller can answer 409.
+   */
+  setRoleIds(
+    chapterId: string,
+    memberId: string,
+    expectedRoleIds: string[],
+    roleIds: string[],
+  ): Promise<Member | null>;
+  /**
+   * Add (`join`) or remove a self-assignable role on a member through the
+   * `self_assign_role` RPC (#4958): only while the role is marked and safe,
+   * under the role-then-member locks `delete_role` takes. `ok` carries the
+   * written `role_ids`.
+   */
+  setSelfAssignedRole(
+    chapterId: string,
+    memberId: string,
+    roleId: string,
+    join: boolean,
+  ): Promise<SelfAssignResult>;
   delete(id: string): Promise<void>;
   /**
    * Atomically move the President (wildcard) role from one member to another via
@@ -63,4 +97,10 @@ export interface IMemberRepository {
     eligibleRoleId: string,
     presidentRoleId: string,
   ): Promise<boolean>;
+}
+
+/** What {@link IMemberRepository.setSelfAssignedRole} did. */
+export interface SelfAssignResult {
+  outcome: 'ok' | 'not_assignable' | 'alumni' | 'no_member';
+  role_ids: string[] | null;
 }

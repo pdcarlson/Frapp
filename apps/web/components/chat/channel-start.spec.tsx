@@ -43,7 +43,7 @@ describe("ChannelStart", () => {
 
     expect(screen.getByRole("link", { name: "Edit channel" })).toHaveAttribute(
       "href",
-      "/chat-admin?channel=chan-1",
+      "/settings?tab=chat&channel=chan-1",
     );
   });
 

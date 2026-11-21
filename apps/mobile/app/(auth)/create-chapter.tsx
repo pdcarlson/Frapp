@@ -1,11 +1,5 @@
 import { errorCopy } from "@repo/hooks/error-copy";
-import {
-  useEffect,
-  useState,
-  type ComponentProps,
-  type ReactNode,
-  type Ref,
-} from "react";
+import { useState, type ComponentProps, type ReactNode, type Ref } from "react";
 import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -26,6 +20,7 @@ import {
   useChapterDirectorySearch,
   useConfirmChapterLogo,
   useCurrentChapter,
+  useDebouncedValue,
   useOnboardChapter,
   useRequestChapterLogoUploadUrl,
   type ChapterDirectoryResult,
@@ -40,12 +35,18 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import {
   CHAPTER_SHORT_NAME_MAX_LENGTH,
+  FRAPP_AI_COPY,
   resolveChapterMark,
 } from "@repo/validation";
 import { useAuthSession } from "@/lib/auth-session";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { ChoiceRow } from "@/components/auth/choice-row";
 import { AccentPicker } from "@/components/chapter/accent-picker";
+import {
+  MeetFrappAiActions,
+  MeetFrappAiBody,
+  useMeetFrappAiStep,
+} from "@/components/ai/meet-frapp-ai";
 import {
   PUSH_ASK_TITLE,
   PushAskActions,
@@ -100,6 +101,7 @@ import { successHaptic } from "@/lib/haptics";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import { stepFadeIn } from "@/lib/onboarding/step-fade";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * First-officer chapter setup (`spec/behavior/onboarding.md`, #3351).
@@ -107,9 +109,12 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * Three steps make the chapter: **Find** it in the directory, **Confirm** the
  * match (or describe it by hand), and pick its **Color**. Creating it opens
  * four more: the **live** moment with its channels and an optional logo, the
- * founder's own **display** pick (the same three cards as s03's display beat,
- * #4056: founders skip s03), the notifications step when this build can push
- * and push is off, and the **invite** link. Then chat.
+ * founder's own **display** pick (the same three cards as Settings and the
+ * welcome card's Finish your profile, #4056: founders skip s03), **Meet Frapp AI** when the server has AI and
+ * the founder never answered it (#4790; their Continue also turns on the new
+ * chapter's AI switches, which nobody has set yet), the notifications step
+ * when this build can push and push is off, and the **invite** link. Then
+ * chat.
  *
  * One route, with the steps as state: `POST /v1/chapters/onboard` flips the
  * membership count to 1 mid-flow, and every gate exempts `/create-chapter` by
@@ -130,7 +135,14 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  */
 
 type Step =
-  "find" | "confirm" | "color" | "live" | "display" | "primer" | "invite";
+  | "find"
+  | "confirm"
+  | "color"
+  | "live"
+  | "display"
+  | "ai"
+  | "primer"
+  | "invite";
 /** The steps before the chapter exists, which the progress ticks count. */
 const SETUP_STEPS: Step[] = ["find", "confirm", "color"];
 
@@ -141,21 +153,13 @@ export const SETUP_TITLES = {
   confirmManual: "Tell us about your chapter",
   color: "Pick your color",
   display: DISPLAY_STEP_TITLE,
+  ai: FRAPP_AI_COPY.title,
   primer: PUSH_ASK_TITLE,
   invite: "Invite your chapter",
 } as const;
 
 export function liveTitle(displayName: string): string {
   return `${displayName} is live`;
-}
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(id);
-  }, [value, delayMs]);
-  return debounced;
 }
 
 /** A directory archetype this app knows, else `null`: the officer picks. */
@@ -224,6 +228,7 @@ export default function CreateChapter() {
   // Whether the new chapter became the active one. The logo and invite
   // routes act on the active chapter, so without it they can't run.
   const [activated, setActivated] = useState(false);
+  const ai = useMeetFrappAiStep();
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoNote, setLogoNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -409,10 +414,30 @@ export default function CreateChapter() {
   // preselected and a tap saves at once, so Continue keeps whatever is checked.
   function leaveDisplay() {
     setError(null);
+    if (ai.show) {
+      setStep("ai");
+    } else {
+      afterAi();
+    }
+  }
+
+  // After Meet Frapp AI, or past it when there is none.
+  function afterAi() {
     if (primer.showPrimer) {
       setStep("primer");
     } else {
       afterPrimer();
+    }
+  }
+
+  async function answerAi(on: boolean) {
+    if (ai.answering) return;
+    if (on) {
+      // A failed save keeps the founder here with the reason.
+      if (await ai.turnOn()) afterAi();
+    } else {
+      await ai.notNow();
+      afterAi();
     }
   }
 
@@ -444,9 +469,11 @@ export default function CreateChapter() {
             ? liveTitle(displayName)
             : step === "display"
               ? SETUP_TITLES.display
-              : step === "primer"
-                ? SETUP_TITLES.primer
-                : SETUP_TITLES.invite;
+              : step === "ai"
+                ? SETUP_TITLES.ai
+                : step === "primer"
+                  ? SETUP_TITLES.primer
+                  : SETUP_TITLES.invite;
   const setupIndex = SETUP_STEPS.indexOf(step);
   const mark = resolveChapterMark({
     logoUrl,
@@ -700,6 +727,13 @@ export default function CreateChapter() {
                 </View>
               ) : null}
 
+              {/* The same screen a joining member sees on s03. */}
+              {step === "ai" ? (
+                <View style={styles.stack}>
+                  <MeetFrappAiBody providers={ai.providers} error={ai.error} />
+                </View>
+              ) : null}
+
               {/* The same step a joining member sees on s03. */}
               {step === "primer" ? (
                 <View style={styles.stack}>
@@ -711,7 +745,7 @@ export default function CreateChapter() {
                 <View style={styles.stack}>
                   <Text style={styles.body}>
                     Send each person their own link. A link lets one person in
-                    and lasts 24 hours.
+                    and lasts 7 days.
                   </Text>
                   <InviteLinksCard
                     shared={invite.shared}
@@ -751,6 +785,15 @@ export default function CreateChapter() {
               void invite.share();
             }}
             onFinish={finish}
+            ai={{
+              busy: ai.answering,
+              onContinue: () => {
+                void answerAi(true);
+              },
+              onNotNow: () => {
+                void answerAi(false);
+              },
+            }}
             primer={{
               action: primer.action,
               busy: primer.isRequesting,
@@ -798,6 +841,7 @@ function Footer({
   onLeaveDisplay,
   onShare,
   onFinish,
+  ai,
   primer,
   styles,
 }: {
@@ -820,9 +864,17 @@ function Footer({
   onLeaveDisplay: () => void;
   onShare: () => void;
   onFinish: () => void;
+  ai: ComponentProps<typeof MeetFrappAiActions>;
   primer: ComponentProps<typeof PushAskActions>;
   styles: Styles;
 }) {
+  if (step === "ai") {
+    return (
+      <View style={styles.footer}>
+        <MeetFrappAiActions {...ai} disabled={signingOut} />
+      </View>
+    );
+  }
   if (step === "primer") {
     return (
       <View style={styles.footer}>
@@ -1282,6 +1334,7 @@ function Field({
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     flex: { flex: 1 },
     safeArea: {
@@ -1368,7 +1421,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       padding: tokens.spacing.lg,
     },
     cardCopy: {
@@ -1425,7 +1478,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
       gap: 2,
@@ -1433,7 +1486,7 @@ function createStyles(tokens: SignetTokens) {
       justifyContent: "center",
     },
     archetypeRowPressed: {
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: surfaces.raised,
     },
     archetypeRowOn: {
       borderColor: tokens.color.gold.house,

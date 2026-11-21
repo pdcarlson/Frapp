@@ -1,11 +1,7 @@
 import { act } from "react";
 import { expect, vi } from "vitest";
 import { useRouter } from "expo-router";
-import type {
-  ReactTestInstance,
-  ReactTestRenderer,
-} from "react-test-renderer";
-import { isTabHref } from "@/lib/href";
+import type { ReactTestInstance, ReactTestRenderer } from "react-test-renderer";
 import { drawnText } from "@/test/screen-text";
 
 /**
@@ -13,8 +9,8 @@ import { drawnText } from "@/test/screen-text";
  * `<label>` beside the drawn `‹`, naming its destination, and that pressing it goes
  * to `href` rather than back through history. Shared by the screen specs so
  * each one checks the same three things. These specs render with nothing under
- * the screen, so the row takes its fixed destination: a tab is popped down to
- * (`dismissTo`) and any other screen navigated to (`goBackTo` in `lib/href.ts`).
+ * the screen, so the row takes its fixed destination, popped down to
+ * (`dismissTo`, `goBackTo` in `lib/href.ts`).
  *
  * The router is the suite-wide `vi.fn()` object (`vitest.setup.ts`), which
  * keeps its calls across tests, so this clears both before pressing.
@@ -42,8 +38,8 @@ export function expectBackRow(
   act(() => {
     row!.props.onPress();
   });
-  const way = isTabHref(href as never) ? router.dismissTo : router.navigate;
-  expect(way).toHaveBeenCalledWith(href);
+  expect(router.dismissTo).toHaveBeenCalledWith(href);
+  expect(router.navigate).not.toHaveBeenCalled();
   expect(router.back).not.toHaveBeenCalled();
 }
 

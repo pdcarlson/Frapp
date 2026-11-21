@@ -33,13 +33,14 @@ COPY packages/observability/src/ ./packages/observability/src/
 COPY packages/observability/tsconfig.json ./packages/observability/
 COPY apps/api/src/ ./apps/api/src/
 COPY apps/api/tsconfig.json apps/api/tsconfig.build.json apps/api/nest-cli.json ./apps/api/
+# First, before validation and chapter-theme, which both import @repo/color and
+# resolve it through dist (validation since #5784's role colors). Separate RUN
+# lines, not one --workspace list: npm gives no ordering guarantee across
+# workspaces, so a combined invocation can compile a dependent first and fail on
+# a dist that does not exist yet.
+RUN npm run build --workspace=packages/color
 RUN npm run build --workspace=packages/validation
 RUN npm run build --workspace=packages/org-archetypes
-# Before chapter-theme, which imports @repo/color and resolves it through dist.
-# Separate RUN lines, not one --workspace list: npm gives no ordering guarantee
-# across workspaces, so a combined invocation can compile chapter-theme first
-# and fail on a dist that does not exist yet.
-RUN npm run build --workspace=packages/color
 RUN npm run build --workspace=packages/chapter-theme
 # @repo/formatting and @repo/observability have no @repo dependencies, so they
 # only have to precede apps/api.
@@ -54,7 +55,11 @@ RUN npm run build --workspace=apps/api
 # second inject would mint debug IDs that never execute).
 #
 # ARG, not ENV: do not bake `SENTRY_AUTH_TOKEN` into later layers. Render
-# passes service env vars matching these ARG names at build time. Unset (CI,
+# passes service env vars matching these ARG names at build time. The image the
+# deploy job builds on GitHub for an image-backed service (#2506) passes the
+# token as the BuildKit secret `sentry_auth_token` instead, which the script
+# reads from /run/secrets when the ARG is unset; a secret never enters the
+# build metadata, and an absent one mounts nothing. Unset either way (CI,
 # laptops, or a Render service whose Infisical environment does not carry
 # it; docs/internal/environment/ENV_REFERENCE.md § apps/api says which do)
 # → the script skips sentry-cli and still strips `*.map` so the runner does
@@ -73,7 +78,7 @@ RUN npm run build --workspace=apps/api
 # the `@sentry/cli-linux-x64` binary npm installs here is static-pie.
 ARG SENTRY_AUTH_TOKEN
 ARG RENDER_GIT_COMMIT
-RUN node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js
+RUN --mount=type=secret,id=sentry_auth_token node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js
 
 # Stage 3: Production-only dependencies (clean install, no dev deps)
 FROM node:24-alpine AS prod-deps
@@ -133,6 +138,14 @@ COPY --from=prod-deps --chown=frapp:frapp /app/packages/formatting/node_modules/
 COPY --from=builder --chown=frapp:frapp /app/packages/observability/dist/ ./packages/observability/dist/
 COPY --from=builder --chown=frapp:frapp /app/packages/observability/package.json ./packages/observability/
 COPY --from=prod-deps --chown=frapp:frapp /app/packages/observability/node_modules/ ./packages/observability/node_modules/
+
+# The commit this image was built from, for `/health`'s `commit` and Sentry's
+# `release` (deployed-commit.ts). Render sets RENDER_GIT_COMMIT itself on a
+# git-backed service, to the same value it passes here; an image-backed
+# service has no commit of its own, so the deploy job passes it as a build
+# arg (#2506). Unset (CI, laptops) it stays empty, which reads as "no commit".
+ARG RENDER_GIT_COMMIT
+ENV RENDER_GIT_COMMIT=${RENDER_GIT_COMMIT}
 
 USER frapp
 WORKDIR /app/apps/api

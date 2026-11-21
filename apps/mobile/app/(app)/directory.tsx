@@ -1,3 +1,5 @@
+import { parseChapterRoles } from "@repo/hooks/chapter-roles";
+import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -5,7 +7,9 @@ import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
   useAlumni,
+  useGroups,
   useMemberDisplayNames,
+  useMemberPhoneReach,
   useMemberSearch,
   useMembers,
   usePermissionList,
@@ -15,9 +19,20 @@ import {
   type MemberAvatarTint,
 } from "@repo/hooks";
 import { useRouter } from "expo-router";
-import { can } from "@repo/validation";
+import {
+  can,
+  DIRECTORY_COPY,
+  directoryNoSearchMatches,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { MemberAvatar } from "@/components/member-avatar";
+import { AvatarWithPresence } from "@/components/avatar-with-presence";
+import { presenceLabel } from "@repo/hooks/presence-status";
+import {
+  NO_PRESENCE,
+  usePresenceOf,
+  type MemberPresence,
+} from "@/lib/presence/presence-store";
 import {
   ErrorState,
   NoChapterState,
@@ -26,7 +41,7 @@ import {
   SkeletonText,
 } from "@/components/state-block";
 import {
-  BACK_TO_MORE,
+  BACK_TO_YOU,
   PinnedBackRow,
   pinnedBackClearance,
 } from "@/components/back-row";
@@ -42,15 +57,22 @@ import {
   ThemedRefreshControl,
   useRefetchAll,
 } from "@/components/pull-to-refresh";
-import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { ActivesFilterSheet } from "@/components/directory/actives-filter-sheet";
+import {
+  phoneReachCountLineFor,
+  phoneReachStaleNote,
+  phoneReachStateLabel,
+  type PhoneReach,
+} from "@repo/validation";
+import { PickRolesSheet } from "@/components/roles/pick-roles-sheet";
+import { usePickableRoles } from "@repo/hooks";
 import {
   countActivesFilters,
   effectiveActivesFilter,
   filterActives,
   graduationYearOptions,
   NO_ACTIVES_FILTER,
-  parseFilterRoles,
+  activesFilterRoles,
   type ActivesFilter,
 } from "@/lib/directory/actives-filter";
 import {
@@ -65,6 +87,7 @@ import {
 } from "@/lib/directory/pledge-class";
 import { FLOATING_TAB_BAR, useTabBarClearance } from "@/lib/floating-chrome";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 
 /**
  * s13 — Directory (`canvas-screens.dc.html:451`).
@@ -78,15 +101,18 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * (`spec/ui/mobile/patterns.md`), with the title, chips and search field riding
  * in `ListHeaderComponent` so the chrome still matches.
  *
- * ## Rows open a member detail sheet, not a route
+ * ## Rows push the member's profile
  *
- * Canvas draws a chevron on each row, and a new route file is not an option:
- * the route layouts are frozen (`spec/ui/mobile/navigation.md` § Hotspot
- * freeze). `MemberDetailSheet` reaches the same fields
- * `spec/behavior/members.md`'s detail view specifies (name, email, role,
- * joined date) via a `@gorhom/bottom-sheet`, the pattern `new-task-sheet.tsx`
- * established, without one. Still no chevron drawn: TODO-DESIGN tracks the
- * affordance, not the behavior.
+ * A row pushes `/member` (`components/directory/member-profile-screen.tsx`),
+ * as iOS Contacts and Slack's member directory push a person's page (#5568,
+ * Paul 2026-11-19). It was a full-height bottom sheet until then.
+ *
+ * ## One layout, quiet chips (#5568)
+ *
+ * Rows only: the List | Grid round (#4175) came out with Paul's ban on view
+ * switchers (`spec/ui/design-system/README.md` § 2, 2026-11-17). The chips
+ * above the list draw their quiet selected state, so the colour on the
+ * screen is the members' own (their faces and initials), not the filter.
  *
  * ## `useMembers()` here is not the over-fetch #986 objected to
  *
@@ -119,17 +145,18 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  * doesn't have. The sort is the Actives tab's alone, by choice: the Alumni
  * tab's trailing chip is Filters, and web's Alumni tab has no sort either
  * (#4088). Alumni rows still name their class, since `GET /v1/alumni` returns
- * it. Read-only here; officers set both on web (mobile editing is #3991).
+ * it. Read-only on the list; an officer holding `roles:manage` sets both from
+ * the member profile a row opens (#3991), or on web.
  *
  * ## Actives filters (#3971)
  *
  * The Actives tab's chip row carries a Filters chip, before the sort, that
  * opens `ActivesFilterSheet`: Status, Graduation year, the chapter's pledge
- * class and Role, web's four Directory filters by web's rules
+ * class, Group and Role, web's Directory filters by web's rules
  * (`lib/directory/actives-filter.ts`). The Alumni tab keeps its own Filters
  * chip and fields, since `GET /v1/alumni` filters server-side by different
  * fields. Like the alumni filters, these stay set across a tab switch and
- * are left alone by a search, which looks across both lists by name.
+ * are left alone by a search, which looks across both lists.
  */
 type Tab = "actives" | "alumni";
 
@@ -143,9 +170,9 @@ export default function DirectoryScreen() {
   // that member's name takes in chat (#3860).
   const { avatarTintFor } = useMemberDisplayNames();
   const canInvite = can("members:invite", usePermissionList());
-  const detailSheetRef = useRef<BottomSheetModal>(null);
-  const [selected, setSelected] = useState<DirectoryRow | null>(null);
   const activesFilterSheetRef = useRef<BottomSheetModal>(null);
+  const pickRolesSheetRef = useRef<BottomSheetModal>(null);
+  const pickable = usePickableRoles();
   const [activesFilterPicks, setActivesFilterPicks] =
     useState<ActivesFilter>(NO_ACTIVES_FILTER);
 
@@ -194,7 +221,7 @@ export default function DirectoryScreen() {
   const { classTerm, orderTerm } = usePledgeClassTerms();
   const rolesQuery = useRoles();
   const filterRoles = useMemo(
-    () => parseFilterRoles(rolesQuery.data),
+    () => activesFilterRoles(parseChapterRoles(rolesQuery.data)),
     [rolesQuery.data],
   );
   // `null` until the list has answered once. The last list read is kept when
@@ -233,21 +260,74 @@ export default function DirectoryScreen() {
     [membersQuery.data],
   );
   const yearOptions = useMemo(() => graduationYearOptions(actives), [actives]);
+  // Whether Frapp's notifications reach each member's phone (web's "Phone
+  // app" chip). The server sends the whole chapter's only to officers who
+  // can invite members or manage roles, and the filter is offered only then.
+  const { reach: phoneReach } = useMemberPhoneReach();
+  const showsPhoneReach = phoneReach?.scope === "chapter";
+  // The chapter's groups with anyone in them, as web's Group chip offers.
+  const groupsQuery = useGroups({ enabled: true });
+  const filterGroups = useMemo(
+    () =>
+      (groupsQuery.data ?? [])
+        .filter((group) => group.member_ids.length > 0)
+        .map((group) => ({ id: group.id, name: group.name })),
+    [groupsQuery.data],
+  );
   // A pick that no longer exists reads as unpicked (see `effectiveActivesFilter`).
   const activesFilter = useMemo(
     () =>
       effectiveActivesFilter(activesFilterPicks, {
         roleIds: new Set(filterRoles.map((role) => role.id)),
+        groupIds: new Set(filterGroups.map((group) => group.id)),
         years: yearOptions,
         classIds: new Set(classNames.keys()),
+        phoneReach: showsPhoneReach,
       }),
-    [activesFilterPicks, filterRoles, yearOptions, classNames],
+    [
+      activesFilterPicks,
+      filterRoles,
+      filterGroups,
+      yearOptions,
+      classNames,
+      showsPhoneReach,
+    ],
   );
   const activesFilterCount = countActivesFilters(activesFilter);
+  const groupMemberIds = useMemo(() => {
+    const group = (groupsQuery.data ?? []).find(
+      (g) => g.id === activesFilter.groupId,
+    );
+    return group ? new Set(group.member_ids) : undefined;
+  }, [groupsQuery.data, activesFilter.groupId]);
   const filteredActives = useMemo(
-    () => filterActives(actives, activesFilter),
-    [actives, activesFilter],
+    () =>
+      filterActives(
+        actives,
+        activesFilter,
+        phoneReach?.byUserId,
+        groupMemberIds,
+      ),
+    [actives, activesFilter, phoneReach, groupMemberIds],
   );
+  // The member's reach on their row, only while the Phone app filter is set
+  // on the Actives tab, so the everyday list stays as it was.
+  const rowReach = (userId: string): PhoneReach | undefined =>
+    !isSearching && tab === "actives" && activesFilter.phoneReach !== null
+      ? phoneReach?.byUserId.get(userId)
+      : undefined;
+  const phoneReachLine =
+    !isSearching &&
+    tab === "actives" &&
+    activesFilter.phoneReach !== null &&
+    phoneReach
+      ? phoneReachCountLineFor(
+          actives.map((row) =>
+            typeof row.user_id === "string" ? row.user_id : null,
+          ),
+          phoneReach.byUserId,
+        )
+      : null;
   const listData =
     !isSearching && tab === "actives" ? filteredActives : activeQuery.data;
   // Asked of the actives, the list the chip sorts: a chapter whose only
@@ -255,7 +335,7 @@ export default function DirectoryScreen() {
   const orderOffered =
     pledgeClasses !== null && usesFraternalOrder(pledgeClasses, actives);
 
-  // The Actives list alone: search looks across both lists by name, and the
+  // The Actives list alone: search looks across both lists, and the
   // Alumni tab has no sort (see the header).
   const inFraternalOrder =
     sortByOrder && orderOffered && !isSearching && tab === "actives";
@@ -291,21 +371,41 @@ export default function DirectoryScreen() {
 
   const header = (
     <View style={[styles.header, { paddingTop: pinnedBackClearance(tokens) }]}>
-      <Text accessibilityRole="header" style={styles.title}>
-        Directory
-      </Text>
+      <View style={styles.titleRow}>
+        <Text accessibilityRole="header" style={styles.title}>
+          Directory
+        </Text>
+        <View style={styles.titleActions}>
+          {/* Add roles (#4958): placement provisional, pending Paul. */}
+          {pickable.roles.length > 0 ? (
+            <Chip
+              accessibilityRole="button"
+              accessibilityState={{}}
+              accessibilityHint="Pick the Non-chapter business roles you want, like intramurals."
+              label="Add roles"
+              on={false}
+              quiet
+              onPress={() => pickRolesSheetRef.current?.present()}
+            />
+          ) : null}
+        </View>
+      </View>
 
       <SearchField
         value={query}
         onChangeText={setQuery}
-        placeholder="Search by name"
+        // "Search members", web's word: `GET /v1/members/search` matches
+        // more than the name, so "by name" undersold it (#4137).
+        placeholder="Search members"
         accessibilityLabel="Search the directory"
+        searchGlyph
       />
 
       {isSearching ? null : (
         <FilterChips
           accessibilityLabel="Actives or alumni"
           scroll
+          quiet
           selected={tab}
           onSelect={(value) => setTab((value as Tab) ?? "actives")}
           chips={[
@@ -328,6 +428,7 @@ export default function DirectoryScreen() {
                     : "Filters"
                 }
                 on={filtersOpen}
+                quiet
                 onPress={() => setFiltersOpen((open) => !open)}
               />
             ) : (
@@ -340,13 +441,18 @@ export default function DirectoryScreen() {
                       ? `Filters, ${activesFilterCount} set`
                       : "Filters"
                   }
-                  accessibilityHint="Narrows actives by status, graduation year, class or role."
+                  accessibilityHint={
+                    showsPhoneReach
+                      ? "Narrows actives by status, phone app, graduation year, class or role."
+                      : "Narrows actives by status, graduation year, class or role."
+                  }
                   label={
                     activesFilterCount > 0
                       ? `Filters · ${activesFilterCount}`
                       : "Filters"
                   }
                   on={activesFilterCount > 0}
+                  quiet
                   onPress={() => activesFilterSheetRef.current?.present()}
                 />
                 {orderOffered ? (
@@ -363,6 +469,7 @@ export default function DirectoryScreen() {
                     // reading only the chapter's word looks like a third tab.
                     label={`Sort: ${orderTerm}`}
                     on={sortByOrder}
+                    quiet
                     onPress={() => setSortByOrder((on) => !on)}
                   />
                 ) : null}
@@ -403,16 +510,21 @@ export default function DirectoryScreen() {
           />
         </View>
       )}
+      {phoneReachLine ? (
+        <Text accessibilityLiveRegion="polite" style={styles.reachLine}>
+          {phoneReachLine}
+        </Text>
+      ) : null}
     </View>
   );
 
   function renderBody() {
     if (!chapterId) return <NoChapterState noun="the member directory" />;
-    if (activeQuery.isError) {
+    if (activeQuery.isError && activeQuery.data === undefined) {
       return (
         <ErrorState
-          title="Couldn't load the directory"
-          body="The chapter roster couldn't reach the server."
+          title={DIRECTORY_COPY.loadError}
+          body={describeLoadFailure(activeQuery.error)}
           onRetry={() => void activeQuery.refetch()}
           isRetrying={activeQuery.isFetching}
         />
@@ -425,7 +537,7 @@ export default function DirectoryScreen() {
         <InlineNote
           action={{ label: "Clear search", onPress: () => setQuery("") }}
         >
-          {`Nobody matches “${deferredQuery}”.`}
+          {directoryNoSearchMatches(deferredQuery)}
         </InlineNote>
       );
     }
@@ -438,7 +550,7 @@ export default function DirectoryScreen() {
               setAlumniFilterInputs({ gradYear: "", city: "", company: "" }),
           }}
         >
-          No alumni match these filters.
+          {DIRECTORY_COPY.alumniNoFilterMatches}
         </InlineNote>
       );
     }
@@ -450,15 +562,15 @@ export default function DirectoryScreen() {
             onPress: () => setActivesFilterPicks(NO_ACTIVES_FILTER),
           }}
         >
-          No actives match these filters.
+          {DIRECTORY_COPY.activesNoFilterMatches}
         </InlineNote>
       );
     }
     return (
       <InlineNote>
         {tab === "actives"
-          ? "No actives yet."
-          : "No alumni yet. Graduated members appear here."}
+          ? DIRECTORY_COPY.activesEmpty
+          : DIRECTORY_COPY.alumniEmpty}
       </InlineNote>
     );
   }
@@ -485,10 +597,11 @@ export default function DirectoryScreen() {
         {/* Pinned, as every screen's back capsule is (`ScreenShell`), inside an
           unpadded View so it sits where the content starts. */}
         <View style={styles.listFrame}>
-          <PinnedBackRow back={BACK_TO_MORE} />
-          <FlatList
+          <PinnedBackRow back={BACK_TO_YOU} />
+          <ScreenReady ready={!chapterId || !activeQuery.isPending} />
+          <FlatList<DirectoryRow>
             data={rows}
-            keyExtractor={(row) => row.userId}
+            keyExtractor={(item) => item.userId}
             ListHeaderComponent={header}
             ListEmptyComponent={
               // The skeleton stands in for the rows themselves, so it takes no
@@ -512,11 +625,14 @@ export default function DirectoryScreen() {
             renderItem={({ item }) => (
               <MemberRow
                 row={item}
+                reach={rowReach(item.userId)}
                 avatarTint={avatarTintFor(item.userId)}
-                onPress={() => {
-                  setSelected(item);
-                  detailSheetRef.current?.present();
-                }}
+                onPress={() =>
+                  router.push({
+                    pathname: "/member",
+                    params: { userId: item.userId },
+                  })
+                }
               />
             )}
             contentContainerStyle={[
@@ -534,16 +650,13 @@ export default function DirectoryScreen() {
             refreshControl={<ThemedRefreshControl refresh={refresh} />}
           />
         </View>
-        <MemberDetailSheet
-          ref={detailSheetRef}
-          member={selected}
-          onDismiss={() => setSelected(null)}
-        />
+        <PickRolesSheet ref={pickRolesSheetRef} roles={pickable.roles} />
         <ActivesFilterSheet
           ref={activesFilterSheetRef}
           filter={activesFilter}
           onChange={setActivesFilterPicks}
           roles={filterRoles}
+          groups={filterGroups}
           years={yearOptions}
           classes={pledgeClasses ?? []}
           classWord={classTerm}
@@ -556,10 +669,32 @@ export default function DirectoryScreen() {
                 : "loading"
           }
           onRetryRoles={() => void rolesQuery.refetch()}
+          showPhoneReach={showsPhoneReach}
         />
       </SafeAreaView>
     </View>
   );
+}
+
+/**
+ * A row's accessible name: who, their presence and custom status when known,
+ * then the meta line.
+ */
+export function memberPressLabel(
+  row: DirectoryRow,
+  presence: MemberPresence = NO_PRESENCE,
+  reach?: PhoneReach,
+): string {
+  return [
+    `View ${row.displayName}'s profile`,
+    presence.status ? presenceLabel(presence.status) : null,
+    presence.line,
+    row.meta,
+    reach ? phoneReachStateLabel(reach.state) : null,
+    reach ? phoneReachStaleNote(reach) : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 /**
@@ -570,12 +705,21 @@ export function MemberRow({
   row,
   avatarTint,
   onPress,
+  reach,
 }: {
   row: DirectoryRow;
+  /**
+   * The Phone app filter's answer for this member, drawn at the row's end
+   * only while that filter is set (web draws it the same way).
+   */
+  reach?: PhoneReach;
   /** The member's initials paint (#3860); omit for the neutral circle. */
   avatarTint?: MemberAvatarTint | null;
   onPress?: () => void;
 }) {
+  // Their dot and custom status line (#4137), read for this row alone
+  // (#4633): nothing until presence has synced, never a stand-in Offline.
+  const presence = usePresenceOf(row.userId);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const feedback = usePressFeedback();
@@ -589,9 +733,7 @@ export function MemberRow({
       // `Text` nodes.
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityLabel={
-        onPress
-          ? `View ${row.displayName}'s profile${row.meta ? `, ${row.meta}` : ""}`
-          : undefined
+        onPress ? memberPressLabel(row, presence, reach) : undefined
       }
       onPress={onPress}
       android_ripple={onPress ? feedback.ripple : undefined}
@@ -600,18 +742,46 @@ export function MemberRow({
         onPress ? feedback.lift(pressed) : null,
       ]}
     >
-      <MemberAvatar
-        uri={row.avatarUrl}
-        initials={row.initials}
-        size={AVATAR_SIZE}
-        tint={avatarTint}
-        style={styles.avatar}
-        textStyle={styles.avatarText}
-      />
+      <AvatarWithPresence
+        status={presence.status}
+        avatarSize={AVATAR_SIZE}
+        ring={tokens.color.surface.background}
+      >
+        <MemberAvatar
+          uri={row.avatarUrl}
+          initials={row.initials}
+          size={AVATAR_SIZE}
+          tint={avatarTint}
+          style={styles.avatar}
+          textStyle={styles.avatarText}
+        />
+      </AvatarWithPresence>
       <View style={styles.rowText}>
         <Text style={styles.rowName}>{row.displayName}</Text>
+        {/* The custom status line under the name, one line, as web's
+            Directory row draws it (`components.md` § Chat member list). */}
+        {presence.line ? (
+          <Text numberOfLines={1} style={styles.rowStatusLine}>
+            {presence.line}
+          </Text>
+        ) : null}
         {row.meta ? <Text style={styles.rowMeta}>{row.meta}</Text> : null}
+        {reach && phoneReachStaleNote(reach) ? (
+          <Text style={styles.rowMeta}>{phoneReachStaleNote(reach)}</Text>
+        ) : null}
       </View>
+      {reach ? (
+        <Text
+          style={[
+            styles.rowReach,
+            reach.state === "off"
+              ? { color: tokens.color.semantic.warning }
+              : null,
+          ]}
+        >
+          {phoneReachStateLabel(reach.state)}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
@@ -644,7 +814,7 @@ export function MemberListSkeleton({
   const { role } = tokens.typography;
 
   return (
-    <SkeletonRegion label={label}>
+    <SkeletonRegion label={label} flush>
       {Array.from({ length: rows }, (_, index) => (
         <View key={index} style={styles.row}>
           <SkeletonBlock
@@ -705,7 +875,8 @@ function createStyles(tokens: SignetTokens) {
     },
     // ScreenShell's own title style: this screen draws its own header only
     // because its body is a FlatList.
-    title: screenTitleStyle(tokens),
+    // Shrinks before the Add roles chip beside it does.
+    title: { ...screenTitleStyle(tokens), flexShrink: 1 },
     row: {
       flexDirection: "row",
       alignItems: "center",
@@ -740,6 +911,32 @@ function createStyles(tokens: SignetTokens) {
     rowMeta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
+    },
+    reachLine: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    rowReach: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      flexShrink: 0,
+    },
+    // The status line reads before the meta line: mutedForeground, one
+    // step up the ladder, as the member profile and web draw it.
+    rowStatusLine: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    titleRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+    },
+    titleActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
     },
     emptyWrap: {
       paddingTop: tokens.spacing.md,

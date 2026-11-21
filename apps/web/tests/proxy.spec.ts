@@ -64,17 +64,15 @@ describe("apps/web/proxy.ts", () => {
 
     // Static routes: Next reuses their prefetch as the navigation, so the
     // proxy must run on the prefetch too.
-    const staticRoutes = ["/", ...AUTH_ROUTES, "/join", "/no-access", "/dashboard"];
-    // Not static, but outside `(dashboard)` and kept on prefetches the same way.
-    const alwaysProxied = [...staticRoutes, "/new-account"];
-    for (const path of alwaysProxied) {
+    const staticRoutes = ["/", ...AUTH_ROUTES, "/join", "/no-access", "/welcome", "/dashboard"];
+    for (const path of staticRoutes) {
       expect(onNavigation(path), path).toBe(true);
       expect(onPrefetch(path), path).toBe(true);
     }
     expect(onNavigation("/index.rsc"), "/index.rsc").toBe(true);
 
     const dynamicPrefixes = PROTECTED_ROUTE_PREFIXES.filter(
-      (prefix) => !alwaysProxied.includes(prefix),
+      (prefix) => !staticRoutes.includes(prefix),
     );
     expect(dynamicPrefixes.length).toBeGreaterThan(15);
     for (const prefix of dynamicPrefixes) {
@@ -143,5 +141,21 @@ describe("apps/web/proxy.ts", () => {
     expect(out.searchParams.get("redirectTo")).toBe(
       "/join?token=abc&utm_source=officer",
     );
+  });
+
+  test("an invite link reaches /join signed out on any device, and nothing else does (#5625)", async () => {
+    const { isInviteVisit } = await import("../proxy");
+    const { NextRequest } = await import("next/server");
+    const visit = (url: string) => isInviteVisit(new NextRequest(url));
+
+    expect(visit("https://app.frapp.live/join?token=abc")).toBe(true);
+    expect(visit("https://app.frapp.live/join?code=abc")).toBe(true);
+    expect(visit("https://app.frapp.live/join?token=abc&web=1")).toBe(true);
+    // No invite, so no card to show: sign in first.
+    expect(visit("https://app.frapp.live/join")).toBe(false);
+    expect(visit("https://app.frapp.live/join?token=")).toBe(false);
+    expect(visit("https://app.frapp.live/join?from=sign-in")).toBe(false);
+    // Only /join: every other gated page still bounces to sign-in.
+    expect(visit("https://app.frapp.live/chat?token=abc")).toBe(false);
   });
 });

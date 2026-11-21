@@ -386,8 +386,7 @@ describe("the branches this change did not touch", () => {
  */
 const SURFACE_GATES: readonly { file: string; match: string }[] = [
   { file: "components/reports/reports-page.tsx", match: 'permission="reports:export"' },
-  { file: "components/geofences/geofences-admin-page.tsx", match: 'permission="geofences:manage"' },
-  { file: "components/roles/roles-page.tsx", match: 'permission="roles:manage"' },
+  { file: "components/geofences/study-zones-manager.tsx", match: 'permission="geofences:manage"' },
   { file: "components/points/points-audit-card.tsx", match: 'permission="points:view_all"' },
   { file: "components/settings/settings-semester-tab.tsx", match: 'permission="semester:rollover"' },
   { file: "components/service/service-page.tsx", match: 'permission="service:approve"' },
@@ -419,10 +418,9 @@ const CONSUMERS: readonly string[] = [
   "components/events/attendance-panel.tsx",
   "components/events/event-detail-sheet.tsx",
   "components/events/events-page.tsx",
-  "components/geofences/geofences-admin-page.tsx",
+  "components/geofences/study-zones-manager.tsx",
   "components/points/points-audit-card.tsx",
   "components/reports/reports-page.tsx",
-  "components/roles/roles-page.tsx",
   "components/service/service-page.tsx",
   "components/settings/settings-semester-tab.tsx",
   "components/shared/subscription-gate.tsx",

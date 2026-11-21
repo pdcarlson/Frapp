@@ -24,7 +24,7 @@ One implementation per concern; don't fork another:
 | Connection indicator copy (both surfaces) | `connectionIndicator` in `packages/validation/src/connection-state.ts`; the open chat reports its transport through `useReportOpenChatTransport` (`packages/hooks/src/open-chat-transport.ts`) |
 | Mobile connection state / write gating | `apps/mobile/lib/connection/` |
 | Chat outbox network port | Mobile: `createMonitorNetworkState(connectionMonitor)`. Web: chat-core `NetworkState`. |
-| API worker subscriptions (chat push, audit mirror) | `apps/api/src/application/workers/worker-subscription.ts`: `WorkerSubscription` reopens after `CLOSED` and reports outages, and `releaseChannel` is the API's `releaseTopic`. `realtime-js-contract.spec.ts` beside it pins what it assumes about realtime-js. |
+| API worker subscriptions (chat push) | `apps/api/src/application/workers/worker-subscription.ts`: `WorkerSubscription` reopens after `CLOSED` and reports outages, and `releaseChannel` is the API's `releaseTopic`. `realtime-js-contract.spec.ts` beside it pins what it assumes about realtime-js. |
 
 ## 1. Reopening a topic requires a completed teardown
 
@@ -97,6 +97,19 @@ link, not on `isOffline`, because Realtime is a different service from `/health`
 
 If a rule here is wrong, change the shared function and the spec together, never the spec alone to
 match a local fork.
+
+## 8. A refused join is not a drop
+
+A private channel's join refused for RLS (`Unauthorized: You do not have permissions to read from
+this Channel topic`) never passes by retrying, and phoenix rejoins an errored channel every 10 s for
+as long as it stays registered, so leaving it registered is a retry loop even with no timer of
+ours (#5765). `isJoinDenied` (`packages/chat-core/src/join-denied.ts`) tells it apart. Once a
+refusal has held for `REFUSAL_CONFIRM_MS` (a join sent before the token is refused once and then let
+through), release the channel, keep it out of the backoff, polling and Reconnecting, and ask again
+only when the access token becomes a different one (`onAccessTokenChange`, never the bare
+`SIGNED_IN` event, which a web tab coming into view also fires), the channel list shows it again, a
+new viewer is configured, or it is opened afresh. Every other failure keeps its backoff. Spec:
+[`realtime-connection.md` § A refused join is not a drop](../../../spec/ui/resilience/realtime-connection.md#a-refused-join-is-not-a-drop).
 
 ## Before you change realtime or connection code
 

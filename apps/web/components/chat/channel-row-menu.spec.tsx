@@ -52,6 +52,13 @@ describe("ChannelRowMenu", () => {
     ]);
   });
 
+  it("draws chat's pin, solid once the channel is pinned (#4292)", async () => {
+    renderRow({ pinned: true });
+    await open();
+    const item = screen.getByRole("menuitem", { name: "Unpin from top" });
+    expect(item.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
+  });
+
   it("adds Mark as read on an unread row", async () => {
     const markRead = vi.fn();
     renderRow({ unread: true, actions: actions({ onMarkRead: markRead }) });
@@ -97,6 +104,18 @@ describe("ChannelRowMenu", () => {
     const again = await screen.findAllByRole("menuitemradio");
     fireEvent.click(again[2]!);
     expect(onSet).toHaveBeenCalledWith("c-gen", "off");
+  });
+
+  it("marks the checked level as your default when Chat messages set it (#4124)", async () => {
+    const user = userEvent.setup();
+    renderRow({
+      actions: actions({ notificationFromChapterLevel: () => true }),
+    });
+    await open();
+    await user.click(screen.getByRole("menuitem", { name: /Notifications/ }));
+    const radios = await screen.findAllByRole("menuitemradio");
+    expect(radios[1]).toHaveTextContent("Only @mentions (your default)");
+    expect(radios[0]).not.toHaveTextContent("your default");
   });
 
   it("locks Notifications while the level is unknown", async () => {

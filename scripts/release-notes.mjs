@@ -5,12 +5,16 @@
 //   npm run -s release-notes            the newest entry
 //   npm run -s release-notes -- --all   every entry, newest first
 //
-// Paste the same block into TestFlight's "What to Test" and Play Console's
-// "Release notes". Play caps a language's notes at 500 characters, so the
-// script says when the block is longer and prints a short version to use
-// there (the title plus as many lines as fit).
+// The first block is the whole entry, for a group chat. When the entry has
+// web-only lines, a second block leaves them out: paste that one into
+// TestFlight's "What to Test" and Play Console's "Release notes", which only
+// phone testers read. Play caps a language's notes at 500 characters, so the
+// script says when the store block is longer and prints a short version to
+// use there (the title plus as many lines as fit). Both blocks are
+// `releaseNoteStoreText` in the notes file.
 import {
   RELEASE_NOTES,
+  releaseNoteStoreText,
   releaseNoteText,
 } from "../packages/validation/src/release-notes.ts";
 
@@ -25,21 +29,21 @@ if (notes.length === 0) {
   process.exit(1);
 }
 
-console.log(notes.map(releaseNoteText).join("\n\n"));
+console.log(notes.map((note) => releaseNoteText(note)).join("\n\n"));
 
 if (!all) {
   const [note] = notes;
-  const full = releaseNoteText(note);
-  if (full.length > PLAY_LIMIT) {
-    let short = { ...note, changes: [] };
-    for (const change of note.changes) {
-      const next = { ...short, changes: [...short.changes, change] };
-      if (releaseNoteText(next).length > PLAY_LIMIT) break;
-      short = next;
-    }
+  const store = releaseNoteStoreText(note);
+  if (note.web?.length) {
     console.log(
-      `\n---- Google Play (the block above is ${full.length} characters; Play takes ${PLAY_LIMIT}) ----\n`,
+      "\n---- TestFlight and Google Play (leaves out the web-only lines) ----\n",
     );
-    console.log(releaseNoteText(short));
+    console.log(store);
+  }
+  if (store.length > PLAY_LIMIT) {
+    console.log(
+      `\n---- Google Play (the store block is ${store.length} characters; Play takes ${PLAY_LIMIT}) ----\n`,
+    );
+    console.log(releaseNoteStoreText(note, PLAY_LIMIT));
   }
 }

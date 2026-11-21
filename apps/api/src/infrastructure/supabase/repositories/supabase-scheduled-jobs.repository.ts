@@ -17,8 +17,10 @@ import {
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { eventRequiresAnyone } from '@repo/validation';
+import type { Task, TaskSeries } from '#domain/entities';
 import type {
   IScheduledJobsRepository,
+  MaterializeTaskSeriesCopyInput,
   StalePaletteRow,
   SweepEventRow,
   SweepInvoiceRow,
@@ -180,6 +182,20 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
     return rows.filter(eventRequiresAnyone);
   }
 
+  async findEventStartTime(
+    chapterId: string,
+    eventId: string,
+  ): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .from('events')
+      .select('start_time')
+      .eq('id', eventId)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data?.start_time ?? null;
+  }
+
   /**
    * OPEN invoices with a `due_date` inside the window. Callers pass dates as
    * `YYYY-MM-DD` because `financial_invoices.due_date` is a `date`, not a
@@ -200,11 +216,68 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
           .eq('status', 'OPEN')
           .gte('due_date', dueOnOrAfter)
           .lte('due_date', dueOnOrBefore)
-          // A task with a time is reminded by the five-minute sweep instead.
-          .is('due_at', null)
           .order('id', { ascending: true })
           .range(from, to),
     );
+  }
+
+  async findDueTaskSeries(now: Date, limit: number): Promise<TaskSeries[]> {
+    // Bounded, not paged: the sweep runs every five minutes, so a backlog
+    // larger than one run's share is taken up by the next run.
+    const { data, error } = await this.supabase
+      .from('task_series')
+      .select('*')
+      .is('ended_at', null)
+      .lte('latest_due_at', now.toISOString())
+      .order('latest_due_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(limit);
+    if (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'scheduled-sweep-candidate-read:task-series',
+        message: 'task series sweep: lookup failed',
+        error: new SupabaseQueryError(error),
+      });
+      return [];
+    }
+    return data ?? [];
+  }
+
+  async materializeTaskSeriesCopy(
+    input: MaterializeTaskSeriesCopyInput,
+  ): Promise<Task | null> {
+    const { data, error } = await this.supabase.rpc(
+      'materialize_task_series_copy',
+      {
+        p_series_id: input.seriesId,
+        p_expected_next: input.expectedNext,
+        p_expected_latest_due_at: input.expectedLatestDueAt,
+        p_occurrence_date: input.occurrenceDate,
+        p_due_at: input.dueAt,
+        p_latest_due_at: input.latestDueAt,
+        p_next_due_date: input.nextDueDate,
+        p_end: input.end,
+      },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? [])[0] ?? null;
+  }
+
+  async endTaskSeries(
+    seriesId: string,
+    expectedNext: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('task_series')
+      .update({ ended_at: new Date().toISOString() })
+      .eq('id', seriesId)
+      .eq('next_due_date', expectedNext)
+      .is('ended_at', null)
+      .select('id')
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data !== null;
   }
 
   async findIncompleteTimedTasksDueBetween(
@@ -218,7 +291,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
         this.supabase
           .from('tasks')
           .select(
-            'id, chapter_id, assignee_id, created_by, title, due_date, due_at',
+            'id, chapter_id, assignee_id, created_by, title, due_date, due_at, followed_by, group_id',
           )
           .in('status', [
             TaskStatus.TODO,
@@ -243,7 +316,9 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
       (from, to) =>
         this.supabase
           .from('tasks')
-          .select('id, chapter_id, assignee_id, created_by, title, due_date')
+          .select(
+            'id, chapter_id, assignee_id, created_by, title, due_date, followed_by, group_id',
+          )
           .in('status', [
             TaskStatus.TODO,
             TaskStatus.IN_PROGRESS,
@@ -251,6 +326,10 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
           ])
           .gte('due_date', dueOnOrAfter)
           .lte('due_date', dueOnOrBefore)
+          // A task with a time is reminded by the five-minute sweep instead
+          // (#4003). Until #4788 this filter sat on the invoice query, which
+          // has no `due_at`, so timed tasks got the daily reminder too.
+          .is('due_at', null)
           .order('id', { ascending: true })
           .range(from, to),
     );
@@ -426,13 +505,21 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
       threshold,
       due_date: dueDate,
     };
-    const { error } = await this.supabase
+    // `on conflict do nothing`: a sweep re-offers every candidate still in
+    // its window each tick, so most claims lose to an earlier sweep. As a
+    // plain insert each loss was a unique-violation ERROR in the Postgres log
+    // (about 330 a day on staging, 2026-11-19), which buried real errors.
+    // The returned row tells the winner apart: a lost claim returns none.
+    const { data, error } = await this.supabase
       .from('scheduled_notification_dispatches')
-      .insert(row);
+      .upsert(row, {
+        onConflict: 'entity_type,entity_id,threshold,due_date',
+        ignoreDuplicates: true,
+      })
+      .select('entity_id');
 
-    if (!error) return true;
-    // A losing claim, not an error: the unique constraint is the dedup
-    // mechanism, so another worker got there first.
+    if (!error) return (data ?? []).length > 0;
+    // Still a losing claim if it ever surfaces as a violation.
     if (error.code === PG_UNIQUE_VIOLATION) return false;
 
     reportCaughtFailure(this.logger, {

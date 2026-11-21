@@ -51,11 +51,23 @@ Five consequences worth remembering when editing these queries:
   round-trips instead of silently losing rows. This matters because
   `supabase/config.toml` governs the local stack only — the hosted project's
   Max rows is a dashboard setting the code cannot read. The price is one extra
-  empty request per report. Since #1628 this is the *only* sanctioned rule:
-  `fetchAllPages` moved to `apps/api/src/infrastructure/supabase/supabase.utils.ts`
-  and every paged read in the API shares it. Holding a page size below the cap
-  is **not** a second safe strategy — that was the bug #1628 fixed, and the
-  loops that relied on it silently dropped rows.
+  empty request per report. Since #1628 every paged read in the API shares
+  one loop in `apps/api/src/infrastructure/supabase/supabase.utils.ts`, and
+  ends on an empty page or on a count, never on a short page. Holding a page
+  size below the cap is **not** a safe strategy — that was the bug #1628
+  fixed, and the loops that relied on it silently dropped rows.
+- **A counted read is the one other ending (#5746).** `fetchCountedPages`
+  asks PostgREST for the exact count with the first page and stops once it
+  holds that many rows (or its `limit`), so a server cap still costs extra
+  round-trips rather than rows, and no empty request follows. It fits a read
+  whose caller wants the total anyway, or an uncapped read, to save the empty
+  page; a capped read whose total would be thrown away should not count, since
+  it already stops at its limit and the count is a second pass over every
+  matching row. The trade-off: it stops at the count taken with the first
+  page, so a row inserted between pages of a multi-page read drops the last
+  row where `fetchAllPages` would repeat one. The reports keep
+  `fetchAllPages`; Activity's task lists (`SupabaseTaskRepository.findByChapterCounted`)
+  count.
 - **Paged reads need a total order.** Every one sorts on the table's `id`,
   which is used for ordering and need not be projected. Offset paging over a
   non-unique sort key has no guaranteed order between statements, so rows

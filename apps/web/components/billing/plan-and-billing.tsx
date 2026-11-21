@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useBillingStatus, useCurrentUser, useInvoices } from "@repo/hooks";
 import { isBetaOffModule } from "@repo/validation";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 import { NestedOffline } from "@/components/shared/nested-states";
 import { PlanPanel } from "@/components/billing/plan-panel";
 import { PlanMatrix } from "@/components/billing/plan-matrix";
@@ -115,7 +115,7 @@ export function PlanAndBilling() {
     // own width, which the settings rail shares.
     <div className="@container space-y-10">
       {/*
-        No `PageActions` row: Create invoice is gated on both
+        No `PageActions` row: New invoice is gated on both
         `billing:manage` and the subscription, and lives in the invoice list's
         own toolbar beside the filter it shares state with.
       */}
@@ -185,7 +185,7 @@ function CancelOrClose({ status }: { status: string | null }) {
     status !== "incomplete" &&
     status !== "canceled" &&
     statusQuery.isPending &&
-    statusQuery.fetchStatus !== "paused";
+    !pausedRead(statusQuery);
   if (status === "incomplete" || status === "canceled") {
     cancelLine = "There is no subscription to cancel.";
   } else if (cancelLoading) {

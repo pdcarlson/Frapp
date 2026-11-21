@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
 } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Download,
@@ -17,13 +16,12 @@ import {
   Filter,
   Loader2,
   Merge,
-  MoreHorizontal,
   Pencil,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import {
-  selectDownloadUrl,
   useBackworkCourses,
   useBackworkResources,
   useDeleteBackworkResource,
@@ -36,18 +34,17 @@ import {
 import { MAX_BACKWORK_ZIP_LABEL, can } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
+import { PageActions } from "@/components/layout/page-actions";
 import { IconButton } from "@/components/ui/icon-button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   NestedError,
   NestedOffline,
 } from "@/components/shared/nested-states";
-import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
+import {
+  ActionMenuButton,
+  RowMenu,
+  type RowMenuEntry,
+} from "@/components/shared/row-menu";
 import { FilterChip } from "@/components/shared/filter-chip";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Can } from "@/components/shared/can";
@@ -59,10 +56,12 @@ import { BackworkTaxonomyDrawer } from "@/components/backwork/backwork-taxonomy-
 import { useBackworkTaxonomyActions } from "@/components/backwork/backwork-taxonomy-actions";
 import { useBackworkCourseDialog } from "@/components/backwork/backwork-course-dialog";
 import { BackworkUploadSheet } from "@/components/backwork/backwork-upload-sheet";
-import { BulkDropZone } from "@/components/backwork/bulk/drop-zone";
-import type { CollectedFiles } from "@/lib/backwork-bulk/collect-files";
+import { BulkDropZone } from "@/components/shared/bulk-drop-zone";
+import { DraftsWaitingNote } from "@/components/backwork/bulk/drafts-review";
+import type { CollectedFiles } from "@/lib/bulk-upload/collect-files";
 import { stageBulkUpload } from "@/lib/backwork-bulk/handoff";
 import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
+import { openBackworkFile } from "@/components/backwork/backwork-download";
 import {
   CopyLabel,
   Highlighted,
@@ -104,6 +103,7 @@ import {
 } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import { pausedRead } from "@/components/shared/async-states";
 
 /**
  * `/backwork`, rebuilt 2026-11-05 around the files instead of a filter form
@@ -136,13 +136,13 @@ const CHIPS: { key: ChipKey; label: string; anyLabel: string }[] = [
 
 /*
  * Columns from a 896px page (`@4xl`; the page root is a container, #4022,
- * and the fixed columns alone take ~700px). Below it a row stacks: title and course, then one
+ * and the fixed columns alone take ~760px; the Added column fits a written-out date such as "November 6, 2025"). Below it a row stacks: title and course, then one
  * wrapping line of tag, professor, term, copy and date, with the actions on
  * the right. The meta wrapper is `@4xl:contents`, so there its children become
  * grid cells and `@4xl:order-*` puts the type tag in the first column.
  */
 const ROW_GRID =
-  "@4xl:grid-cols-[112px_minmax(0,1fr)_140px_104px_128px_64px_76px]";
+  "@4xl:grid-cols-[112px_minmax(0,1fr)_140px_104px_128px_120px_76px]";
 
 
 /**
@@ -273,9 +273,7 @@ export function BackworkPage() {
     const id = row.resource.id;
     setDownloading((prev) => new Set(prev).add(id));
     try {
-      const url = selectDownloadUrl(await fetchResource(row.resource.id));
-      if (!url) throw new Error("No download URL returned.");
-      window.open(url, "_blank", "noopener");
+      await openBackworkFile(fetchResource, row.resource.id);
     } catch (error) {
       toast({
         title: "Couldn't fetch download link",
@@ -665,59 +663,69 @@ export function BackworkPage() {
               )}
             </IconButton>
           ) : null}
-          <Can permission="backwork:admin">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="toolbar"
-                  className="w-9 px-0 pointer-coarse:w-11"
-                  aria-label="More backwork options"
-                  title="More"
-                >
-                  <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[260px]">
-                <DropdownMenuItem
-                  disabled={!gate.allowed}
-                  aria-describedby={gate.controlProps()["aria-describedby"]}
-                  onSelect={() => setCleanupOpen(true)}
-                >
-                  <Pencil aria-hidden="true" />
-                  Clean up professors and departments
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {/* Portaled, so it can live beside the menu that opens it. */}
-            <BackworkTaxonomyDrawer
-              open={cleanupOpen}
-              onOpenChange={setCleanupOpen}
-              gate={gate}
-            />
-          </Can>
-          <Can permission="backwork:upload">
-            <Button asChild size="toolbar" variant="secondary" className="gap-2">
-              <Link href="/backwork/upload">
-                <FolderUp className="h-4 w-4" aria-hidden="true" /> Bulk upload
-              </Link>
-            </Button>
-          </Can>
-          <Can permission="backwork:upload">
-            <BackworkUploadSheet gate={gate}>
-              <Button
-                type="button"
-                size="toolbar"
-                className="gap-2"
-                {...gate.controlProps()}
-              >
-                Upload
-              </Button>
-            </BackworkUploadSheet>
-          </Can>
         </div>
       </section>
+
+      {/*
+        The page's actions, in its header (`page-actions.tsx`): Upload, and
+        one More menu for the rest (Bulk upload, and an admin's clean-up), so
+        the row fits beside chat at 375px.
+      */}
+      <PageActions>
+        {isAdmin || canUpload ? (
+          <ActionMenuButton
+            label="More backwork options"
+            entries={[
+              ...(canUpload
+                ? [
+                    {
+                      type: "item" as const,
+                      key: "bulk-upload",
+                      label: "Bulk upload",
+                      icon: FolderUp,
+                      href: "/backwork/upload",
+                    },
+                  ]
+                : []),
+              ...(isAdmin
+                ? [
+                    {
+                      type: "item" as const,
+                      key: "clean-up",
+                      label: "Clean up professors and departments",
+                      icon: Pencil,
+                      disabled: !gate.allowed,
+                      describedBy: gate.controlProps()["aria-describedby"],
+                      onSelect: () => setCleanupOpen(true),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        ) : null}
+        <Can permission="backwork:admin">
+          {/* Portaled, so it can live beside the menu that opens it. */}
+          <BackworkTaxonomyDrawer
+            open={cleanupOpen}
+            onOpenChange={setCleanupOpen}
+            gate={gate}
+          />
+        </Can>
+        <Can permission="backwork:upload">
+          <BackworkUploadSheet gate={gate}>
+            <Button
+              type="button"
+              size="toolbar"
+              variant="action"
+              className="gap-2"
+              {...gate.controlProps()}
+            >
+              <Upload className="h-4 w-4" aria-hidden="true" />
+              Upload
+            </Button>
+          </BackworkUploadSheet>
+        </Can>
+      </PageActions>
 
       {/*
         Disable, don't hide (§5 rule 4): the library stays browsable and
@@ -754,6 +762,7 @@ export function BackworkPage() {
             })
           }
         />
+        <DraftsWaitingNote />
       </Can>
 
       {truncated ? (
@@ -782,8 +791,7 @@ export function BackworkPage() {
             }}
           />
         ) : resourcesQuery.isLoading ||
-          (resourcesQuery.isPending &&
-            resourcesQuery.fetchStatus === "paused") ||
+          pausedRead(resourcesQuery) ||
           // Rows join departments and professors on the client; without them
           // a course reads as a bare number and search misses "cogs". Course
           // names are not waited on: rows show the department's name until

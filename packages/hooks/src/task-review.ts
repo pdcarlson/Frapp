@@ -1,0 +1,200 @@
+import {
+  formatActedLabel,
+  formatPointsChip,
+  isDueOverdue,
+} from "@repo/formatting";
+import { taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
+import type { LiveTask, LiveTaskPhoto } from "./task-card";
+
+/**
+ * An officer's review of a submitted task (#4693): what web's review in
+ * Activity's panel shows, in the order it shows it (the phone reviews on the
+ * task's own screen, #5513, and shares only `taskConfirmLabel` and
+ * `taskAwaitsReview`). Who handed it in and when, the
+ * proof (the thing being judged), the send-back it answers on a resubmission,
+ * the assignee's reply, and a Confirm that says what it pays. Chore apps with
+ * photo proof (S'moresUp, Chores Tracker) and Classroom's grader put the work
+ * first and name the payout on the approve button the same way.
+ */
+export interface TaskReview {
+  /** `"Submitted today at 9:04 PM"`, or `"Resubmitted …"` after a send-back. */
+  submitted: string | null;
+  resubmitted: boolean;
+  /** Against the due date: handed in `"on time"` or `"late"`; null without one. */
+  timing: "on time" | "late" | null;
+  /** `"Confirm · +10 pts"`, or `"Confirm"` for a task with no points. */
+  confirmLabel: string;
+  /** Why it was sent back, while this submission answers it. */
+  sentBackReason: string | null;
+  /** The assignee's reply sent with Mark done. */
+  note: string | null;
+  proofPhotos: LiveTaskPhoto[];
+  referencePhotos: LiveTaskPhoto[];
+  link: string | null;
+}
+
+/**
+ * Whether a live task is waiting on an officer's sign-off: marked done and
+ * not yet confirmed. The persisted status decides, since the display status
+ * can read OVERDUE.
+ */
+export function isAwaitingReview(
+  task: Pick<LiveTask, "confirmed_at"> & {
+    status?: string | null;
+    stored_status?: string | null;
+    points_awarded?: boolean | null;
+  },
+): boolean {
+  const stored = task.stored_status ?? task.status;
+  return stored === "COMPLETED" && !task.confirmed_at && !task.points_awarded;
+}
+
+/** Who is looking, for `taskAwaitsReview`. */
+export interface TaskReviewer {
+  viewerId: string | null;
+  /** `tasks:manage`, read with `can`, so an owner's `*` counts. */
+  canManage: boolean;
+}
+
+/**
+ * Whether a task waits on this viewer's sign-off (#5492, #5513): awaiting
+ * review (`isAwaitingReview`: marked done, not confirmed or paid), needing a
+ * sign-off (`taskNeedsSignOff`: points or proof), held by someone else (the
+ * API refuses a self-confirm), and the viewer holds `tasks:manage`. The
+ * phone's task screen and long-press menu offer Confirm by it.
+ */
+export function taskAwaitsReview(
+  task: {
+    assignee_id: string | null;
+    stored_status?: string | null;
+    confirmed_at: string | null;
+    points_awarded?: boolean | null;
+    point_reward: number | null;
+    proof_kind?: string | null;
+  },
+  reviewer: TaskReviewer,
+): boolean {
+  return (
+    reviewer.canManage &&
+    reviewer.viewerId !== null &&
+    task.assignee_id !== reviewer.viewerId &&
+    isAwaitingReview(task) &&
+    taskNeedsSignOff(task)
+  );
+}
+
+/**
+ * Confirm's words where it pays: `"Confirm · +10 pts"`, the payout named on
+ * the button, or `"Confirm"` for a task with no points. Web's review and the
+ * phone's task screen (#5513) both say it.
+ */
+export function taskConfirmLabel(
+  pointReward: number | null | undefined,
+): string {
+  return pointReward ? `Confirm · ${formatPointsChip(pointReward)}` : "Confirm";
+}
+
+export function taskReview(task: LiveTask, now: Date = new Date()): TaskReview {
+  // A task sent back and marked done again keeps its send-back stamp until
+  // it is confirmed: that is what makes this a resubmission.
+  const resubmitted = !!task.sent_back_at && !!task.completed_at;
+  const handedIn = task.completed_at ? new Date(task.completed_at) : null;
+  const timing =
+    task.due && handedIn && !Number.isNaN(handedIn.getTime())
+      ? isDueOverdue(task.due, handedIn)
+        ? "late"
+        : "on time"
+      : null;
+  const photos = task.photos ?? [];
+  return {
+    submitted: task.completed_at
+      ? formatActedLabel(
+          resubmitted ? "Resubmitted" : "Submitted",
+          task.completed_at,
+          now,
+        )
+      : null,
+    resubmitted,
+    timing,
+    confirmLabel: taskConfirmLabel(task.point_reward),
+    sentBackReason: resubmitted ? task.sent_back_reason : null,
+    note: task.completion_note?.trim() || null,
+    proofPhotos: photos.filter((photo) => photo.kind === "proof"),
+    referencePhotos: photos.filter((photo) => photo.kind === "reference"),
+    link: task.proof_link,
+  };
+}
+
+/**
+ * One-tap reasons on Send back (#4693), picked for what the task asked as
+ * proof: the common ways a photo or a link misses, and "Not finished" for
+ * all. Tapping one fills the reason, which the officer can still edit.
+ */
+export function sendBackReasonChips(
+  proofKind: TaskProofKind | null | undefined,
+): string[] {
+  switch (proofKind) {
+    case "photo":
+      return ["Photo doesn't show it", "Not finished", "Wrong photo"];
+    case "link":
+      return ["Link doesn't open", "Not finished", "Wrong link"];
+    default:
+      return ["Not finished", "Needs another look"];
+  }
+}
+
+/**
+ * The reason after a chip is tapped: the chip alone when nothing is typed,
+ * else added after what is, so a tap never throws typing away.
+ */
+export function withReasonChip(reason: string, chip: string): string {
+  const typed = reason.trim();
+  if (!typed) return chip;
+  if (typed.toLowerCase().includes(chip.toLowerCase())) return typed;
+  return `${typed.replace(/[.,;]+$/, "")}. ${chip}`;
+}
+
+/**
+ * Who marked a task done (#5732): `completed_by`, since an officer can mark
+ * a member's task done for them, else the assignee, on a completion from
+ * before the API kept it. Null when neither is known.
+ */
+export function taskCompletedBy(task: {
+  completed_by?: string | null;
+  assignee_id?: string | null;
+}): string | null {
+  return task.completed_by ?? task.assignee_id ?? null;
+}
+
+/**
+ * Who handed a task in, and when (#5732): the line both apps' task screens
+ * draw under the title while it stands done, so the state is the first thing
+ * read. "Moiz Steenhuis marked it done today at 12:05 AM", or "… marked it
+ * done again …" on a resubmission after a send-back. No line while the task
+ * is open, which a take-back makes it again.
+ *
+ * Who is `completed_by` (an officer can mark a member's task done for them),
+ * else the assignee, for a completion from before the API kept it. `nameOf`
+ * names the viewer as they want to be named in a sentence ("You").
+ */
+export function taskHandedInLine(
+  task: {
+    status?: string | null;
+    stored_status?: string | null;
+    completed_at: string | null;
+    completed_by?: string | null;
+    assignee_id?: string | null;
+    sent_back_at?: string | null;
+  },
+  nameOf: (userId: string) => string,
+  now: Date = new Date(),
+): string | null {
+  const stored = task.stored_status ?? task.status;
+  if (stored !== "COMPLETED" || !task.completed_at) return null;
+  const who = taskCompletedBy(task);
+  const name = who ? nameOf(who) : "Someone";
+  // It opens the line: "you" from an in-sentence `nameOf` reads "You".
+  const subject = name.charAt(0).toUpperCase() + name.slice(1);
+  const verb = task.sent_back_at ? "marked it done again" : "marked it done";
+  return formatActedLabel(`${subject} ${verb}`, task.completed_at, now);
+}

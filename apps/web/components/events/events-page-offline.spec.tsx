@@ -38,24 +38,20 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
 }));
 
-vi.mock("@repo/hooks", () => ({
-  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
-  useChapterRoster: () => ({ data: [] }),
-  useCurrentChapter: () => mockCurrentChapter(),
-  useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
-  useActiveChapterId: () => "chap-1",
-  useAttendance: () => ({ data: [], isPending: false, isError: false }),
-  useMembers: () => ({ data: [], isPending: false, isError: false }),
-  useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useMyPermissions: () => ({
-    data: { permissions: ["events:update", "events:create", "members:view"] },
-  }),
-  useEvents: () => eventsQuery,
-  useNow: () => Date.parse("2026-09-01T12:00:00Z"),
+// "This time last year" (#3930) has its own spec.
+vi.mock("@/components/ai/suggested-events", () => ({
+  SuggestedEvents: () => null,
+  useRecordPlannedEvent: () => async () => undefined,
 }));
+
+vi.mock("@repo/hooks", async () => {
+  const { eventsPageHooks } = await import("@/tests/events-page");
+  return eventsPageHooks({
+    useCurrentChapter: () => mockCurrentChapter(),
+    useEvents: () => eventsQuery,
+    useNow: () => Date.parse("2026-09-01T12:00:00Z"),
+  });
+});
 
 // The viewer whose last view (List or Calendar) the page reads; no stored
 // choice unless a test writes one.
@@ -144,14 +140,16 @@ describe("EventsPage offline read path (#1621)", () => {
 });
 
 describe("EventsPage offline write gating (#1753)", () => {
-  it("disables calendar day-create with the reason on the control", async () => {
+  it("disables the hour grid's create with the reason on the control", async () => {
     // The calendar hand-wired `!allowed` / `noticeId` instead of
     // `controlProps()`, so the first attempt at this gate left day numbers
     // with a dangling aria-describedby and no title.
     networkState.isOffline = true;
     render(<EventsPage />);
 
-    await userEvent.click(screen.getByRole("radio", { name: /calendar/i }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Hours for Today" }),
+    );
     const dayCreate = screen.getAllByRole("button", {
       name: /create event on/i,
     })[0];

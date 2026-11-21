@@ -14,7 +14,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { reportedContentSnapshot } from '../../src/application/services/chat-report.service';
-import { tombstoneMetadata } from '../../src/application/services/chat.service';
+import { tombstoneMetadata } from '../../src/application/services/chat-block-mask';
 import { SupabaseChatMessageReportRepository } from '../../src/infrastructure/supabase/repositories/supabase-chat-message-report.repository';
 import { SupabaseChatMessageRepository } from '../../src/infrastructure/supabase/repositories/supabase-chat-message.repository';
 import type { FrappSupabaseClient } from '../../src/infrastructure/supabase/database.types';
@@ -141,11 +141,15 @@ describeIntegration('Chat report evidence against live PostgREST', () => {
       content: '[message deleted]',
       is_deleted: true,
       metadata: tombstoneMetadata(poll!),
+      payload: null,
     });
     const tombstone = await messages.findById(pollId);
     expect(tombstone).toMatchObject({
       is_deleted: true,
       content: '[message deleted]',
+      // The options are gone from the message (#1575); the report's snapshot
+      // below is the only copy left, which is the point of taking it.
+      payload: null,
     });
 
     const [report] = await reports.findByChapterAndStatus(

@@ -3,8 +3,11 @@ import {
   CHECK_IN_GRACE_MINUTES,
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   MAX_CHECK_IN_OPENS_MINUTES,
+  CHECK_IN_OPENS_ERROR,
+  checkInOpenAt,
   checkInOpensMinutes,
   checkInWindowBounds,
+  parseCheckInOpens,
 } from "./check-in-window";
 
 describe("checkInOpensMinutes", () => {
@@ -36,8 +39,58 @@ describe("checkInWindowBounds", () => {
   });
 
   it("opens ten minutes early for a row without a lead", () => {
-    expect(checkInWindowBounds(start, end, undefined).opensAt.toISOString()).toBe(
-      "2026-11-07T19:50:00.000Z",
+    expect(
+      checkInWindowBounds(start, end, undefined).opensAt.toISOString(),
+    ).toBe("2026-11-07T19:50:00.000Z");
+  });
+});
+
+describe("parseCheckInOpens", () => {
+  it("reads whole minutes up to the cap, and an empty field as the default", () => {
+    expect(parseCheckInOpens(" 30 ")).toBe(30);
+    expect(parseCheckInOpens("0")).toBe(0);
+    expect(parseCheckInOpens(String(MAX_CHECK_IN_OPENS_MINUTES))).toBe(
+      MAX_CHECK_IN_OPENS_MINUTES,
     );
+    expect(parseCheckInOpens("")).toBe(DEFAULT_CHECK_IN_OPENS_MINUTES);
+  });
+
+  it("refuses a fraction, a sign, words, or a lead past the cap", () => {
+    for (const input of [
+      "2.5",
+      "-5",
+      "ten",
+      String(MAX_CHECK_IN_OPENS_MINUTES + 1),
+    ]) {
+      expect(parseCheckInOpens(input)).toBeNull();
+    }
+    expect(CHECK_IN_OPENS_ERROR).toContain(String(MAX_CHECK_IN_OPENS_MINUTES));
+  });
+});
+
+describe("checkInOpenAt", () => {
+  const start = new Date("2026-11-19T19:00:00.000Z");
+  const end = new Date("2026-11-19T20:00:00.000Z");
+  const at = (iso: string) => new Date(iso).getTime();
+
+  it("opens its lead before the start and stays open through the grace after the end", () => {
+    expect(checkInOpenAt(start, end, 10, at("2026-11-19T18:49:59.000Z"))).toBe(
+      false,
+    );
+    expect(checkInOpenAt(start, end, 10, at("2026-11-19T18:50:00.000Z"))).toBe(
+      true,
+    );
+    expect(checkInOpenAt(start, end, 10, at("2026-11-19T20:15:00.000Z"))).toBe(
+      true,
+    );
+    expect(checkInOpenAt(start, end, 10, at("2026-11-19T20:15:01.000Z"))).toBe(
+      false,
+    );
+  });
+
+  it("takes the default lead when the event doesn't say", () => {
+    expect(
+      checkInOpenAt(start, end, undefined, at("2026-11-19T18:50:00.000Z")),
+    ).toBe(true);
   });
 });

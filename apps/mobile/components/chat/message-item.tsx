@@ -12,7 +12,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from "react-native";
-import type { ChatMessage } from "@repo/chat-core/types";
+import type { ChatMessage, ThreadLastReply } from "@repo/chat-core/types";
 import {
   messageFlagCaption,
   type MessageFlagView,
@@ -54,10 +54,12 @@ import {
 import { useMentionChips } from "@repo/hooks/mention-chips";
 import { MemberAvatar } from "@/components/member-avatar";
 import { AlertGlyph } from "@/components/control-glyphs";
-import { ThreadChip } from "./thread-chip";
+import { PinGlyph } from "@/components/documents/document-glyphs";
+import { ThreadChip, threadCardMiddle } from "./thread-chip";
 import { initialsFor } from "@/lib/chat/display-name";
 import { useChatDensity } from "@/lib/chat/chat-density";
 import { MessageAttachments } from "./message-attachments";
+import { MessageGifImage } from "./message-gif";
 import {
   linkA11yActions,
   MessageMarkdown,
@@ -65,6 +67,7 @@ import {
   runLinkA11yAction,
   type MessageLink,
 } from "./message-markdown";
+import { ForwardedCard } from "./forwarded-card";
 import { ReplyQuote } from "./reply-quote";
 
 /**
@@ -112,7 +115,7 @@ export interface MessageItemProps {
    */
   nameFor: (userId: string) => string | null;
   /**
-   * Resolves a `users.id` to the palette color of the member's top colored
+   * Resolves a `users.id` to the paintable color of the member's top colored
    * role (#3485), which paints their name on the author line. Optional: a
    * surface without a roster draws plain names, which is a fine degradation.
    */
@@ -154,6 +157,13 @@ export interface MessageItemProps {
    */
   replyParentHidden?: string;
   /**
+   * What a forward's card says in place of its copy when the viewer's block
+   * list hides the original's author (`hiddenForwardedText` in
+   * `@repo/chat-core/blocks`), or `null` to draw the copy (#4864). Decided in
+   * `thread-message-row.tsx`, beside `replyParentHidden`.
+   */
+  forwardedHidden?: string | null;
+  /**
    * Opens the message actions sheet (react, reply, edit, copy, mention,
    * report, delete; Block is on its report form — #2257, #2775). Passed only for a row that offers them
    * (`canOpenMessageActions` in `@repo/chat-core/message-actions`): a confirmed, undeleted
@@ -169,7 +179,7 @@ export interface MessageItemProps {
   /**
    * Opens a member's profile by `users.id`: the author's from their name or
    * photo, or a mentioned member's from an `@` chip. Optional, so a surface
-   * with no profile sheet draws plain names.
+   * with no member profile draws plain names.
    */
   onOpenProfile?: (userId: string) => void;
   /**
@@ -178,6 +188,16 @@ export interface MessageItemProps {
    * chip as a plain label.
    */
   onOpenThread?: () => void;
+  /** Replies in this message's thread new to the viewer (#4297). */
+  threadUnread?: number;
+  /**
+   * The thread's latest reply to preview on the card (#4297), already cleared
+   * against the viewer's block list by the row (`threadPreviewVisible`);
+   * `null` or absent draws none.
+   */
+  threadPreview?: ThreadLastReply | null;
+  /** A member's photo by id, for the thread card's faces (#4297). */
+  memberAvatarFor?: (userId: string) => string | null;
   /**
    * The flag a member put on the message (#3921), as the thread resolved it
    * against the viewer's block list (`messageFlagView` in
@@ -187,7 +207,7 @@ export interface MessageItemProps {
 }
 
 /** The author's profile, as a named action beside the message actions. */
-export const OPEN_PROFILE_A11Y_LABEL = "Open profile";
+const OPEN_PROFILE_A11Y_LABEL = "Open profile";
 const OPEN_PROFILE_ACTION: AccessibilityActionInfo = {
   name: "openProfile",
   label: OPEN_PROFILE_A11Y_LABEL,
@@ -352,6 +372,7 @@ export function MessageRowFrame({
   authorInline = false,
   onOpenProfile,
   flag,
+  threadSpine = null,
   children,
 }: {
   message: ChatMessage;
@@ -382,17 +403,23 @@ export function MessageRowFrame({
   onOpenProfile?: (userId: string) => void;
   /** The row's flag (#3921); see `MessageItemProps`. */
   flag?: MessageFlagView | null;
+  /**
+   * The row ends in a thread card (#4297): in cozy a connector runs down the
+   * gutter from the author's photo and curves into the card's edge, as web's
+   * does. Compact and Bubbles draw the card alone.
+   */
+  threadSpine?: { hasPreview: boolean } | null;
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   // A row that @-mentions the viewer wears the chapter accent the way Discord
   // marks one (components.md §11, see `MentionHighlight`). The list is the
-  // server's (`chat_messages.mentions`), the same set the notifier used, and a
-  // viewer's own message never lights up.
+  // server's (`chat_messages.mentions`), the same set the notifier used. A
+  // viewer's own message lights up too when it reaches them (their own
+  // `@here`, a role they hold), as on Discord (Paul, 2026-11-13).
   const mentionsViewer =
     !!viewerId &&
-    message.sender_id !== viewerId &&
     // A deleted message no longer counts as a mention anywhere else (the
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
@@ -524,6 +551,19 @@ export function MessageRowFrame({
         </>
       ) : (
         <View style={styles.main}>
+          {threadSpine ? (
+            <View
+              pointerEvents="none"
+              testID="thread-spine"
+              style={[
+                styles.threadSpine,
+                {
+                  top: startsRun ? MESSAGE_AVATAR_SIZE + 4 : 4,
+                  bottom: threadCardMiddle(threadSpine.hasPreview),
+                },
+              ]}
+            />
+          ) : null}
           {startsRun ? (
             <RowAvatar
               message={message}
@@ -589,7 +629,7 @@ export function MessageRowFrame({
  * `@repo/hooks` resolves the name: `sender_id` is nullable, so an imported
  * archive message has no roster entry and names its author in `author_name`.
  * Every name, the viewer's own "You" included, takes the author's role color
- * (a contrast-checked palette value) or else the foreground text, and never
+ * (a contrast-checked value, `roleColorOrNull`) or else the foreground text, and never
  * the chapter accent (foundations.md §6, "Where the accent goes").
  */
 function rowAuthor(
@@ -659,20 +699,50 @@ function CompactLead({
 }
 
 /**
- * `· Pinned` in the muted trailing text, like `(edited)` beside it. A marker
- * is metadata, so it never takes the chapter accent (foundations.md §6,
- * "Where the accent goes").
+ * The pin glyph and `Pinned` in the muted trailing text, like `(edited)`
+ * beside it, as web draws it (#4136: the phone drew `· Pinned` with no glyph).
+ * A marker is metadata, so it never takes the chapter accent (foundations.md
+ * §6, "Where the accent goes"). The glyph rides the line inline, at the
+ * caption's size, in the text's own colour.
  */
-export function PinnedMarker({
+function PinnedMarker({
   style,
   lead = true,
 }: {
-  style: ReturnType<typeof createStyles>["trailing"];
-  /** Whether it follows text on its line, and so needs the " · " before it. */
+  style: StyleProp<TextStyle>;
+  /** Whether it follows text on its line, and so needs space before it. */
   lead?: boolean;
 }) {
-  return <Text style={style}>{lead ? " · Pinned" : "Pinned"}</Text>;
+  const color = StyleSheet.flatten(style)?.color;
+  return (
+    <Text style={style}>
+      {lead ? " " : ""}
+      <PinGlyph
+        color={typeof color === "string" ? color : "currentColor"}
+        size={PIN_MARKER_SIZE}
+        on
+      />
+      {" Pinned"}
+    </Text>
+  );
 }
+
+/** {@link PinnedMarker} in the viewer's bubble, in its contrast colour. */
+function SelfPinnedMarker({
+  style,
+  lead,
+}: {
+  style: StyleProp<TextStyle>;
+  lead: boolean;
+}) {
+  const { accentOnPrimary } = useChapterBranding();
+  return (
+    <PinnedMarker style={[style, { color: accentOnPrimary }]} lead={lead} />
+  );
+}
+
+/** The caption role's size, so the glyph sits at the marker's height. */
+const PIN_MARKER_SIZE = 13;
 
 /**
  * The trailing markers on a line of their own, under whatever the row draws
@@ -713,10 +783,14 @@ export function MessageItem({
   onUnreact,
   replyParent,
   replyParentHidden,
+  forwardedHidden = null,
   onOpenActions,
   onJumpToParent,
   onOpenProfile,
   onOpenThread,
+  threadUnread = 0,
+  threadPreview = null,
+  memberAvatarFor,
   flag,
 }: MessageItemProps) {
   const { tokens } = useFrappTheme();
@@ -729,14 +803,18 @@ export function MessageItem({
   // address. Web gates the same affordance on the same condition.
   const isConfirmed = message._status === "confirmed";
   const reactions = groupReactions(message, viewerId);
-  // The thread chip (#3785): under the reactions, on the speaker's side in
-  // Bubbles. A deleted parent keeps it, so its replies stay reachable.
+  // The thread card (#3785, #4297): under the reactions, on the speaker's
+  // side in Bubbles. A deleted parent keeps it, so its replies stay reachable.
   const threadChip = (align: "start" | "end") =>
     message.thread ? (
       <ThreadChip
         summary={message.thread}
         nameFor={nameFor}
         roleColorFor={roleColorFor}
+        avatarFor={memberAvatarFor}
+        unread={threadUnread}
+        preview={threadPreview}
+        viewerId={viewerId}
         onPress={onOpenThread}
         align={align}
         onImportantRow={flag?.important === true}
@@ -757,18 +835,34 @@ export function MessageItem({
   // `Pressable`, and an inner Pressable claims the touch, so without it a long
   // press on a photo — the whole of a photo-only message since #2464 — would
   // open the file instead of the actions the rest of the row opens.
-  const attachments =
-    !message.is_deleted && message.attachment_count > 0 ? (
-      <MessageAttachments
-        channelId={message.channel_id}
-        messageId={message.id}
-        count={message.attachment_count}
-        clientMessageId={message.client_message_id}
-        confirmed={isConfirmed}
-        photos={message.attachment_photos}
-        onLongPress={onOpenActions}
-      />
-    ) : null;
+  const attachments = message.is_deleted ? null : message.gif ? (
+    // A GIF message (#4631) is the GIF: no text, no files.
+    <MessageGifImage gif={message.gif} onLongPress={onOpenActions} />
+  ) : message.attachment_count > 0 ? (
+    <MessageAttachments
+      channelId={message.channel_id}
+      messageId={message.id}
+      count={message.attachment_count}
+      clientMessageId={message.client_message_id}
+      confirmed={isConfirmed}
+      photos={message.attachment_photos}
+      onLongPress={onOpenActions}
+    />
+  ) : null;
+
+  // A forward's card (#4864), under the forwarder's comment, or alone when
+  // there is none. Not on a deleted row: the server nulls the copy with the
+  // content, and a tombstone carries no one's words.
+  const forwardedCopy = message.is_deleted ? null : message.forwarded_from;
+  const forwardedCard = forwardedCopy ? (
+    <ForwardedCard
+      forwarded={forwardedCopy}
+      hidden={forwardedHidden}
+      nameFor={nameFor}
+      viewerId={viewerId}
+      onLongPress={onOpenActions}
+    />
+  ) : null;
 
   // Parsed once per content, for the body and for its links' accessibility
   // actions, so the actions name exactly the links drawn.
@@ -907,11 +1001,12 @@ export function MessageItem({
                     edited || pinned ? (
                       <SelfText style={styles.trailing}>
                         {edited ? `${ownLine ? "" : " "}${EDITED_MARKER}` : ""}
-                        {pinned
-                          ? edited || !ownLine
-                            ? " · Pinned"
-                            : "Pinned"
-                          : ""}
+                        {pinned ? (
+                          <SelfPinnedMarker
+                            style={styles.trailing}
+                            lead={edited || !ownLine}
+                          />
+                        ) : null}
                       </SelfText>
                     ) : undefined
                   }
@@ -924,6 +1019,7 @@ export function MessageItem({
             </Bubble>
           </View>
         ) : null}
+        {forwardedCard}
         {attachments && pending ? (
           <View style={styles.pendingFiles}>{attachments}</View>
         ) : (
@@ -973,6 +1069,7 @@ export function MessageItem({
       quote={quote}
       flag={flag}
       authorInline={leadsWithAuthor}
+      threadSpine={message.thread ? { hasPreview: !!threadPreview } : null}
       onOpenActions={onOpenActions}
       onOpenProfile={onOpenProfile}
       // The body's container carries the jump when there is text; a photo-only
@@ -993,6 +1090,7 @@ export function MessageItem({
           {text}
         </View>
       ) : null}
+      {forwardedCard}
       {attachments && pending ? (
         <View style={styles.pendingFiles}>{attachments}</View>
       ) : (
@@ -1134,10 +1232,7 @@ function BubbleRowFrame({
   children: ReactNode;
 }) {
   const mentionsViewer =
-    !!viewerId &&
-    message.sender_id !== viewerId &&
-    !message.is_deleted &&
-    message.mentions.includes(viewerId);
+    !!viewerId && !message.is_deleted && message.mentions.includes(viewerId);
   const { authorName, authorLabel, roleColor } = rowAuthor(
     message,
     nameFor,
@@ -1465,7 +1560,10 @@ function ImportantHighlight({ style }: { style: StyleProp<ViewStyle> }) {
     <View
       testID="message-flag-important"
       pointerEvents="none"
-      style={[style, { backgroundColor: tint(danger), borderLeftColor: danger }]}
+      style={[
+        style,
+        { backgroundColor: tint(danger), borderLeftColor: danger },
+      ]}
     />
   );
 }
@@ -1847,6 +1945,18 @@ function createStyles(tokens: SignetTokens) {
     // the first row's. Stretches to the row's height so a screen reader's
     // focus ring on it covers the row.
     gutter: { width: MESSAGE_AVATAR_SIZE, alignSelf: "stretch" },
+    // The thread card's connector (#4297): from under the photo, down the
+    // gutter's middle, curving into the card's left edge (the column starts
+    // one gap past the gutter).
+    threadSpine: {
+      position: "absolute",
+      left: MESSAGE_AVATAR_SIZE / 2 - 1,
+      width: MESSAGE_AVATAR_SIZE / 2 + 1 + tokens.spacing.md,
+      borderLeftWidth: 2,
+      borderBottomWidth: 2,
+      borderBottomLeftRadius: 10,
+      borderColor: tokens.color.border.hairline,
+    },
     // Compact's follow-on handle: the row's 16pt left inset, its full height.
     gutterInset: {
       position: "absolute",

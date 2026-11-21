@@ -1,4 +1,12 @@
 import "@testing-library/jest-dom";
+import { afterEach } from "vitest";
+import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
+
+// Kept form drafts live in module memory for the tab (#4593); one test's
+// draft must not open in the next test's form.
+afterEach(() => {
+  dropAllKeptDrafts();
+});
 
 // Radix UI primitives (Dialog, Switch, Select) and cmdk rely on a handful of
 // DOM APIs that jsdom does not implement. Stub them (only when missing) so

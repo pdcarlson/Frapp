@@ -14,6 +14,7 @@ Kinds:
 
 - `image` — avatars and chapter logos: `image/jpeg`, `image/png`, `image/gif`, `image/webp`
 - `proof` — service-hour receipts: images plus `application/pdf`
+- `task_photo` — a task's reference photo and its proof of completion (#4565): images only, mirrored by the `tasks` bucket
 - `document` — chapter files, backwork, and chat attachments: images, PDF, Open XML Office (`.docx`/`.xlsx`/`.pptx`), **legacy Office** (`application/msword`, `application/vnd.ms-excel`, `application/vnd.ms-powerpoint` — `.doc`/`.xls`/`.ppt`), `text/plain`, `text/csv`
 - `archive` — Discord archive import only, on **both** its paths: the signed-URL upload path (`DiscordImportService`) and the bot export path (`DiscordExportWorkerService`). A wider set including video and audio, and a 100 MB ceiling (`MAX_ARCHIVE_UPLOAD_BYTES`, in `apps/api/src/domain/constants/discord-archive-limits.ts`). It is held **off** `MAX_UPLOAD_BYTES` and off the `document` list on purpose — widening those to cover a one-off import would raise the ceiling on every member upload. SVG stays absent here too. See the header comment in `packages/validation/src/upload-allowlists.ts`. On the bot path a type Discord leaves blank or reports as `application/octet-stream` is read from the file's extension against this list (`attachmentContentType`), so a `.heic` photo stores as `image/heic`; a file with neither is skipped with a warning, since storage would refuse it untyped (2026-11-06).
 
@@ -33,7 +34,7 @@ Enforcement is in `discord_import_register_files`, the SQL function **both** imp
 
 These are **abuse ceilings, not a capacity plan** for the hosted project; what the hosted projects hold is [`supabase.md` § Plan and quotas](../ops/deployment/supabase.md#plan-and-quotas). They carry the same issuance-only caveat as everything else in this section: `byte_size` is client-declared on the upload path, and NULL on any row whose size was never known, so the ledger can under-count real storage. A control that cannot be under-declared needs reconciliation against storage listings, which is the retention-sweep shape in #1246.
 
-The five signed-upload-URL requests (chat, backwork, chapter documents, service-entry proof, profile photo) also accept an optional `size_bytes`, checked with `isWithinUploadSizeLimit` before the URL is issued. It has the same issuance-only caveat as §1's content-type gate: the field is optional and nothing forces a caller to send an accurate value — a caller can omit it entirely, exactly as every client did before this field existed. So the bucket's `file_size_limit` column remains the only gate that actually constrains the bytes written to storage; the request-level check only turns a declared oversize into a readable 400 instead of a failed or wasted PUT.
+The six signed-upload-URL requests (chat, backwork, chapter documents, service-entry proof, task photos, profile photo) also accept an optional `size_bytes`, checked with `isWithinUploadSizeLimit` before the URL is issued. It has the same issuance-only caveat as §1's content-type gate: the field is optional and nothing forces a caller to send an accurate value — a caller can omit it entirely, exactly as every client did before this field existed. So the bucket's `file_size_limit` column remains the only gate that actually constrains the bytes written to storage; the request-level check only turns a declared oversize into a readable 400 instead of a failed or wasted PUT.
 
 ### 4. Filenames in storage paths
 **The traversal guard is the storage chokepoint, not the services.** Every object operation in `SupabaseStorageService` (`apps/api/src/infrastructure/storage/supabase-storage.service.ts`), including `getSignedUploadUrl`, runs `assertSafeObjectPath` before it reaches storage (list calls check their prefix the same way). It throws `BadRequestException` when `isUnsafeStoragePath` (`apps/api/src/domain/utils/storage-path.ts`) finds an empty, `.` or `..` segment however it is spelled (`%2e`, a backslash, `%2f` or `%5c` as a separator), or any control character. The spellings it must catch are tested in the `path containment` table of `supabase-storage.service.spec.ts`. A new storage call goes through `IStorageProvider`, never straight to `supabase.storage`, or it skips this guard.
@@ -55,6 +56,7 @@ The `image/svg+xml` content type and `.svg` extension must **never** be included
 - `UserService` (avatars) — kind `image`
 - `ChapterService` (logos) — kind `image`
 - `ServiceEntryService` (proof) — kind `proof`
+- `TaskService` (task photos) — kind `task_photo`
 - `ChapterDocumentService` (chapter files) — kind `document`
 - `BackworkService` (academic library) — kind `document`
 - `ChatAttachmentService` — kind `document`

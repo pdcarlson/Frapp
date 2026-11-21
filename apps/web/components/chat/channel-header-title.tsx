@@ -19,11 +19,14 @@ export function ChannelHeaderTitle({
   channel,
   name,
   description,
+  placeholder = "Pick a channel",
 }: {
   channel: Pick<ChannelStartChannel, "name" | "type"> | null;
   /** The title a member recognises: a DM's resolved name, not its stored id. */
   name: string;
   description: string | null;
+  /** The title with nothing open: Direct messages asks for a conversation (#3774). */
+  placeholder?: string;
 }) {
   return (
     <div
@@ -57,7 +60,7 @@ export function ChannelHeaderTitle({
             <span className="truncate">{name}</span>
           </>
         ) : (
-          "Pick a channel"
+          placeholder
         )}
       </h2>
       {/* The dot is decoration: the name is the heading and the description its own paragraph. */}

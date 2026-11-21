@@ -44,11 +44,22 @@
 // runs that spec in this job, so a missing extension fails the same PR. A
 // missing role does not: migrations guard role-targeted statements on
 // `pg_roles`, so both harnesses skip them silently.
+//
+// The same job also applies every migration to a real Postgres service
+// container (`pgvector/pgvector:pg17`, see `ci.yml`) for the two-connection
+// lock harness in `scripts/db-race/`. That image has contrib and `vector` and
+// nothing else, so an extension outside those needs the image changed too.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import {
+  AUTH_STUBS_SQL,
+  DEFAULT_PRIVILEGES_SQL,
+  SUPABASE_ROLES_SQL,
+} from "./bootstrap.mjs";
 import { REPO_ROOT, db, missing } from "./harness.mjs";
+import { runTiers } from "./tier-list.mjs";
 
 const MIGRATIONS_DIR = join(REPO_ROOT, "supabase", "migrations");
 
@@ -61,75 +72,14 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-// PGlite ships without the `auth.*` namespace Supabase RLS policies reference.
-// Stub the three functions so policy DDL parses. These are the DEFAULTS: the
-// black-box tiers (`tiers/chat-*.mjs`) replace `auth.uid()` and `auth.role()` per
-// scenario to impersonate a signed-in or anonymous client, and read the tables
-// through non-owner probe roles granted `authenticated` or `anon`. So this gate does
-// verify enforcement, not only presence — what stays with the NestJS Jest tier
-// is a real GoTrue-minted JWT (claims beyond `sub`/`role`), per ADR-11/ADR-12.
-await db.exec(`
-  create schema if not exists auth;
-  create or replace function auth.uid()  returns uuid language sql as $$ select null::uuid $$;
-  create or replace function auth.role() returns text language sql as $$ select 'service_role'::text $$;
-  create or replace function auth.jwt()  returns jsonb language sql as $$ select '{}'::jsonb $$;
-`);
-
-// Stand up Supabase's four roles BEFORE applying migrations. Migrations wrap
-// policy, grant and revoke statements in `if exists (select 1 from pg_roles
-// where rolname = '<role>')` — the repo's dominant idiom for anything that
-// targets a Supabase role, because the roles exist on hosted Supabase but not
-// in a bare Postgres. Without a role here, every block guarded on it is skipped
-// silently, so the harness validates a schema the hosted project does not run.
-//
-// That was a live false-PASS, not a theoretical one (#423): a permissive
-// `create policy ... to authenticated using (true)` written in that idiom left
-// this entire script green while handing every signed-in client every row of
-// the table. Creating `authenticated` is what makes the black-box tiers below
-// see the policies they exist to check, and it exercises the `to
-// authenticated` clause itself (`v_role_clause`).
-//
-// The other three close the same class for their own guards (#1557): about 35
-// blocks guard on `anon` and 34 on `service_role`. A `revoke ... from anon`
-// naming the wrong function signature is the case that matters: with the role
-// absent the statement never ran, this job stayed green, and `supabase db
-// push` aborted on the hosted project, where the role exists.
-// `supabase_auth_admin` guards the custom-access-token hook's grants and its
-// two `auth_admin_can_read_*` policies, which now exist here too.
-//
-// Attributes follow the local Supabase image's `pg_roles`, except LOGIN, which
-// nothing here uses: `service_role` alone bypasses RLS, `supabase_auth_admin`
-// is NOINHERIT and CREATEROLE, and neither client role is a member of the
-// other. The last is the one that matters, because a policy binds every
-// member of the roles it names.
-await db.exec(`
-  create role authenticated nologin;
-  create role anon nologin;
-  create role service_role nologin bypassrls;
-  create role supabase_auth_admin nologin noinherit createrole;
-`);
-
-// Supabase's default privileges for objects the migration role creates in
-// `public`, as hosted's `pg_default_acl` has them (and the local image's, read
-// 2026-11-07): tables, sequences and functions all go to `anon`,
-// `authenticated` and `service_role` directly, with no PUBLIC entry on
-// functions (#3052, #830). Without them a function here was callable by `anon`
-// only through PUBLIC, so a migration that revoked PUBLIC alone, or a
-// drop/recreate that forgot its `revoke ... from anon`, passed this job while
-// the hosted project kept a direct `anon` grant. That is how three definer
-// functions stayed callable with the publishable key. The grant assertions in
-// `rls-smoke.mjs` and the tiers read the result; the hosted-side
-// `has_function_privilege` checks in the promotion log stay as confirmation.
-// Table grants do not open a table: every `public` table enables RLS, which
-// `rls-smoke.mjs` asserts, so a grant without a policy still reads no rows.
-await db.exec(`
-  alter default privileges in schema public
-    grant all on tables to anon, authenticated, service_role;
-  alter default privileges in schema public
-    grant usage, select, update on sequences to anon, authenticated, service_role;
-  alter default privileges in schema public
-    grant execute on functions to anon, authenticated, service_role;
-`);
+// What a bare Postgres needs before the migrations apply as they do on hosted
+// Supabase: the `auth.*` stubs, Supabase's four roles, and its default
+// privileges. Why each matters for this gate (#423, #1557, #3052) is written
+// beside the SQL in `bootstrap.mjs`, which the two-connection lock harness
+// (`scripts/db-race/`) applies too.
+await db.exec(AUTH_STUBS_SQL);
+await db.exec(SUPABASE_ROLES_SQL);
+await db.exec(DEFAULT_PRIVILEGES_SQL);
 
 const migrationResults = [];
 const tApplyStart = performance.now();
@@ -171,51 +121,10 @@ if (failed.length > 0) {
 
 // ─── Tiers ──────────────────────────────────────────────────────────────────
 //
-// Each tier is a module under `tiers/` whose body runs when it is imported.
-// They share one database and run in this order, each awaited before the next
-// starts: two sibling static imports with top-level `await` are not
-// guaranteed to finish in order, so the order lives here, as awaited dynamic
-// imports. Several tiers open and roll back their own transaction, and the
-// chat read-enforcement fixtures stay seeded across the two chat tiers, so
-// reordering them is a behaviour change, not a tidy-up.
-await import("./tiers/schema-and-rls-smoke.mjs");
-await import("./tiers/policy-inventory.mjs");
-await import("./tiers/anonymize-user.mjs");
-await import("./tiers/chat-read-enforcement.mjs");
-await import("./tiers/chat-black-box.mjs");
-await import("./tiers/attachment-backfill.mjs");
-await import("./tiers/chapter-directory-seed.mjs");
-await import("./tiers/demo-seed.mjs");
-await import("./tiers/security-definer-search-path.mjs");
-await import("./tiers/points-leaderboard.mjs");
-await import("./tiers/subscription-webhook-cas.mjs");
-await import("./tiers/hide-direct-message.mjs");
-await import("./tiers/private-channel-members.mjs");
-await import("./tiers/sidebar-section-fold.mjs");
-await import("./tiers/unread-counts-blocked-sender.mjs");
-await import("./tiers/unread-counts-skip-audit-mirror.mjs");
-await import("./tiers/channel-latest-messages.mjs");
-await import("./tiers/message-threads.mjs");
-await import("./tiers/discord-author-links.mjs");
-await import("./tiers/discord-import-purge.mjs");
-await import("./tiers/discord-import-merge-target.mjs");
-await import("./tiers/discord-import-channel-groups.mjs");
-await import("./tiers/discord-import-category-progress.mjs");
-await import("./tiers/dm-one-per-pair.mjs");
-await import("./tiers/document-one-row-per-object.mjs");
-await import("./tiers/default-channel-descriptions.mjs");
-await import("./tiers/backwork-search.mjs");
-await import("./tiers/members-keep-base-role.mjs");
-await import("./tiers/transfer-presidency-keeps-member-access.mjs");
-await import("./tiers/check-in-once.mjs");
-await import("./tiers/activity-links.mjs");
-await import("./tiers/role-tiers.mjs");
-await import("./tiers/fold-custom-roles.mjs");
-await import("./tiers/document-stars.mjs");
-await import("./tiers/channel-order.mjs");
-await import("./tiers/event-types.mjs");
-await import("./tiers/activity-item-reads.mjs");
-await import("./tiers/chat-channel-access-lists.mjs");
+// Every file in `tiers/`, in filename order, each awaited before the next
+// starts. Adding a tier is adding its file. How the order is set, and what a
+// tier that needs a place in it does: `tier-list.mjs`.
+await runTiers();
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

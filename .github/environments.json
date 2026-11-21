@@ -1,17 +1,29 @@
 {
-  "$comment": "Environment identity — the one place a deployed environment's provider IDs are named: its Supabase project, its Render API service, and the Vercel team and projects both environments deploy to. These are NOT secrets: the Supabase project refs already appear in docs/ops/db-rollback-playbook.md, docs/internal/environment/CLOUD_SANDBOX.md and .claude/skills/live-verification/SKILL.md, a ref alone grants nothing without SUPABASE_ACCESS_TOKEN, and the Render and Vercel ids grant nothing without RENDER_API_KEY or VERCEL_API_KEY. What IS a secret is the token, and that still comes from Infisical or the GitHub environment. Read this file through scripts/ci/lib/environments.mjs rather than parsing it inline; a workflow reads the provider ids through scripts/ci/provider-ids.mjs, and no workflow names one as a literal (#2806; a test greps for them). `infisicalEnvSlug` values are Infisical SLUGS, not display names — production is `prod`, not `production`; scripts/check-env-slugs.mjs scans this file for exactly that trap. Optional per-environment flag: `allowEmptyMigrationHistory` (default false) tells check-migration-order.mjs that an empty applied-migration list is legitimate rather than a wrong ref — set it only for a genuinely new project, since both projects here permanently hold 00000000000000_initial_schema.",
+  "$comment": "Environment identity — the one place a deployed environment's provider IDs are named: its Supabase project, its Google Cloud project for the API, and the Vercel team and projects both environments deploy to. These are NOT secrets: the Supabase project refs already appear in docs/ops/db-rollback-playbook.md, docs/internal/environment/CLOUD_SANDBOX.md and .claude/skills/live-verification/SKILL.md, a ref alone grants nothing without SUPABASE_ACCESS_TOKEN, a Google project id grants nothing without the deployer's sign-in, and the Vercel ids grant nothing without VERCEL_API_KEY. What IS a secret is the token, and that still comes from Infisical or the GitHub environment. Read this file through scripts/ci/lib/environments.mjs rather than parsing it inline; a workflow reads the provider ids through scripts/ci/provider-ids.mjs, and no workflow names one as a literal (#2806; a test greps for them). `infisicalEnvSlug` values are Infisical SLUGS, not display names — production is `prod`, not `production`; scripts/check-env-slugs.mjs scans this file for exactly that trap. `cloudRun` names the environment's Google Cloud project, its number and region, and the API service's instance bounds (#5228); the service, registry, accounts and sign-in provider are the names scripts/gcp/bootstrap.sh gives every project, so environments.mjs derives them rather than this file repeating them. The API ran on Render until #5228; Render was removed once both environments served from Cloud Run. Optional per-environment flag: `allowEmptyMigrationHistory` (default false) tells check-migration-order.mjs that an empty applied-migration list is legitimate rather than a wrong ref — set it only for a genuinely new project, since both projects here permanently hold 00000000000000_initial_schema.",
   "environments": {
     "staging": {
       "supabaseProjectRef": "hnoyzpidbmizhbqaiity",
       "supabaseProjectName": "frapp-staging",
       "infisicalEnvSlug": "staging",
-      "renderServiceId": "srv-d6lqsq75r7bs73c2fdc0"
+      "cloudRun": {
+        "projectId": "cs-project-6vw9f5xp",
+        "projectNumber": "211663803311",
+        "region": "us-east4",
+        "minInstances": 0,
+        "maxInstances": 1
+      }
     },
     "production": {
       "supabaseProjectRef": "unttyvyfezddlyafcydh",
       "supabaseProjectName": "frapp-prod",
       "infisicalEnvSlug": "prod",
-      "renderServiceId": "srv-d6lqu41aae7s73f62df0"
+      "cloudRun": {
+        "projectId": "cs-project-nyit2x59",
+        "projectNumber": "930610426605",
+        "region": "us-east5",
+        "minInstances": 1,
+        "maxInstances": 1
+      }
     }
   },
   "vercel": {

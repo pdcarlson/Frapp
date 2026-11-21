@@ -36,7 +36,7 @@ import {
   DocumentsGlyph,
   ReportsGlyph,
 } from "@/components/documents/resources-glyphs";
-import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -570,9 +570,10 @@ export function ReportsPage() {
   return (
     <>
       {/*
-        No heading of its own: the top bar names the route (`top-bar.tsx`). The
-        two `<CardTitle>Reports & Export</CardTitle>` copies and the body's
-        `<h2>` that used to sit here were the same title said again.
+        No heading of its own: it is the body of Chapter settings' Reports
+        page (#3837), whose header names it. The two
+        `<CardTitle>Reports & Export</CardTitle>` copies and the body's `<h2>`
+        that used to sit here were the same title said again.
       */}
       <Can
         permission="reports:export"
@@ -674,24 +675,20 @@ export function ReportsPage() {
                   />
                   <div className="grid gap-1">
                     <Label htmlFor="report-start">Start date</Label>
-                    <Input
+                    <DateField
                       id="report-start"
-                      type="date"
+                      lean="back"
                       value={startDate}
-                      onChange={(event) =>
-                        onFilterChange(setStartDate)(event.target.value)
-                      }
+                      onChange={onFilterChange(setStartDate)}
                     />
                   </div>
                   <div className="grid gap-1">
                     <Label htmlFor="report-end">End date</Label>
-                    <Input
+                    <DateField
                       id="report-end"
-                      type="date"
+                      lean="back"
                       value={endDate}
-                      onChange={(event) =>
-                        onFilterChange(setEndDate)(event.target.value)
-                      }
+                      onChange={onFilterChange(setEndDate)}
                     />
                   </div>
                 </div>
@@ -748,24 +745,20 @@ export function ReportsPage() {
                   />
                   <div className="grid gap-1">
                     <Label htmlFor="service-report-start">Start date</Label>
-                    <Input
+                    <DateField
                       id="service-report-start"
-                      type="date"
+                      lean="back"
                       value={startDate}
-                      onChange={(event) =>
-                        onFilterChange(setStartDate)(event.target.value)
-                      }
+                      onChange={onFilterChange(setStartDate)}
                     />
                   </div>
                   <div className="grid gap-1">
                     <Label htmlFor="service-report-end">End date</Label>
-                    <Input
+                    <DateField
                       id="service-report-end"
-                      type="date"
+                      lean="back"
                       value={endDate}
-                      onChange={(event) =>
-                        onFilterChange(setEndDate)(event.target.value)
-                      }
+                      onChange={onFilterChange(setEndDate)}
                     />
                   </div>
                 </div>

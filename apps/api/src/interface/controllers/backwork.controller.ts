@@ -3,8 +3,10 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   InternalServerErrorException,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -51,6 +53,11 @@ import {
   BackworkDownloadUrlsResponseDto,
   BackworkCourseDto,
   UpsertBackworkCourseDto,
+  UpdateBackworkDraftsDto,
+  PublishBackworkDraftsDto,
+  PublishBackworkDraftsResponseDto,
+  CheckBackworkDraftDto,
+  BackworkDraftFileUrlDto,
 } from '../dtos/backwork.dto';
 
 @ApiTags('Backwork')
@@ -158,6 +165,119 @@ export class BackworkController {
     });
   }
 
+  // Drafts (#5208). Every route here is the caller's own drafts only, so
+  // `backwork:upload` is the gate and ownership is checked in the query. MUST
+  // stay above `@Get(':id')`/`@Delete(':id')`, like `departments` below.
+  @Get('drafts')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({ summary: "The caller's backwork drafts, in upload order" })
+  async listDrafts(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.backworkService.findDrafts(chapterId, userId);
+  }
+
+  @Patch('drafts')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({
+    summary: "Set fields on several of the caller's drafts at once",
+  })
+  async updateDrafts(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateBackworkDraftsDto,
+  ) {
+    return this.backworkService.updateDrafts(
+      chapterId,
+      userId,
+      dto.ids,
+      dto.fields,
+    );
+  }
+
+  @Post('drafts/publish')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({
+    summary: "File the caller's drafts; ones that can't be filed stay drafts",
+  })
+  @ApiCreatedResponse({ type: PublishBackworkDraftsResponseDto })
+  @FeatureEvent(
+    'backwork-drafts-published',
+    ({
+      result,
+    }: FeatureEventInput<
+      PublishBackworkDraftsDto,
+      PublishBackworkDraftsResponseDto
+    >) => ({
+      // Counted from the response: a draft that stayed a draft wasn't filed.
+      count: Array.isArray(result?.published) ? result.published.length : 0,
+      failed_count: Array.isArray(result?.failed) ? result.failed.length : 0,
+    }),
+  )
+  async publishDrafts(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: PublishBackworkDraftsDto,
+  ): Promise<PublishBackworkDraftsResponseDto> {
+    return this.backworkService.publishDrafts(chapterId, userId, dto.ids);
+  }
+
+  // Checking a draft's pages (#5252). A folder saved without opening each
+  // document leaves its drafts unchecked: the uploader's browser fetches the
+  // stored file to show its pages, then marks the draft checked, swapping in
+  // a file flattened again when they added a box.
+  @Get('drafts/:id/file')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({
+    summary: "A short-lived link to one of the caller's drafts' file",
+  })
+  @ApiOkResponse({ type: BackworkDraftFileUrlDto })
+  async draftFileUrl(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BackworkDraftFileUrlDto> {
+    return {
+      url: await this.backworkService.draftFileUrl(id, chapterId, userId),
+    };
+  }
+
+  @Post('drafts/:id/check')
+  @HttpCode(200)
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({
+    summary:
+      "Mark one of the caller's drafts' pages checked, with its file flattened again when a box was added",
+  })
+  async checkDraft(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CheckBackworkDraftDto,
+  ) {
+    return this.backworkService.checkDraft(
+      id,
+      chapterId,
+      userId,
+      dto.storage_path !== undefined && dto.file_hash !== undefined
+        ? { storage_path: dto.storage_path, file_hash: dto.file_hash }
+        : undefined,
+    );
+  }
+
+  @Delete('drafts/:id')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({ summary: "Delete one of the caller's drafts and its file" })
+  async deleteDraft(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    await this.backworkService.deleteDraft(id, chapterId, userId);
+    return { success: true };
+  }
+
   // MUST stay above `@Get(':id')`, like `departments` below. A GET, not a
   // POST, so it stays a read: a lapsed chapter can still download its files,
   // one at a time or zipped (`enforceSubscription` lets GETs through).
@@ -190,7 +310,7 @@ export class BackworkController {
   @ApiOperation({ summary: 'Update department name' })
   async updateDepartment(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDepartmentDto,
   ) {
     return this.backworkService.updateDepartment(id, chapterId, dto);
@@ -203,7 +323,7 @@ export class BackworkController {
   })
   async deleteDepartment(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.backworkService.deleteDepartment(id, chapterId);
     return { success: true };
@@ -217,7 +337,7 @@ export class BackworkController {
   @ApiCreatedResponse({ type: MergeBackworkTaxonomyResponseDto })
   async mergeDepartments(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: MergeBackworkTaxonomyDto,
   ) {
     return this.backworkService.mergeDepartments(id, dto.target_id, chapterId);
@@ -265,7 +385,7 @@ export class BackworkController {
   })
   async deleteCourse(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.backworkService.deleteCourse(id, chapterId);
     return { success: true };
@@ -286,7 +406,7 @@ export class BackworkController {
   @ApiOperation({ summary: 'Update professor name' })
   async updateProfessor(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProfessorDto,
   ) {
     return this.backworkService.updateProfessor(id, chapterId, dto);
@@ -299,7 +419,7 @@ export class BackworkController {
   })
   async deleteProfessor(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.backworkService.deleteProfessor(id, chapterId);
     return { success: true };
@@ -313,7 +433,7 @@ export class BackworkController {
   @ApiCreatedResponse({ type: MergeBackworkTaxonomyResponseDto })
   async mergeProfessors(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: MergeBackworkTaxonomyDto,
   ) {
     return this.backworkService.mergeProfessors(id, dto.target_id, chapterId);
@@ -322,14 +442,20 @@ export class BackworkController {
   @Get(':id')
   @ApiOperation({ summary: 'Get resource detail with download URL' })
   @FeatureEvent('backwork-viewed')
-  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
+  async getOne(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.backworkService.findById(id, chapterId);
   }
 
   @Delete(':id')
   @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
   @ApiOperation({ summary: 'Delete a backwork resource' })
-  async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
+  async delete(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     await this.backworkService.delete(id, chapterId);
     return { success: true };
   }

@@ -72,6 +72,11 @@ jobs:
       github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.head_branch == 'main'
     uses: ./.github/workflows/_deploy.yml
+    # The called job signs in to Google Cloud with GitHub's OIDC token to
+    # deploy to Cloud Run (#5228), and gets no more than this grants.
+    permissions:
+      contents: read
+      id-token: write
     # Required for the called job to see the `staging` environment's secrets;
     # see the header.
     secrets: inherit

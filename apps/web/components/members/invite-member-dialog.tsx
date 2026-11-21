@@ -5,8 +5,10 @@ import { AlertTriangle, Link2, Mail, RotateCw, Trash2 } from "lucide-react";
 import {
   useActiveChapterId,
   useEmailInvites,
+  useInvitableRoleIds,
   useInvites,
-  useOrgConfig,
+  LEGACY_MEMBER_ROLE_NAME,
+  useInviteRoleChoices,
   useRevokeInvite,
   useRoles,
   INVITE_STATUS_LABEL,
@@ -15,14 +17,16 @@ import {
   type InviteListItem,
 } from "@repo/hooks";
 import { formatSentLabel } from "@repo/formatting";
+import { useKeptFormDraft, useKeptPanel } from "@repo/hooks/kept-drafts";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
-import { Sheet, SheetTrigger } from "@/components/ui/sheet";
+import { Slot } from "@radix-ui/react-slot";
 import {
+  Panel,
   PanelBody,
   PanelContent,
   PanelHeader,
@@ -38,26 +42,32 @@ import { SectionLabel } from "@/components/shared/section-label";
 import { RowMenu, type RowMenuEntry } from "@/components/shared/row-menu";
 import {
   InviteComposer,
+  NO_ADDRESSES,
   copyWhenReady,
+  type InviteAddresses,
 } from "@/components/members/invite-composer";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
+import { ChapterLinkSection } from "@/components/members/chapter-link-section";
 import { getErrorMessage, cn } from "@/lib/utils";
-import { normalizeRoleOptions } from "@/lib/roles";
+import { EVERYONE_ROLE_NAME } from "@repo/validation";
 import { buildJoinUrl } from "@/lib/invite-link";
 
 /**
- * Seeded display name of the Member system role — the role a chapter with no
- * configured default falls back to.
- *
- * Only a fallback now. The picker finds Member by `system_key` first, as the
- * server-side fallback in `InviteService.resolveInviteRole` does, so a chapter
- * that renamed Member still lands on it. `GET /v1/roles` returns the whole
- * row, `system_key` included; it is only untyped, because the route declares
- * no response schema (#1049). (Corrected 2026-09-29, #2484: this comment used
- * to say the key was not projected, and matched by name alone because of it.)
- * The name still covers a legacy Member role that predates the key.
+ * The role the picker holds before the catalog loads: Everyone's name before
+ * #4191, which the API still reads as Everyone. The default once roles load
+ * is `useInviteRoleChoices`'s.
  */
-const SEEDED_MEMBER_ROLE_NAME = "Member";
-const MEMBER_SYSTEM_KEY = "MEMBER";
+const PRELOAD_ROLE_NAME = LEGACY_MEMBER_ROLE_NAME;
+
+/** The kept draft's name (#4593). */
+const INVITE_DRAFT = "invite-members";
+
+/** What the panel keeps when it is left: the addresses and a picked role. */
+type InviteDraft = {
+  addresses: InviteAddresses;
+  roleName: string;
+  hasPickedRole: boolean;
+};
 
 type InviteMemberDialogProps = {
   trigger: React.ReactNode;
@@ -67,17 +77,43 @@ type InviteMemberDialogProps = {
  * Members → Invite: send invites by email, or copy a link to share, and see
  * who was invited and who has joined. Nobody sees a token (Paul, 2026-11-06:
  * the old panel generated and listed raw UUIDs).
+ *
+ * Leaving it keeps the addresses being written and a role picked for them
+ * (#4593): the back arrow, Escape and leaving the Directory all keep them,
+ * and the panel opens on them next time, saying so. A Directory left with
+ * the panel open reopens it. Sending drops them.
  */
 export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const [open, setOpen] = useState(false);
-  const [roleName, setRoleName] = useState(SEEDED_MEMBER_ROLE_NAME);
+  const [roleName, setRoleName] = useState(PRELOAD_ROLE_NAME);
   // #422: whether the admin has picked a role in this dialog session. Until
   // they do, the picker follows the chapter's configured default.
   const [hasPickedRole, setHasPickedRole] = useState(false);
+  // A send from this panel still on its way, even if the panel was closed
+  // and reopened since: the reopened composer is a new one, and would
+  // otherwise offer the same addresses to send again.
+  const [sending, setSending] = useState(false);
+  const [addresses, setAddresses] = useState<InviteAddresses>(NO_ADDRESSES);
+  // Whether there is a draft is the addresses, and the role picked for them.
+  // A role picked with no addresses is not one: the next invite starts on the
+  // chapter's default, as it did before drafts were kept. Nor is the default
+  // role landing after the panel opens.
+  const hasAddresses =
+    addresses.chips.length > 0 || addresses.draft.trim() !== "";
+  const kept = useKeptFormDraft<InviteDraft>(
+    INVITE_DRAFT,
+    open,
+    { addresses, roleName, hasPickedRole },
+    {
+      signature: hasAddresses
+        ? JSON.stringify([addresses, hasPickedRole ? roleName : null])
+        : "",
+    },
+  );
   const activeChapterId = useActiveChapterId();
   const rolesQuery = useRoles();
-  const orgConfigQuery = useOrgConfig();
   const invitesQuery = useInvites();
+  const invitableRolesQuery = useInvitableRoleIds();
   const emailInvites = useEmailInvites();
   const revokeInviteMutation = useRevokeInvite();
   // `POST /invites` and `POST /invites/email` are `@FreeTier` +
@@ -96,48 +132,13 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const { toast } = useToast();
   const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
 
-  const roleOptions = useMemo(
-    () =>
-      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
-        first.name.localeCompare(second.name),
-      ),
-    [rolesQuery.data],
-  );
-
-  // The Member role's current name: by `system_key`, read defensively off the
-  // untyped payload, then by its seeded name. `undefined` when neither exists.
-  const memberRoleName = useMemo(() => {
-    const keyed = (Array.isArray(rolesQuery.data) ? rolesQuery.data : []).find(
-      (role: unknown) =>
-        !!role &&
-        typeof role === "object" &&
-        (role as Record<string, unknown>).system_key === MEMBER_SYSTEM_KEY,
-    ) as Record<string, unknown> | undefined;
-    const keyedName = keyed?.name;
-    if (
-      typeof keyedName === "string" &&
-      roleOptions.some((role) => role.name === keyedName)
-    ) {
-      return keyedName;
-    }
-    return roleOptions.find((role) => role.name === SEEDED_MEMBER_ROLE_NAME)
-      ?.name;
-  }, [rolesQuery.data, roleOptions]);
-
-  // #422: the chapter's configured default invite role, resolved id → name
-  // against the live catalog. `undefined` while the config query is in flight
-  // or when no default is set.
-  //
-  // Read from the officer-only config, deliberately: this dialog is an
-  // inviter's tool (`members:invite`, which among seeded roles only President
-  // holds, with `chapter-config:view`), and the member view doesn't carry
-  // `default_invite_role_id` (#2957). A custom role granted `members:invite`
-  // without `chapter-config:view` is refused the read and starts on Member.
-  const defaultRoleName = useMemo(() => {
-    const configuredId = orgConfigQuery.data?.default_invite_role_id;
-    if (!configuredId) return undefined;
-    return roleOptions.find((role) => role.id === configuredId)?.name;
-  }, [orgConfigQuery.data?.default_invite_role_id, roleOptions]);
+  // The roles this sender may hand out, Everyone first as "No role", and
+  // the one to start on: the chapter's configured default when it is one of
+  // them, else Everyone (#422, #4546). One rule for this picker and the
+  // chapter links' (`useInviteRoleChoices`), on web and the phone alike.
+  const roleChoices = useInviteRoleChoices();
+  const roleOptions = roleChoices.choices;
+  const defaultRoleName = roleChoices.defaultRole;
 
   /**
    * Keep the picker on the chapter's configured default until the admin picks
@@ -160,35 +161,21 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         !roleOptions.some((role) => role.name === roleName)
       ) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the picker on a role that still exists after the catalog loads
-        setRoleName(
-          defaultRoleName ??
-            memberRoleName ??
-            roleOptions[0]?.name ??
-            SEEDED_MEMBER_ROLE_NAME,
-        );
+        setRoleName(defaultRoleName ?? PRELOAD_ROLE_NAME);
       }
       return;
     }
-    // Member — not `roleOptions[0]` — is the fallback when no default is
-    // configured. `roleOptions` is sorted alphabetically, so seeding off it
-    // would pre-select **Alumni** on every chapter that has not set a default
-    // (which is all of them: the column ships null with no backfill). That
-    // would hand new members the alumni lifecycle restrictions instead of
-    // Member, and it is precisely the arbitrary default this issue exists to
-    // remove — reached by a new route. Member is found by `system_key`, as the
-    // server-side fallback finds it, so a renamed Member is still the one
-    // pre-selected (`memberRoleName` above).
-    const preferred =
-      defaultRoleName ??
-      memberRoleName ??
-      roleOptions[0]?.name ??
-      SEEDED_MEMBER_ROLE_NAME;
+    // Member (Everyone), not the alphabetically first role, is the fallback
+    // when no default is configured: seeding off the sorted list would
+    // pre-select **Alumni** on every chapter that has not set one
+    // (`useInviteRoleChoices`).
+    const preferred = defaultRoleName ?? PRELOAD_ROLE_NAME;
     // No disable directive needed here: the rule reports once per effect, and
     // the branch above already carries it.
     if (preferred !== roleName) {
       setRoleName(preferred);
     }
-  }, [defaultRoleName, hasPickedRole, memberRoleName, roleName, roleOptions]);
+  }, [defaultRoleName, hasPickedRole, roleName, roleOptions]);
 
   const rows = useMemo(
     () => listedInvites(invitesQuery.data ?? []),
@@ -196,14 +183,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   );
 
   /**
-   * Reopening starts a fresh invite, so the chapter default applies again
-   * rather than the role picked during a previous session.
+   * Opening comes back to the kept draft, its addresses and any role picked
+   * for them. Without one it starts a fresh invite, so the chapter default
+   * applies again rather than a role picked for invites already sent.
    *
-   * Every open and close path routes through here. Radix only fires
-   * `onOpenChange` for its own paths (Escape, the overlay, X, the trigger), so
-   * a `setOpen` wired directly to a button would skip the reset.
-   *
-   * Opening re-reads invites and roles: the list is mounted with the page and
+   * Opening re-reads invites and roles (and which roles the sender may
+   * invite into): the list is mounted with the page and
    * cached for a minute, so an invite another officer revoked, or someone
    * joining, would otherwise not show here.
    */
@@ -213,16 +198,33 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     if (!activeChapterId) return;
     void invitesQuery.refetch();
     void rolesQuery.refetch();
+    void invitableRolesQuery.refetch();
   }
 
   function handleOpenChange(next: boolean) {
     if (next) {
       refetchLiveData();
-    } else {
-      setHasPickedRole(false);
+      const draft = kept.take();
+      setAddresses(draft?.addresses ?? NO_ADDRESSES);
+      setHasPickedRole(draft?.hasPickedRole ?? false);
+      if (draft?.hasPickedRole) setRoleName(draft.roleName);
     }
     setOpen(next);
   }
+
+  /** Discard: the addresses go, and the role goes back to the default. */
+  function discardDraft() {
+    kept.discard();
+    setAddresses(NO_ADDRESSES);
+    setHasPickedRole(false);
+  }
+
+  useKeptPanel({
+    page: "members",
+    form: INVITE_DRAFT,
+    open,
+    setOpen: handleOpenChange,
+  });
 
   async function copyInviteLink(invite: InviteListItem) {
     const link = buildJoinUrl(window.location.origin, invite.token);
@@ -349,7 +351,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
         <SelectContent>
           {roleOptions.map((role) => (
             <SelectItem key={role.id} value={role.name}>
-              {role.name}
+              {role.label}
             </SelectItem>
           ))}
         </SelectContent>
@@ -357,78 +359,122 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
     ) : null;
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetTrigger asChild>{trigger}</SheetTrigger>
+    <>
+      <Slot onClick={() => handleOpenChange(true)}>{trigger}</Slot>
       {/*
         A panel, not a dialog (`components.md` § Surface size): the composer
         and the list of everyone invited grow with the chapter. No footer:
-        Send sits with the addresses it sends to.
+        Send sits with the addresses it sends to. Docked: it opens in place of
+        the Directory, beside chat, rather than over everything (Paul,
+        2026-11-12).
 
         `aria-describedby={undefined}`: with no `SheetDescription` rendered,
         Radix warns on every open for a `Content` pointing at a description id
         nothing renders.
       */}
-      <PanelContent aria-describedby={undefined}>
-        <PanelHeader>Invite members</PanelHeader>
-        <PanelBody className="gap-6">
-          {hasLiveDataError ? (
-            <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-caption text-warning">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              {/* The only explanation for the paused controls below, so it
+      <Panel
+        open={open}
+        onOpenChange={handleOpenChange}
+        docked
+        backLabel="Back to directory"
+      >
+        <PanelContent aria-describedby={undefined}>
+          <PanelHeader>Invite members</PanelHeader>
+          <PanelBody className="gap-6">
+            {hasLiveDataError ? (
+              <div className="flex items-start gap-3 rounded-md border border-warning/[.28] bg-warning-tint p-3 text-caption text-warning">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                {/* The only explanation for the paused controls below, so it
                   stays, with the retry beside the reason. */}
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
-                <span>
-                  Invite data could not load, so inviting and revoking are
-                  paused.
-                </span>
-                <Button
-                  type="button"
-                  variant="link"
-                  size="sm"
-                  className="h-auto p-0 text-caption font-semibold text-warning"
-                  onClick={refetchLiveData}
-                >
-                  Try again
-                </Button>
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>
+                    Invite data could not load, so inviting and revoking are
+                    paused.
+                  </span>
+                  <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-caption font-semibold text-warning"
+                    onClick={refetchLiveData}
+                  >
+                    Try again
+                  </Button>
+                </div>
               </div>
+            ) : null}
+
+            <div className="space-y-3">
+              <InviteComposer
+                role={roleName}
+                roleControl={roleControl}
+                disabled={hasLiveDataError || roleOptions.length === 0}
+                gate={gate}
+                addresses={addresses}
+                onAddressesChange={(patch) =>
+                  setAddresses((current) => ({ ...current, ...patch }))
+                }
+                busy={sending}
+                onSendStart={() => {
+                  setSending(true);
+                  kept.hold();
+                }}
+                onSendFailed={() => {
+                  setSending(false);
+                  kept.release();
+                }}
+                onInvited={(how) => {
+                  if (how !== "email") return;
+                  setSending(false);
+                  // Sent: what the field is left holding (an address that
+                  // couldn't be emailed, listed under Invited) is not a draft.
+                  kept.drop();
+                  kept.rebase();
+                }}
+              />
+              {kept.restored ? (
+                <KeptDraftNote onDiscard={discardDraft} />
+              ) : null}
             </div>
-          ) : null}
+            <SubscriptionNotice gate={gate} feature="sending invites" />
 
-          <InviteComposer
-            role={roleName}
-            roleControl={roleControl}
-            disabled={hasLiveDataError || roleOptions.length === 0}
-            gate={gate}
-          />
-          <SubscriptionNotice gate={gate} feature="sending invites" />
+            <ChapterLinkSection
+              gate={gate}
+              revokeGate={revokeGate}
+              paused={hasLiveDataError}
+            />
 
-          <section aria-labelledby="invite-list-label" className="space-y-2">
-            <SectionLabel
-              id="invite-list-label"
-              count={invitesQuery.data ? rows.length : null}
-            >
-              Invited
-            </SectionLabel>
-            <SubscriptionNotice gate={revokeGate} feature="revoking invites" />
-            {invitesQuery.data && rows.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nobody yet. People you invite show up here until they join.
-              </p>
-            ) : (
-              <ul className="-mx-2">
-                {rows.map((invite) => (
-                  <InviteRow
-                    key={invite.id}
-                    invite={invite}
-                    entries={entriesFor(invite)}
-                  />
-                ))}
-              </ul>
-            )}
-          </section>
-        </PanelBody>
-      </PanelContent>
-    </Sheet>
+            <section aria-labelledby="invite-list-label" className="space-y-2">
+              <SectionLabel
+                id="invite-list-label"
+                count={invitesQuery.data ? rows.length : null}
+              >
+                Invited
+              </SectionLabel>
+              <SubscriptionNotice
+                gate={revokeGate}
+                feature="revoking invites"
+              />
+              {invitesQuery.data && rows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nobody yet. People you invite show up here until they join.
+                </p>
+              ) : (
+                <ul className="-mx-2">
+                  {rows.map((invite) => (
+                    <InviteRow
+                      key={invite.id}
+                      invite={invite}
+                      entries={entriesFor(invite)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          </PanelBody>
+        </PanelContent>
+      </Panel>
+    </>
   );
 }
 
@@ -450,7 +496,9 @@ function InviteRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{name}</p>
         <p className="truncate text-caption text-muted-foreground">
-          {[invite.role, sent].filter(Boolean).join(" · ")}
+          {[invite.role === EVERYONE_ROLE_NAME ? null : invite.role, sent]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
       </div>
       <span

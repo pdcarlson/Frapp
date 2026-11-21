@@ -22,7 +22,7 @@ export interface PollPayload {
   /**
    * Wall-clock when the poll closes, an ISO-8601 string: the cards stop
    * offering a vote once it passes, and the API refuses one (#871). `null` is
-   * a poll with no deadline (#3896), open until its creator closes it
+   * a poll with no deadline (#3896), open until it is closed early
    * (`closed_at`).
    */
   closes_at: string | null;
@@ -33,12 +33,12 @@ export interface PollPayload {
    */
   choice_mode?: "multi";
   /**
-   * When the creator closed the poll early (#3794), or absent while it is
-   * open. Written only by the API (`POST /v1/polls/{messageId}/close`); a
+   * When the poll was closed early (#3794), by its creator or a
+   * `channels:manage` holder (#4046), or absent while it is open. Written only by the API (`POST /v1/polls/{messageId}/close`); a
    * client never sends it, and the API drops it from a card a client posts.
    */
   closed_at?: string | null;
-  /** `users.id` of the creator who closed it early; set with `closed_at`. */
+  /** `users.id` of whoever closed it early (the creator or a moderator); set with `closed_at`. */
   closed_by?: string | null;
 }
 
@@ -143,6 +143,23 @@ export interface EventPayload {
   point_value: number;
   /** Whether attendance is mandatory (always `false` for slash-created events). */
   is_mandatory: boolean;
+  /**
+   * Who the event asks for by role, as `events` holds it, so the card can tell
+   * whether it requires the viewer without reading the event (#4660). Null on
+   * a card posted before the fields existed, which then reads as it did then
+   * (`eventOthersInvited`): by `is_mandatory` alone.
+   */
+  required_role_ids?: readonly string[] | null;
+  optional_role_ids?: readonly string[] | null;
+  excluded_role_ids?: readonly string[] | null;
+  others_invited?: boolean | null;
+  /**
+   * Whether the event requires *this* viewer, already decided by the server.
+   * Only the Activity page's built message carries it (its row holds the
+   * member's own answer, alumni rule included, rather than the role lists);
+   * a posted card never does, since one row serves every viewer.
+   */
+  viewer_required?: boolean;
   /**
    * Minutes before `start_time` that check-in opens. Cards posted before the
    * field existed carry none; `readEventPayload` gives them the default

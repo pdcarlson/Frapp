@@ -47,6 +47,21 @@ describe("selectServiceEntryRows", () => {
     expect(row?.meta).toContain("2h 30m");
   });
 
+  it("ends an approved row's meta with the points its approval recorded (#3868)", () => {
+    const [awarded] = selectServiceEntryRows([
+      entry({ status: "APPROVED", points_awarded: true, awarded_points: 3 }),
+    ]);
+    expect(awarded?.meta).toMatch(/ · 3 points$/);
+    const [subRate] = selectServiceEntryRows([
+      entry({ status: "APPROVED", points_awarded: false, awarded_points: 0 }),
+    ]);
+    expect(subRate?.meta).toMatch(/ · No points$/);
+    const [pending] = selectServiceEntryRows([
+      entry({ status: "PENDING", points_awarded: false, awarded_points: null }),
+    ]);
+    expect(pending?.meta).not.toMatch(/point/i);
+  });
+
   it("sorts newest first", () => {
     const rows = selectServiceEntryRows([
       entry({ id: "old", date: "2026-07-01" }),
@@ -60,7 +75,7 @@ describe("selectServiceEntryRows", () => {
   // 11th, so the selector parses at noon.
   it("renders the calendar date the member submitted, not the day before", () => {
     const [row] = selectServiceEntryRows([entry({ date: "2026-08-12" })]);
-    expect(row?.meta).toContain("Aug 12");
+    expect(row?.meta).toContain("August 12");
   });
 
   it("drops a row whose status is not one the API defines", () => {
@@ -134,7 +149,7 @@ describe("serviceDatePresets", () => {
       {
         daysAgo: 2,
         label: new Date(2026, 10, 3).toLocaleDateString(undefined, {
-          weekday: "short",
+          weekday: "long",
         }),
         date: "2026-11-03",
         relative: false,
@@ -142,7 +157,7 @@ describe("serviceDatePresets", () => {
       {
         daysAgo: 3,
         label: new Date(2026, 10, 2).toLocaleDateString(undefined, {
-          weekday: "short",
+          weekday: "long",
         }),
         date: "2026-11-02",
         relative: false,

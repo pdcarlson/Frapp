@@ -4,10 +4,12 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   IBackworkResourceRepository,
+  BackworkPublishedColumns,
   BackworkResourceFilter,
 } from '#domain/repositories/backwork.repository.interface';
 import { BackworkResource } from '#domain/entities/backwork.entity';
 import type {
+  BackworkDraftFields,
   AssignmentType,
   DocumentVariant,
   Semester,
@@ -24,13 +26,15 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
   async findById(
     id: string,
     chapterId: string,
+    options?: { includeDrafts?: boolean },
   ): Promise<BackworkResource | null> {
-    const { data, error } = await this.supabase
+    let query = this.supabase
       .from('backwork_resources')
       .select('*')
       .eq('id', id)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
+      .eq('chapter_id', chapterId);
+    if (!options?.includeDrafts) query = query.is('draft_fields', null);
+    const { data, error } = await query.maybeSingle();
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
@@ -42,7 +46,8 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     let query = this.supabase
       .from('backwork_resources')
       .select('*')
-      .eq('chapter_id', chapterId);
+      .eq('chapter_id', chapterId)
+      .is('draft_fields', null);
 
     if (filters?.department_id) {
       query = query.eq('department_id', filters.department_id);
@@ -101,6 +106,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .from('backwork_resources')
       .select('*')
       .eq('chapter_id', chapterId)
+      .is('draft_fields', null)
       .in('id', ids);
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
@@ -141,6 +147,166 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     if (error) throw new SupabaseQueryError(error);
   }
 
+  async findDrafts(
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource[]> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async findDraftsByIds(
+    ids: string[],
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .in('id', ids);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async updateDraftFields(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    fields: BackworkDraftFields,
+  ): Promise<BackworkResource | null> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update({ draft_fields: fields })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async claimAiFill(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    now: Date,
+    staleBefore: Date,
+  ): Promise<string | null> {
+    const claim = now.toISOString();
+    // The lease pattern the scheduled-message worker uses: the `or` filter is
+    // part of the UPDATE's WHERE, which Postgres checks again against the row
+    // it locks, so a second claim that waited on the first sees its timestamp
+    // and matches nothing.
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update({ ai_fill_started_at: claim })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .or(
+        `ai_fill_started_at.is.null,ai_fill_started_at.lt."${staleBefore.toISOString()}"`,
+      )
+      .select('id')
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data ? claim : null;
+  }
+
+  async releaseAiFill(
+    id: string,
+    chapterId: string,
+    claim: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('backwork_resources')
+      .update({ ai_fill_started_at: null })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('ai_fill_started_at', claim);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
+  async replaceDraftFile(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    update: {
+      storage_path: string;
+      file_hash: string;
+      is_redacted: boolean;
+      draft_fields: BackworkDraftFields;
+    },
+  ): Promise<BackworkResource | null> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update(update)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async publishDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    columns: BackworkPublishedColumns,
+  ): Promise<BackworkResource | null> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      // Published now, so it reads as added now in the library and Activity,
+      // which order by created_at.
+      .update({
+        ...columns,
+        draft_fields: null,
+        created_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async deleteDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .delete()
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
+  }
+
   async countByDepartment(
     chapterId: string,
     departmentId: string,
@@ -171,10 +337,17 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     return this.reassignColumn(chapterId, 'professor_id', fromId, toId);
   }
 
+  async countByStoragePath(
+    chapterId: string,
+    storagePath: string,
+  ): Promise<number> {
+    return this.countByColumn(chapterId, 'storage_path', storagePath);
+  }
+
   /** Shared by `countByDepartment`/`countByProfessor` — same table, same shape, differing only by column. */
   private async countByColumn(
     chapterId: string,
-    column: 'department_id' | 'professor_id',
+    column: 'department_id' | 'professor_id' | 'storage_path',
     value: string,
   ): Promise<number> {
     const { count, error } = await this.supabase

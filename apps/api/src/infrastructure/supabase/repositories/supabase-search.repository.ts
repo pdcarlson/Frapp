@@ -67,10 +67,10 @@ const TEXT_SEARCH = {
  * parses this file.
  */
 export const BACKWORK_SEARCH_COLUMNS =
-  'id, chapter_id, department_id, course_number, professor_id, uploader_id, title, year, semester, assignment_type, assignment_number, document_variant, storage_path, file_hash, is_redacted, tags, created_at';
+  'id, chapter_id, department_id, course_number, professor_id, uploader_id, title, year, semester, assignment_type, assignment_number, document_variant, storage_path, file_hash, is_redacted, tags, created_at, draft_fields, ai_fill_started_at';
 
 export const EVENT_SEARCH_COLUMNS =
-  'id, chapter_id, name, description, location, start_time, end_time, point_value, is_mandatory, recurrence_rule, parent_event_id, required_role_ids, optional_role_ids, excluded_role_ids, others_invited, notes, created_at, check_in_zone, check_in_zone_name, check_in_opens_minutes, created_by, event_type_id';
+  'id, chapter_id, name, description, location, start_time, end_time, point_value, is_mandatory, recurrence_rule, parent_event_id, required_role_ids, optional_role_ids, excluded_role_ids, others_invited, notes, created_at, check_in_zone, check_in_zone_name, check_in_opens_minutes, created_by, event_type_id, agenda, attachments';
 
 /**
  * Not `*`: `content_search` is the STORED tsvector `searchMessages` matches on,
@@ -78,7 +78,7 @@ export const EVENT_SEARCH_COLUMNS =
  * on the one read whose result set the archive import grows most.
  */
 const MESSAGE_SEARCH_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at';
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, forwarded_from, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at';
 
 /**
  * The order `searchMessages` asks PostgREST for, `created_at desc, id desc`,
@@ -234,14 +234,18 @@ export class SupabaseSearchRepository implements ISearchRepository {
    * precisely what stops it being small.
    *
    * Stemming is a real behaviour change and an intended one: searching "attach"
-   * now finds "attached". Substring matching within a word ("tach") is gone,
-   * which needs `pg_trgm` — not installed, and not registered in the PGlite CI
-   * gate. That is a separate decision with its own index cost.
+   * now finds "attached". Substring matching within a word ("tach") is gone.
+   * `pg_trgm` is installed now (20261106190000, for Backwork) and registered
+   * in both PGlite harnesses, but chat has no trigram index: matching within
+   * a word here is a separate decision with its own index cost.
    *
-   * FILTERS WITHOUT TEXT (#3958). An empty `query` skips the text match, so
-   * nothing here is index-backed beyond the channel list: `has` and a wide
-   * date range read every message in the batch's channels. What that costs,
-   * and the issue that owns it, is spec/behavior/search.md § Message filters.
+   * FILTERS WITHOUT TEXT (#3958, #3965). An empty `query` has no GIN match to
+   * narrow by, and `channel_id IN (…) ORDER BY created_at DESC LIMIT n` cannot
+   * walk the `(channel_id, created_at desc)` index in order across a list, so
+   * this query read every message of the listed channels that passed the
+   * filter and sorted them. That case goes to `search_chat_messages_filtered`
+   * instead ({@link searchMessagesByFilter}), which takes each channel's newest
+   * matches through an index and merges them.
    *
    * CHUNKED CHANNEL FILTER (#3265). A chapter-wide search hands this every
    * channel the caller may read, and a Discord-imported chapter has hundreds.
@@ -264,6 +268,7 @@ export class SupabaseSearchRepository implements ISearchRepository {
     limit: number,
     filters: SearchMessageFilters = {},
   ): Promise<ChatMessage[]> {
+    if (!query) return this.searchMessagesByFilter(channelIds, limit, filters);
     const has = new Set(filters.has ?? []);
     // `has:file` and `has:image` are an INNER JOIN on the attachment rows, the
     // same embed-filters-the-parent shape `searchMembers` uses. An image is an
@@ -285,11 +290,7 @@ export class SupabaseSearchRepository implements ISearchRepository {
           // A thread reply has no place in the timeline a hit jumps to;
           // thread results in search are slice 2 of #3785.
           .is('thread_root_id', null);
-        // An empty query is a filter-only search ("everything Ryan posted this
-        // week"); `SearchService` allows it only when a filter is present.
-        if (query) {
-          request = request.textSearch('content_search', query, TEXT_SEARCH);
-        }
+        request = request.textSearch('content_search', query, TEXT_SEARCH);
         if (filters.fromUserId) {
           request = request.eq('sender_id', filters.fromUserId);
         }
@@ -326,6 +327,48 @@ export class SupabaseSearchRepository implements ISearchRepository {
     );
     if (batches.length === 1) return batches[0];
     return batches.flat().sort(newestFirst).slice(0, limit);
+  }
+
+  /**
+   * A message search with a filter and no text ("everything Ryan posted this
+   * week"; `SearchService` allows an empty query only beside a filter), through
+   * `search_chat_messages_filtered`
+   * (20261112131300_chat_search_filter_only.sql, #3965).
+   *
+   * The function asks each channel for its own newest `limit` matches, a
+   * backward walk of a `(channel_id, created_at desc)` index that stops at the
+   * limit, and keeps the newest `limit` of those. `poll` and `link` walk
+   * partial indexes that hold only their rows, and `file` / `image` start from
+   * the channel's attachment rows, so a rare trait does not read a whole
+   * channel to find nothing. Measured at 1.2M messages across 300 channels:
+   * spec/behavior/search.md § Message filters.
+   *
+   * The channel ids travel in the request body, not the URL, so this is one
+   * call however many channels the caller reads, with none of the `chunkIds`
+   * batching the text path needs (#3265). It reads only the ids it is handed:
+   * `SearchService` has already passed each through `canAccessChannel`.
+   *
+   * The rows are sorted again here, by the same key, rather than trusting the
+   * order a set-returning function's rows arrive in through PostgREST.
+   */
+  private async searchMessagesByFilter(
+    channelIds: string[],
+    limit: number,
+    filters: SearchMessageFilters,
+  ): Promise<ChatMessage[]> {
+    if (!channelIds.length) return [];
+    const { data, error } = (await this.supabase
+      .rpc('search_chat_messages_filtered', {
+        p_channel_ids: channelIds,
+        p_sender_id: filters.fromUserId ?? null,
+        p_after: filters.after ?? null,
+        p_before: filters.before ?? null,
+        p_has: [...(filters.has ?? [])],
+        p_limit: limit,
+      })
+      .select(MESSAGE_SEARCH_COLUMNS)) as QueryResult<ChatMessage>;
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).slice().sort(newestFirst).slice(0, limit);
   }
 
   async findChannelsForAccess(

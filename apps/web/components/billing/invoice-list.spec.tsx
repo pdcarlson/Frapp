@@ -106,7 +106,9 @@ vi.mock("@repo/hooks", () => ({
   useInvoices: () => invoicesQuery,
   useOverdueInvoices: () => overdueQuery,
   useCurrentUser: () => currentUserQuery,
-  useMembers: () => ({ data: [{ user_id: "u-1", display_name: "Rae Okafor" }] }),
+  useMembers: () => ({
+    data: [{ user_id: "u-1", display_name: "Rae Okafor" }],
+  }),
   useCreateInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useTransitionInvoiceStatus: () => ({
     mutateAsync: mockTransitionMutate,
@@ -116,9 +118,8 @@ vi.mock("@repo/hooks", () => ({
 }));
 
 vi.mock("@/lib/utils", async () => {
-  const actual = await vi.importActual<typeof import("@/lib/utils")>(
-    "@/lib/utils",
-  );
+  const actual =
+    await vi.importActual<typeof import("@/lib/utils")>("@/lib/utils");
   return { ...actual, exportRows: exportRowsSpy };
 });
 
@@ -136,7 +137,9 @@ vi.mock("@/components/shared/can", () => ({
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
 
 vi.mock("@/lib/stripe", () => ({
   isStripeConfigured: () => true,
@@ -155,7 +158,7 @@ const { InvoiceList } = await import("./invoice-list");
 const chapter = chapterSubscription(mockCurrentChapter);
 
 function trigger() {
-  return screen.getByRole("button", { name: /create invoice/i });
+  return screen.getByRole("button", { name: /new invoice/i });
 }
 
 function statusFilter() {
@@ -192,14 +195,14 @@ beforeEach(() => {
 });
 
 describe("the invoice surface is one list, not two (#2146)", () => {
-  it("offers exactly one Create invoice trigger", () => {
+  it("offers exactly one New invoice trigger", () => {
     // #336/#1200: the page header carried a decoy Create Invoice button beside
     // the working one in the officer card. Now there is one list, so a second
     // trigger cannot exist without being visible in this count.
     render(<InvoiceList />);
 
     expect(
-      screen.getAllByRole("button", { name: /create invoice/i }),
+      screen.getAllByRole("button", { name: /new invoice/i }),
     ).toHaveLength(1);
   });
 
@@ -472,8 +475,9 @@ describe("subscription gating (#858/#1753)", () => {
     expect(trigger()).toBeDisabled();
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
     // §5 rule 2: name the next action, not just the blocker.
-    expect(screen.getByText(/plan panel at the top of this page/i)).
-      toBeInTheDocument();
+    expect(
+      screen.getByText(/plan panel at the top of this page/i),
+    ).toBeInTheDocument();
     // §5 rule 4: disabled, not hidden — the surface is still there.
     expect(
       screen.getByRole("heading", { name: /invoices/i }),

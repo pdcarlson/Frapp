@@ -6,7 +6,8 @@ import { db, miss } from "../harness.mjs";
 // the `anonymize_user` purge are reached from the
 // API only through mocked repositories, so this is the one place their SQL
 // runs. What each check pins, and the edit it catches:
-// - only the five kinds the API sends are accepted;
+// - only the kinds the API sends are accepted, sign-ups and forms included
+//   (#3926, 20261113062008);
 // - the API's upsert target, `on conflict (user_id, chapter_id, kind,
 //   item_id)`, names the primary key, so opening an item again moves its
 //   `read_at` rather than failing with 42P10 (no matching constraint);
@@ -81,6 +82,25 @@ try {
     (await count(`user_id = '${U.a}'`)) === 2,
     "the same id under two kinds is two reads",
   ]);
+
+  // Sign-up and form cards (#3926): a dropped kind would fail the insert.
+  const cardKinds = [];
+  for (const kind of ["signup", "form"]) {
+    cardKinds.push(
+      !(await rejects(
+        `insert into activity_item_reads (user_id, chapter_id, kind, item_id)
+         values ('${U.b}', '${CH}', '${kind}', '${ITEM}');`,
+      )),
+    );
+  }
+  checks.push([
+    cardKinds.every(Boolean),
+    "a sign-up or form card's read is accepted",
+  ]);
+  // Taken back out, so the checks below count only what they set up.
+  await db.exec(
+    `delete from activity_item_reads where kind in ('signup', 'form');`,
+  );
 
   // What `SupabaseActivityItemReadRepository.startUnread` sends.
   const start = (user, at) =>

@@ -4,6 +4,8 @@ import {
   ConflictException,
   ForbiddenException,
   GoneException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -21,22 +23,32 @@ import type { IChapterRepository } from '#domain/repositories/chapter.repository
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { Invite } from '#domain/entities/invite.entity';
+import type { Role } from '#domain/entities/role.entity';
 import {
   SystemPermissions,
   SystemRoleKeys,
   WILDCARD,
 } from '#domain/constants/permissions';
 import { isSubscriptionHardLocked } from '#domain/constants/subscription-grace';
+import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
+import type { RankContext } from '#domain/utils/rank-context';
+import { inviteRefusal, everyoneRoleOf } from '#domain/utils/invite-reach';
+import {
+  DAILY_LIMIT_WINDOW_MS,
+  INVITE_EMAILS_PER_CHAPTER_PER_DAY,
+  INVITE_EMAILS_PER_INVITER_PER_DAY,
+} from '#domain/constants/daily-send-limits';
+import {
+  rollingWindowRoom,
+  waitPhrase,
+  type RollingWindowRoom,
+} from '#domain/utils/rolling-window';
 import { ActivationService } from './activation.service';
-import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
 import { EMAIL_PROVIDER } from '#domain/adapters/email.interface';
 import type { IEmailProvider } from '#domain/adapters/email.interface';
-import { CHAT_MESSAGE_REPOSITORY } from '#domain/repositories/chat.repository.interface';
-import type { IChatMessageRepository } from '#domain/repositories/chat.repository.interface';
-import type { ChatMessage } from '#domain/entities/chat.entity';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import {
@@ -47,10 +59,10 @@ import {
   assertHttpsJoinOrigin,
   chapterTextMark,
   dedupeEmails,
+  EVERYONE_ROLE_NAME,
   MEMBER_JOINED_AUDIENCE,
 } from '@repo/validation';
 import { orgHidingGreekLettersIn } from '@repo/org-archetypes';
-import { SYSTEM_SENDER_ID } from '#domain/constants/chat';
 
 /**
  * What an invite is for, read without using it up (#3352). Only what the
@@ -70,9 +82,11 @@ export interface InvitePreview {
   invited_by: string | null;
   /**
    * The invite's own role, which the redeem grants (`resolveRedeemRole`);
-   * the redeem may add Member beside it (`resolveRedeemRoles`). Null when
-   * it would grant none: the invite's role is gone and the chapter has no
-   * seeded Member role to fall back to.
+   * the redeem may add Everyone beside it (`resolveRedeemRoles`). Null when
+   * it would grant none (the invite's role is gone and the chapter has no
+   * Everyone role to fall back to), or only Everyone, which no card names.
+   * An invite the redeem would refuse (#1830) gets no preview: `preview`
+   * answers 403 and `/mine` leaves it out.
    */
   role: string | null;
   expires_at: string;
@@ -121,6 +135,48 @@ export function inviteStatus(invite: Invite, now = new Date()): InviteStatus {
   return 'pending';
 }
 
+/**
+ * What the invite's sender is told when someone joins with it (#5625): their
+ * own invite, so it says so, rather than the officers' "<name> joined".
+ */
+function inviterNoticeTitle(
+  name: string | undefined,
+  chapterLink: boolean,
+): string {
+  const who = name || 'Someone';
+  return chapterLink
+    ? `${who} joined with your chapter link`
+    : `${who} accepted your invite`;
+}
+
+/**
+ * An invite's state as its link tells it (#5625). A chapter link is never
+ * `used`: any number of people join with it until it expires or is turned off.
+ * A link that would otherwise work, into a chapter whose subscription locks it
+ * (`isSubscriptionHardLocked`, the redeem's own 403), reads `locked`: nothing
+ * is wrong with the link, and it works again once the chapter is restored.
+ */
+function linkState(
+  invite: Invite,
+  described: { refused: boolean; locked: boolean },
+  now: Date,
+): InviteLinkState {
+  if (invite.revoked_at || described.refused) return 'off';
+  if (invite.used_at && !invite.reusable) return 'used';
+  if (new Date(invite.expires_at) <= now) return 'expired';
+  if (described.locked) return 'locked';
+  return 'live';
+}
+
+/**
+ * How long after it was made a dead link still names its chapter and sender
+ * (#5625). Long enough to find a link in last month's texts and ask for a new
+ * one; past it, an old token tells its holder nothing, as one that never
+ * existed doesn't.
+ */
+export const DEAD_INVITE_DETAILS_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /** One row of `GET /v1/invites`: the stored invite plus its status. */
 function toListItem(invite: Invite, now: Date): InviteListItem {
   return {
@@ -133,6 +189,7 @@ function toListItem(invite: Invite, now: Date): InviteListItem {
     used_at: invite.used_at,
     revoked_at: invite.revoked_at ?? null,
     created_at: invite.created_at,
+    reusable: invite.reusable === true,
   };
 }
 
@@ -146,6 +203,44 @@ export interface InviteListItem {
   used_at: string | null;
   revoked_at: string | null;
   created_at: string;
+  /** The chapter link (#3353), which many people join with. */
+  reusable: boolean;
+}
+
+/**
+ * How long a chapter link works (#3353, Paul 2026-11-19: "One chapter link,
+ * 7 days"): long enough for a Discord post to reach everyone, short enough
+ * that a link someone forwards doesn't work forever.
+ */
+export const CHAPTER_LINK_DAYS = 7;
+
+/**
+ * How long a personal invite works (Paul 2026-11-19, #5625: "7 days", up from
+ * 24 hours). A link texted on a Friday night was dead by Sunday; a week
+ * matches the chapter link and Discord's default, and an officer can still
+ * revoke one sooner.
+ */
+export const INVITE_DAYS = 7;
+
+/**
+ * Whether an invite link can still be used, as the invite screen tells it
+ * before anyone signs in (`POST /v1/invites/details`, #5625). `off` covers a
+ * revoked invite and one its sender can no longer grant: neither can be
+ * joined, and both are answered the same way, by asking the sender for a new
+ * link. `locked` is a working link into a chapter whose subscription is
+ * inactive ({@link linkState}).
+ */
+export type InviteLinkState = 'live' | 'expired' | 'used' | 'off' | 'locked';
+
+/** What the invite screen shows for a link, dead or alive (#5625). */
+export interface InviteDetails extends InvitePreview {
+  state: InviteLinkState;
+  /** The chapter, so a signed-in visitor already in it is told so before Join. */
+  chapter_id: string;
+  /** How many members the chapter has: "41 members" on the card. 0 on a link that doesn't work. */
+  member_count: number;
+  /** When the invite was made: "sent it on Friday, November 14" on a dead card. */
+  sent_at: string;
 }
 
 export interface BulkEmailInviteResult {
@@ -184,6 +279,36 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/** The emailed-invite ceiling's refusal (429), on top of its sentence. */
+export const INVITE_EMAIL_LIMIT_CODE = 'invite.email_daily_limit';
+
+/**
+ * What the sender reads at the emailed-invite ceiling: which ceiling, how many
+ * are left, when this batch would fit, and that a share link works now. The
+ * clients show it as written (`SERVER_MESSAGE_PATTERNS` in
+ * `@repo/validation`), so it is in the sender's words.
+ */
+export function emailInviteLimitMessage(
+  ceiling: RollingWindowRoom & {
+    who: 'chapter' | 'inviter';
+    limit: number;
+    roomAt: Date;
+  },
+  needed: number,
+  now: Date,
+): string {
+  const left = ceiling.remaining === 0 ? 'none' : String(ceiling.remaining);
+  const first =
+    ceiling.who === 'chapter'
+      ? `Your chapter can email up to ${ceiling.limit} invites in 24 hours and has ${left} left.`
+      : `You can email up to ${ceiling.limit} invites in 24 hours and have ${left} left.`;
+  const these = needed === 1 ? 'this one' : `these ${needed}`;
+  return `${first} You can send ${these} in ${waitPhrase(ceiling.roomAt, now)}, or share an invite link now.`;
+}
+
+/** The seeded Everyone role's name before #4191, which older builds send. */
+const LEGACY_MEMBER_ROLE_NAME = 'Member';
+
 @Injectable()
 export class InviteService {
   private readonly logger = new Logger(InviteService.name);
@@ -197,11 +322,8 @@ export class InviteService {
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
     private readonly activation: ActivationService,
-    private readonly chatService: ChatService,
     @Inject(EMAIL_PROVIDER) private readonly emailProvider: IEmailProvider,
     private readonly config: ConfigService,
-    @Inject(CHAT_MESSAGE_REPOSITORY)
-    private readonly chatMessages: IChatMessageRepository,
     private readonly legalAcceptance: LegalAcceptanceService,
     private readonly rbac: RbacService,
   ) {}
@@ -211,9 +333,12 @@ export class InviteService {
     createdBy: string,
     role: string,
     email: string | null = null,
+    reusable = false,
   ): Partial<Invite> {
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
+    expiresAt.setHours(
+      expiresAt.getHours() + (reusable ? CHAPTER_LINK_DAYS : INVITE_DAYS) * 24,
+    );
 
     return {
       token: randomUUID(),
@@ -222,6 +347,7 @@ export class InviteService {
       expires_at: expiresAt.toISOString(),
       created_by: createdBy,
       email,
+      reusable,
     };
   }
 
@@ -241,12 +367,90 @@ export class InviteService {
    * The stored value stays the role NAME, not the id: `invites.role` is
    * matched by name at redeem (`unique (chapter_id, name)` on `roles`), and
    * this issue is about choosing the default, not re-keying that contract.
+   *
+   * A chapter default the sender couldn't invite into themselves gives way to
+   * the Everyone role (#4546), as web's picker falls back to it: a chair on
+   * the phone, which names no role, still sends a working invite rather than
+   * a 403. A role the sender names is never swapped.
    */
   private async resolveInviteRole(
+    chapterId: string,
+    requested: string | undefined,
+    inviterUserId: string,
+  ): Promise<{ role: string; context: RankContext }> {
+    const [resolved, context] = await Promise.all([
+      this.resolveInviteRoleName(chapterId, requested),
+      this.rbac.getRankContext(chapterId, inviterUserId),
+    ]);
+    let role = resolved;
+    const member = everyoneRoleOf(context);
+    if (
+      !requested?.trim() &&
+      member &&
+      inviteRefusal(context, namedRole(context, role)) !== null &&
+      inviteRefusal(context, member) === null
+    ) {
+      role = member.name;
+    }
+    assertInviteRoleExists(context, role);
+    assertInviteRoleWithinReach(context, role);
+    return { role, context };
+  }
+
+  /**
+   * Which of the chapter's invites `userId` may see, copy and revoke (#4546):
+   * those granting a role they could invite someone into now
+   * (`assertInviteRoleWithinReach`), judged by what the redeem grants
+   * ({@link redeemedRole}). The rest still work, and whoever ranks high
+   * enough still sees them, but a lower officer neither gets their link nor
+   * stops them. Paul, 2026-11-13: officers cannot hand out an invite ranked
+   * above their own, minted or reused. A `*` holder sees every invite.
+   */
+  private async inviteVisibility(
+    chapterId: string,
+    userId: string,
+  ): Promise<(invite: Invite) => boolean> {
+    return visibilityIn(await this.rbac.getRankContext(chapterId, userId));
+  }
+
+  /**
+   * The ids of the roles `userId` may invite someone into
+   * (`GET /v1/invites/roles`), so the invite dialog offers only those. The
+   * Everyone role is among them whenever the caller may invite at all.
+   */
+  async findInvitableRoleIds(
+    chapterId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const context = await this.rbac.getRankContext(chapterId, userId);
+    return context.roles
+      .filter((role) => inviteRefusal(context, role) === null)
+      .map((role) => role.id);
+  }
+
+  private async resolveInviteRoleName(
     chapterId: string,
     requested?: string,
   ): Promise<string> {
     const explicit = requested?.trim();
+    if (
+      explicit === LEGACY_MEMBER_ROLE_NAME ||
+      explicit === EVERYONE_ROLE_NAME
+    ) {
+      // Mobile builds already in the stores send "Member", the seeded role's
+      // name before it became Everyone (#4191), and the founding wizard sends
+      // "Everyone" by name; both mean the chapter's Everyone role, whatever
+      // it is called, so neither meets the unknown-role 400 (#1830). Stored as sent, a role
+      // created later under that freed name would capture the invite at
+      // redeem, unchecked against the inviter's rank, so it names the
+      // Everyone role instead, unless a role still carries that name.
+      const roles = await this.roleRepo.findByChapter(chapterId);
+      if (roles.some((r) => r.name === explicit)) return explicit;
+      const everyone = roles.find(
+        (r) => r.system_key === SystemRoleKeys.EVERYONE,
+      );
+      return everyone?.name ?? explicit;
+    }
     if (explicit) return explicit;
 
     // Independent reads, so they overlap rather than stack: this path only
@@ -262,21 +466,23 @@ export class InviteService {
       const configured = roles.find((r) => r.id === defaultRoleId);
       // A configured id that no longer resolves should not be possible —
       // `on delete set null` clears it — but a stale read races a concurrent
-      // role delete, and falling through to Member beats issuing an invite
+      // role delete, and falling through to Everyone beats issuing an invite
       // whose role name is `undefined`.
       if (configured) return configured.name;
       this.logger.warn(
-        `Chapter ${chapterId} has default_invite_role_id ${defaultRoleId} that resolves to no role; falling back to the Member role.`,
+        `Chapter ${chapterId} has default_invite_role_id ${defaultRoleId} that resolves to no role; falling back to the Everyone role.`,
       );
     }
 
-    const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
-    if (member) return member.name;
+    const everyone = roles.find(
+      (r) => r.system_key === SystemRoleKeys.EVERYONE,
+    );
+    if (everyone) return everyone.name;
 
     throw new BadRequestException({
       code: 'invite.role_unresolved',
       message:
-        'No role was named, this chapter has no default invite role configured, and it has no seeded Member role to fall back to.',
+        'No role was named, this chapter has no default invite role configured, and it has no seeded Everyone role to fall back to.',
     });
   }
 
@@ -291,11 +497,112 @@ export class InviteService {
     // `incomplete` chapter may mint, per the Chunk 03 wedge) but this route is
     // also @GraceBlocked(), which blocks minting on `past_due` even inside the
     // 3-day grace window. `canceled` blocks it too.
-    const role = await this.resolveInviteRole(chapterId, requestedRole);
+    const { role } = await this.resolveInviteRole(
+      chapterId,
+      requestedRole,
+      createdBy,
+    );
     const data = this.prepareInviteData(chapterId, createdBy, role);
     const invite = await this.inviteRepo.create(data);
     // Funnel step 2 (#267). Recorded after the write so an invite that failed
     // to persist never counts as one the chapter created.
+    await this.activation.record(chapterId, 'activation-first-invite-created', {
+      batch_size: 1,
+    });
+    return toListItem(invite, new Date());
+  }
+
+  /**
+   * The chapter links (#3353): links an officer posts where the chapter will
+   * see them, such as its Discord. Anyone who opens one joins at the role the
+   * officer picked for it (#5633, Paul 2026-11-19: "Officer picks it per
+   * link"), until it expires after {@link CHAPTER_LINK_DAYS} days or an
+   * officer turns it off; a chapter has at most one live link per role, so a
+   * pledge class link and a brothers link can be out at once. Newest first,
+   * and only those granting a role the caller could invite someone into
+   * ({@link inviteVisibility}): a higher officer's link is not theirs to
+   * copy. Expired ones are returned, so the screen can say they expired.
+   */
+  async findChapterLinks(
+    chapterId: string,
+    userId: string,
+  ): Promise<InviteListItem[]> {
+    const [links, visible] = await Promise.all([
+      this.inviteRepo.findChapterLinks(chapterId),
+      this.inviteVisibility(chapterId, userId),
+    ]);
+    const now = new Date();
+    return links.filter(visible).map((link) => toListItem(link, now));
+  }
+
+  /**
+   * Every visible chapter link, plus the role a body-less POST makes a link
+   * for (`defaultRole`, which the pickers start on) and that role's link
+   * (`link`). Phone builds from before #5633 show only `link` and post no
+   * body to "Make a new link", so `link` has to be the link that post turns
+   * off, never another role's. Both are null when the caller can't invite
+   * into the default role.
+   */
+  async findChapterLinkView(
+    chapterId: string,
+    userId: string,
+  ): Promise<{
+    link: InviteListItem | null;
+    links: InviteListItem[];
+    defaultRole: string | null;
+  }> {
+    const [links, defaultRole] = await Promise.all([
+      this.findChapterLinks(chapterId, userId),
+      this.resolveInviteRole(chapterId, undefined, userId).then(
+        ({ role }) => role,
+        () => null,
+      ),
+    ]);
+    const link =
+      defaultRole === null
+        ? null
+        : (links.find((item) => item.role === defaultRole) ?? null);
+    return { link, links, defaultRole };
+  }
+
+  /**
+   * A new chapter link for `requestedRole` (the chapter's default invite role
+   * when none is named, as before #5633), replacing that role's current one:
+   * the old link stops working the moment the new one exists, so an officer
+   * who thinks a link spread too far makes a new one. Other roles' links are
+   * untouched. The role must be one the caller could invite someone into
+   * (`resolveInviteRole`, 403 otherwise), as for a personal invite.
+   */
+  async createChapterLink(
+    chapterId: string,
+    createdBy: string,
+    requestedRole?: string,
+  ): Promise<InviteListItem> {
+    // `resolveInviteRole` refuses a role above the caller, and the link it
+    // replaces grants that same role, so it is always one they may stop.
+    const [{ role }, links] = await Promise.all([
+      this.resolveInviteRole(chapterId, requestedRole, createdBy),
+      this.inviteRepo.findChapterLinks(chapterId),
+    ]);
+    const current = links.find((link) => link.role === role);
+    if (current) await this.inviteRepo.markRevoked(current.id);
+    let invite: Invite;
+    try {
+      invite = await this.inviteRepo.create(
+        this.prepareInviteData(chapterId, createdBy, role, null, true),
+      );
+    } catch (error) {
+      // Another officer made one for this role at the same moment
+      // (`invites_one_chapter_link_per_role`).
+      if (isUniqueViolation(error)) {
+        throw new ConflictException({
+          code: 'invite.chapter_link_conflict',
+          message:
+            'Another officer just made a chapter link for this role. Reload to see it.',
+        });
+      }
+      throw error;
+    }
     await this.activation.record(chapterId, 'activation-first-invite-created', {
       batch_size: 1,
     });
@@ -308,7 +615,11 @@ export class InviteService {
     requestedRole: string | undefined,
     count: number,
   ): Promise<Invite[]> {
-    const role = await this.resolveInviteRole(chapterId, requestedRole);
+    const { role } = await this.resolveInviteRole(
+      chapterId,
+      requestedRole,
+      createdBy,
+    );
     const inviteData: Partial<Invite>[] = Array.from({ length: count }, () =>
       this.prepareInviteData(chapterId, createdBy, role),
     );
@@ -331,7 +642,9 @@ export class InviteService {
    * Email delivery is best-effort per address: a send failure never rolls
    * back the invite token (the token is still valid and can be shared
    * manually), it is only reported back in `failed` so the caller can retry
-   * or fall back to the share link for those addresses.
+   * or fall back to the share link for those addresses. A failed send is
+   * marked on its invite, so it doesn't count toward the daily ceilings
+   * ({@link insertWithinDailyCeilings}).
    */
   async createWithEmails(
     chapterId: string,
@@ -339,7 +652,11 @@ export class InviteService {
     requestedRole: string | undefined,
     emails: string[],
   ): Promise<BulkEmailInviteResult> {
-    const role = await this.resolveInviteRole(chapterId, requestedRole);
+    const { role, context } = await this.resolveInviteRole(
+      chapterId,
+      requestedRole,
+      createdBy,
+    );
     const uniqueEmails = dedupeEmails(emails);
 
     // The address rides on the row so the inviter's list can name who each
@@ -349,11 +666,11 @@ export class InviteService {
     );
     const origin = resolveAppOrigin(this.config);
     // Refuse a public http: APP_URL before inserting tokens. mintJoinUrl
-    // would otherwise throw inside the send loop, after createMany, and
+    // would otherwise throw inside the send loop, after the insert, and
     // bypass the per-address `.catch` on sendInviteEmail.
     assertHttpsJoinOrigin(new URL(origin));
     const [invites, chapter, inviter] = await Promise.all([
-      this.inviteRepo.createMany(inviteData),
+      this.insertWithinDailyCeilings(chapterId, createdBy, inviteData),
       // The email names the chapter and who sent it, so the recipient knows
       // what they are joining before they open the link. Read alongside the
       // insert; a missing row, or a failed read, only drops that line from the
@@ -362,9 +679,12 @@ export class InviteService {
       this.userRepo.findById(createdBy).catch(() => null),
     ]);
 
+    // The email names the role as the invite card does (#5628).
+    const emailedRole = shownInviteRole(namedRole(context, role));
+
     // Correlate by token rather than by array position: each token was
     // generated here, before the insert, so it is a stable key regardless of
-    // what order the repository happens to return rows in — `createMany`'s
+    // what order the repository happens to return rows in — `createEmailed`'s
     // interface makes no ordering guarantee, and a positional zip would
     // silently mis-attribute which address gets which join link if that ever
     // changed.
@@ -385,17 +705,34 @@ export class InviteService {
           .sendInviteEmail({
             to,
             joinUrl: buildJoinUrl(invite.token, origin),
-            role,
+            role: emailedRole,
+            validDays: INVITE_DAYS,
             chapterName: chapter?.name ?? null,
             inviterName: inviter?.display_name ?? null,
           })
           .catch(() => false);
-        return { to, sent };
+        return { id: invite.id, to, sent };
       },
     );
     const failed = deliveries.filter((d) => !d.sent).map((d) => d.to);
+    await this.inviteRepo
+      .markEmailFailed(
+        chapterId,
+        deliveries.filter((d) => !d.sent).map((d) => d.id),
+      )
+      .catch((error: unknown) =>
+        // The invites keep counting toward the daily ceilings, which errs on
+        // the side of sending less.
+        logThrowable(
+          this.logger,
+          'warn',
+          'Failed to mark invites whose email was not sent',
+          error,
+        ),
+      );
     await this.replaceOlderInvites(
       chapterId,
+      visibilityIn(context),
       deliveries.filter((d) => d.sent).map((d) => d.to),
       new Set(invites.map((invite) => invite.id)),
     );
@@ -412,15 +749,83 @@ export class InviteService {
   }
 
   /**
+   * Inserts the batch only when it fits under the daily emailed-invite
+   * ceilings (`daily-send-limits.ts`): the chapter's, and the sender's across
+   * all their chapters, each counting the emailed invites of the last 24
+   * hours whose send didn't fail. The repository counts and inserts in one
+   * step, one batch per chapter and sender at a time, so batches sent
+   * together can't pass a ceiling between them. A batch that doesn't fit is
+   * refused (429) whole, before any token is made or email sent, saying how
+   * many are left and when this batch would fit; share links send no email
+   * and stay open meanwhile.
+   */
+  private async insertWithinDailyCeilings(
+    chapterId: string,
+    createdBy: string,
+    inviteData: Partial<Invite>[],
+  ): Promise<Invite[]> {
+    const now = new Date();
+    const result = await this.inviteRepo.createEmailed({
+      chapterId,
+      createdBy,
+      invites: inviteData.map((data) => ({
+        token: data.token as string,
+        role: data.role as string,
+        expires_at: data.expires_at as string,
+        email: data.email as string,
+      })),
+      since: new Date(now.getTime() - DAILY_LIMIT_WINDOW_MS),
+      chapterLimit: INVITE_EMAILS_PER_CHAPTER_PER_DAY,
+      inviterLimit: INVITE_EMAILS_PER_INVITER_PER_DAY,
+    });
+    if (result.outcome === 'ok') return result.invites;
+
+    const needed = inviteData.length;
+    const room = (times: string[], limit: number) =>
+      rollingWindowRoom(times, limit, needed, now, DAILY_LIMIT_WINDOW_MS);
+    const ceilings = [
+      {
+        who: 'chapter' as const,
+        limit: INVITE_EMAILS_PER_CHAPTER_PER_DAY,
+        ...room(result.chapter, INVITE_EMAILS_PER_CHAPTER_PER_DAY),
+      },
+      {
+        who: 'inviter' as const,
+        limit: INVITE_EMAILS_PER_INVITER_PER_DAY,
+        ...room(result.inviter, INVITE_EMAILS_PER_INVITER_PER_DAY),
+      },
+    ];
+    // The ceiling that frees up last is the one the sender waits on. Neither
+    // is over by this clock only when the database's count landed a moment
+    // apart from it; a minute is then the honest wait.
+    const binding = ceilings
+      .filter((c): c is typeof c & { roomAt: Date } => c.roomAt !== null)
+      .sort((a, b) => b.roomAt.getTime() - a.roomAt.getTime())[0] ?? {
+      ...ceilings[0],
+      roomAt: new Date(now.getTime() + 60_000),
+    };
+    throw new HttpException(
+      {
+        code: INVITE_EMAIL_LIMIT_CODE,
+        message: emailInviteLimitMessage(binding, needed, now),
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
+  /**
    * A new invite that reached an address replaces that address's older
    * pending ones, so resending never leaves two live links for one person
    * (spec/behavior/members.md § Invite Flow). An address whose new email
-   * failed keeps its older invite, which may be the one that arrived. Best
+   * failed keeps its older invite, which may be the one that arrived. Only
+   * an invite the sender could revoke is replaced (#4546): a chair's resend
+   * never retires the President's Treasurer invite to the same address. Best
    * effort: the new invites are already out, so a failure here is logged, not
    * thrown.
    */
   private async replaceOlderInvites(
     chapterId: string,
+    visible: (invite: Invite) => boolean,
     delivered: string[],
     newIds: Set<string>,
   ): Promise<void> {
@@ -429,6 +834,7 @@ export class InviteService {
     try {
       const older = (await this.inviteRepo.findByChapter(chapterId)).filter(
         (invite) =>
+          visible(invite) &&
           !newIds.has(invite.id) &&
           !invite.used_at &&
           !!invite.email &&
@@ -466,33 +872,44 @@ export class InviteService {
    * relabelled it would otherwise leave redeemers with no role at all.
    */
   private async resolveRedeemRole(invite: Invite) {
-    const { role } = await this.resolveRedeemRoles(invite);
-    return role;
+    const { role, refusal } = await this.resolveRedeemRoles(invite);
+    return { role, refused: refusal !== null };
   }
 
   /**
    * The role a redeem grants, plus every role id the new membership starts
-   * with. A role a chapter made itself, or one a Discord import brought over,
-   * often carries nothing but a `channels:read:<slug>` permission. Granted
-   * alone it leaves the new member refused on every screen, because the
-   * access every member needs (`members:view`) lives on the seeded roles
-   * (2026-11-07: two testers invited as "Cabinet"). So a role that is not
-   * seeded (`is_system` false, which also covers seeded roles renamed before
-   * `system_key` existed) and grants neither `members:view` nor `*` comes with
-   * the chapter's Member role. Member goes after the invited role, because
-   * web's Members list labels a member by their first role. Every other role
-   * is granted alone, as before.
+   * with: the invite's role, then the chapter's Everyone role, the floor
+   * every member holds (Paul, 2026-11-21). Nothing else: a join into a role
+   * that carries no access lands with the directory and the channels open to
+   * the whole chapter, and an officer gives the base role. Until 2026-11-21 a
+   * role carrying no `members:view` came with the old Member role, which
+   * landed the joiner as a full member.
    */
   private async resolveRedeemRoles(invite: Invite) {
-    const roles = await this.roleRepo.findByChapter(invite.chapter_id);
-    const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
-    const role = roles.find((r) => r.name === invite.role) ?? member;
-    if (!role) return { role, roleIds: [] as string[] };
+    // The inviter's reach as it stands now, not when they sent the invite
+    // (Paul, 2026-11-16, #1830): an officer demoted since can't bring someone
+    // in at the rank they lost. One read of the chapter's roles serves both.
+    const context = await this.rbac.getRankContext(
+      invite.chapter_id,
+      invite.created_by,
+    );
+    const everyone = everyoneRoleOf(context);
+    // A role deleted since the invite was sent grants the Everyone role.
+    const role = context.roles.find((r) => r.name === invite.role) ?? everyone;
+    // Fails closed: an invite for a role carrying `*`, or one its sender can
+    // no longer grant, joins nobody, rather than quietly joining as Everyone.
+    // A sender who has since left the chapter or lost `members:invite` can no
+    // longer invite anyone, the Everyone role included.
+    const senderCanInvite =
+      context.reach.wildcard ||
+      context.reach.permissions.has(SystemPermissions.MEMBERS_INVITE);
+    const refusal = senderCanInvite
+      ? inviteRefusal(context, role)
+      : 'The sender of this invite can no longer invite members.';
+    if (!role) return { role, roleIds: [] as string[], refusal };
     const roleIds = [role.id];
-    if (member && member.id !== role.id && lacksBaseAccess(role)) {
-      roleIds.push(member.id);
-    }
-    return { role, roleIds };
+    if (everyone && everyone.id !== role.id) roleIds.push(everyone.id);
+    return { role, roleIds, refusal };
   }
 
   /**
@@ -508,18 +925,137 @@ export class InviteService {
    */
   async preview(token: string): Promise<InvitePreview> {
     const invite = await this.findLiveInvite(token);
-    const preview = await this.describe(invite);
+    const described = await this.describe(invite);
     // A chapter deleted under a live invite: as dead as the link gets.
-    if (!preview) throw new GoneException('Invite not found');
-    return preview;
+    if (!described) throw new GoneException('Invite not found');
+    // One the redeem would refuse (#1830) says so now, with the redeem's own
+    // refusal, rather than offering a Join that can't work.
+    if (described.refused) throw inviteRoleOutOfReach();
+    return described.preview;
+  }
+
+  /**
+   * What an invite link shows before anyone signs in (#5625): the chapter, who
+   * sent it, the role, and whether it still works. Unlike {@link preview} it
+   * needs no account: the token is an unguessable secret, and whoever holds a
+   * live one could join with it, so the card tells them nothing joining
+   * wouldn't.
+   *
+   * A dead link answers too, so the screen can still name the chapter and the
+   * sender to ask for a new one, but with less: no member count and no role,
+   * which only a working link earns, and nothing at all once the invite is
+   * more than {@link DEAD_INVITE_DETAILS_DAYS} days old. Not found (404) for
+   * that, for a token that never existed, and for one whose chapter is gone.
+   * The member count is cosmetic, so a failed count reads as none rather than
+   * failing the card.
+   */
+  async details(token: string, now = new Date()): Promise<InviteDetails> {
+    const invite = await this.inviteRepo.findByToken(token);
+    if (!invite) throw new NotFoundException('Invite not found');
+    const described = await this.describe(invite);
+    if (!described) throw new NotFoundException('Invite not found');
+    const state = linkState(invite, described, now);
+    const live = state === 'live';
+    // A locked link still works once the chapter is restored, so it is not
+    // dead and keeps answering.
+    if (
+      !live &&
+      state !== 'locked' &&
+      now.getTime() - new Date(invite.created_at).getTime() >
+        DEAD_INVITE_DETAILS_DAYS * DAY_MS
+    ) {
+      throw new NotFoundException('Invite not found');
+    }
+    let memberCount = 0;
+    if (live) {
+      try {
+        memberCount = await this.memberRepo.countByChapter(invite.chapter_id);
+      } catch {
+        // Cosmetic: the card reads without a count rather than not at all.
+      }
+    }
+    return {
+      ...described.preview,
+      role: live ? described.preview.role : null,
+      state,
+      chapter_id: invite.chapter_id,
+      member_count: memberCount,
+      sent_at: invite.created_at,
+    };
+  }
+
+  /**
+   * "Ask for a new link" from a dead invite (#5625): tells the invite's sender,
+   * by push and in the app, who is asking and for which chapter, so they can
+   * send a fresh one. Signed-in only, so the sender sees a real name. A live
+   * invite needs no asking (409, use it), and neither does someone already in
+   * the chapter (409). A sender who has since left the chapter is not told:
+   * `notifyMembers` trusts its caller on membership, so it is checked here, and
+   * the caller hears it as sent either way. The route allows a few asks an
+   * hour per account (`ThrottlePersonalNudge`), because each one pushes a
+   * person who never asked to hear from the caller.
+   */
+  async askForNewLink(token: string, userId: string): Promise<void> {
+    const invite = await this.inviteRepo.findByToken(token);
+    if (!invite) throw new NotFoundException('Invite not found');
+    const [described, membership, asker, senderMembership] = await Promise.all([
+      this.describe(invite),
+      this.memberRepo.findByUserAndChapter(userId, invite.chapter_id),
+      this.userRepo.findById(userId),
+      this.memberRepo.findByUserAndChapter(
+        invite.created_by,
+        invite.chapter_id,
+      ),
+    ]);
+    if (!described) throw new NotFoundException('Invite not found');
+    if (membership) {
+      throw new ConflictException({
+        code: 'invite.already_member',
+        message: "You're already in this chapter.",
+      });
+    }
+    const state = linkState(invite, described, new Date());
+    if (state === 'live') {
+      throw new ConflictException({
+        code: 'invite.still_live',
+        message: 'This invite still works. Use it to join.',
+      });
+    }
+    if (!senderMembership) return;
+    const name = asker?.display_name?.trim() || 'Someone';
+    const chapter = described.preview.chapter_name;
+    const locked = state === 'locked';
+    await this.notificationService.notifyMembers(
+      invite.chapter_id,
+      [invite.created_by],
+      locked
+        ? {
+            title: `${name} tried to join with your invite`,
+            body: `${chapter} isn't taking new members while its subscription is inactive. Once it's restored, the same link works.`,
+            priority: 'NORMAL',
+            category: 'members',
+            data: { target: { screen: 'members' }, memberUserId: userId },
+          }
+        : {
+            title: `${name} asked for a new invite`,
+            body: `The link you sent them to ${chapter} no longer works. Send a new one from Invite members.`,
+            priority: 'NORMAL',
+            category: 'members',
+            data: { target: { screen: 'members' }, memberUserId: userId },
+          },
+    );
   }
 
   /**
    * The confirm card's facts for one live invite, or null when its chapter is
    * gone. Shared by `preview` and `findPendingForVerifiedEmail`.
    */
-  private async describe(invite: Invite): Promise<InvitePreview | null> {
-    const [chapter, inviter, role] = await Promise.all([
+  private async describe(invite: Invite): Promise<{
+    preview: InvitePreview;
+    refused: boolean;
+    locked: boolean;
+  } | null> {
+    const [chapter, inviter, { role, refused }] = await Promise.all([
       this.chapterRepo.findById(invite.chapter_id),
       this.userRepo.findById(invite.created_by),
       this.resolveRedeemRole(invite),
@@ -534,15 +1070,16 @@ export class InviteService {
     const branding = orgHidingGreekLettersIn(chapter.name)
       ? { ...chapter.branding, show_greek_letters: false }
       : chapter.branding;
-    return {
+    const preview: InvitePreview = {
       chapter_name: chapter.name,
       university: chapter.university,
       mark_text: chapterTextMark(branding)?.text ?? null,
       accent_color: chapter.accent_color,
       invited_by: inviter?.display_name ?? null,
-      role: role?.name ?? null,
+      role: shownInviteRole(role),
       expires_at: invite.expires_at,
     };
+    return { preview, refused, locked: isSubscriptionHardLocked(chapter) };
   }
 
   /**
@@ -567,23 +1104,27 @@ export class InviteService {
     if (invites.length === 0) return [];
     const memberships = await this.memberRepo.findByUser(userId);
     const joined = new Set(memberships.map((m) => m.chapter_id));
-    // One card per chapter: the newest invite wins. Sending again revokes the
-    // older one (`replaceOlderInvites`), but two officers can each send one.
-    const seen = new Set<string>();
-    const live = invites.filter((invite) => {
-      if (joined.has(invite.chapter_id) || seen.has(invite.chapter_id)) {
-        return false;
-      }
-      seen.add(invite.chapter_id);
-      return true;
-    });
-    const described = await Promise.all(
-      live.map(async (invite) => {
-        const preview = await this.describe(invite);
-        return preview ? { ...preview, token: invite.token } : null;
-      }),
+    const candidates = invites.filter(
+      (invite) => !joined.has(invite.chapter_id),
     );
-    return described.filter((row): row is PendingInvite => row !== null);
+    const described = await Promise.all(
+      candidates.map(async (invite) => ({
+        invite,
+        described: await this.describe(invite),
+      })),
+    );
+    // One card per chapter: the newest invite the redeem would honour wins.
+    // Sending again revokes the older one (`replaceOlderInvites`), but two
+    // officers can each send one, and a newer one the redeem would refuse
+    // (#1830) must not hide an older one that works.
+    const seen = new Set<string>();
+    const rows: PendingInvite[] = [];
+    for (const { invite, described: row } of described) {
+      if (!row || row.refused || seen.has(invite.chapter_id)) continue;
+      seen.add(invite.chapter_id);
+      rows.push({ ...row.preview, token: invite.token });
+    }
+    return rows;
   }
 
   /**
@@ -641,11 +1182,18 @@ export class InviteService {
     // checkbox; before the claim, so a refusal leaves the token usable.
     await this.legalAcceptance.requireOrAccept(userId, acceptTerms);
 
-    // Before the claim, so a roles outage does not consume the token (#1863).
-    const { roleIds } = await this.resolveRedeemRoles(invite);
+    // Before the claim, so a roles outage does not consume the token (#1863),
+    // and a refusal leaves it for an officer to revoke.
+    const { roleIds, refusal } = await this.resolveRedeemRoles(invite);
+    if (refusal) throw inviteRoleOutOfReach();
 
-    const claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
-    if (!claimedAt) throw new GoneException('Invite already used');
+    // A chapter link (#3353) is never claimed: the next person joins with it
+    // too. Turning it off sets `used_at`, which `findLiveInvite` refuses.
+    let claimedAt: string | null = null;
+    if (!invite.reusable) {
+      claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
+      if (!claimedAt) throw new GoneException('Invite already used');
+    }
 
     let member: Awaited<ReturnType<IMemberRepository['create']>>;
     try {
@@ -653,6 +1201,7 @@ export class InviteService {
         user_id: userId,
         chapter_id: invite.chapter_id,
         role_ids: roleIds,
+        joined_via_invite_id: invite.id,
       });
     } catch (error) {
       // The claim is not redemption yet: spec/behavior/onboarding.md sets
@@ -677,7 +1226,7 @@ export class InviteService {
         );
         membershipLanded = true;
       }
-      if (!membershipLanded) {
+      if (!membershipLanded && claimedAt) {
         try {
           await this.inviteRepo.releaseClaim(invite.id, claimedAt);
         } catch (releaseError) {
@@ -701,105 +1250,117 @@ export class InviteService {
       'activation-first-invite-redeemed',
     );
 
-    try {
-      // Named, and not sent to the member who just joined: "A new member has
-      // joined the chapter" told everyone nothing, the joiner included
-      // (notifications.md § What a push says). Sent only to the members who
-      // can act on a join (#3656), on the `members` category, whose switch
-      // `@repo/validation` shows to exactly this audience (#4008).
-      const [holders, joiner] = await Promise.all([
-        this.rbac.findUserIdsWithAnyPermissions(
-          invite.chapter_id,
-          MEMBER_JOINED_AUDIENCE,
-        ),
-        // The name is a nicety: a failed read costs the name, not the push.
-        this.userRepo
-          .findByIds([userId])
-          .then(([user]) => user)
-          .catch(() => undefined),
-      ]);
-      const recipients = holders.filter((id) => id !== userId);
-      if (recipients.length > 0) {
-        const name = joiner?.display_name?.trim();
-        await this.notificationService.notifyMembers(
-          invite.chapter_id,
-          recipients,
-          {
-            title: name ? `${name} joined` : 'A new member joined',
-            body: 'New member of the chapter',
-            priority: 'NORMAL',
-            category: 'members',
-            data: { target: { screen: 'members' } },
-          },
-        );
-      }
-    } catch (error) {
-      reportCaughtFailure(this.logger, {
-        level: 'error',
-        site: 'invite-redeem-new-member-notify-failed',
-        message: `Failed to send the member-joined notification (chapter ${invite.chapter_id})`,
-        error,
-      });
-    }
-
-    await this.notifyInviterOfAcceptance(invite, userId);
+    // The "<name> joined" notices wait for the name (#5627): the member's
+    // first finish of onboarding sends them (`announceJoin`), so nobody is
+    // told "welcome.email joined" or "A new member joined".
 
     return { chapterId: invite.chapter_id, memberId: member.id };
   }
 
   /**
-   * Posts a `system_audit` DM to the inviter naming who accepted, per
-   * spec/behavior/chat/README.md. Writes through the message repository, as
-   * `PollService` does for its closing notice — `ChatService.sendMessage` would
-   * reject `SYSTEM_SENDER_ID` as a poster in a DM it isn't one of the two
-   * members of, so this bypasses it.
-   * Never allowed to fail the redemption itself: an inviter who left the
-   * chapter, a missing accepter profile, or any insert error is logged and
-   * swallowed, not thrown.
+   * Tell the chapter who joined (#5627; Paul, 2026-11-19: the notice goes out
+   * after the name step saves). Called once, when a member who came in by an
+   * invite first finishes onboarding (`MemberService.updateOnboarding`), so
+   * the push carries the name they just gave. It used to go out at redeem,
+   * before the member had named themselves. A member who never finishes
+   * onboarding is never announced; their membership is no different.
+   *
+   * Never throws: a failure costs the notice, not the member's finish.
    */
-  private async notifyInviterOfAcceptance(
-    invite: Invite,
-    accepterUserId: string,
-  ): Promise<void> {
-    // A rejoin (the inviter left the chapter, then redeems their own
-    // still-valid token) makes accepter === inviter — `getOrCreateDm` only
-    // checks array length, so [x, x] would silently pass and produce a
-    // degenerate self-DM. Nothing to announce to the accepter about
-    // themselves, so skip it outright.
-    if (invite.created_by === accepterUserId) return;
-
-    try {
-      const accepter = await this.userRepo.findById(accepterUserId);
-      if (!accepter) return;
-
-      const dm = await this.chatService.getOrCreateDm({
-        chapter_id: invite.chapter_id,
-        member_ids: [invite.created_by, accepterUserId],
-      });
-
-      const message: Partial<ChatMessage> = {
-        channel_id: dm.id,
-        sender_id: SYSTEM_SENDER_ID,
-        content: `${accepter.display_name} accepted your invite.`,
-        kind: 'system_audit',
-      };
-      try {
-        await this.chatMessages.create(message);
-      } catch (error) {
-        logThrowable(
-          this.logger,
-          'warn',
-          'Invite-accept system_audit message insert failed',
+  async announceJoin(member: {
+    user_id: string;
+    chapter_id: string;
+    joined_via_invite_id: string | null;
+  }): Promise<void> {
+    if (!member.joined_via_invite_id) return;
+    const userId = member.user_id;
+    const chapterId = member.chapter_id;
+    const invite = await this.inviteRepo
+      .findById(member.joined_via_invite_id)
+      .catch((error: unknown) => {
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'invite-redeem-new-member-notify-failed',
+          message: `Failed to read the invite for the member-joined notification (chapter ${chapterId})`,
           error,
-        );
-      }
-    } catch (error) {
-      logThrowable(
-        this.logger,
-        'warn',
-        'Failed to notify inviter of invite acceptance',
-        error,
+        });
+        return null;
+      });
+    if (!invite || invite.chapter_id !== chapterId) return;
+    // The name is a nicety: a failed read costs the name, not the push.
+    const joiner = await this.userRepo
+      .findByIds([userId])
+      .then(([user]) => user)
+      .catch(() => undefined);
+    const name = joiner?.display_name?.trim();
+    // `memberUserId` is who joined, a `users.id`, so the in-app list draws
+    // their picture and their name's colour (#4346). Not `senderId`: that key
+    // means a chat sender, and a block withholds rows by it. Not `memberId`,
+    // which means a `members.id`.
+    const data = { target: { screen: 'members' }, memberUserId: userId };
+    // Whoever sent the invite hears it as theirs (#5625, Paul 2026-11-19: "not
+    // the biggest fan of these DMs"). It used to arrive as a Frapp message
+    // inside a DM with the new member, a conversation neither had started,
+    // which the new member also found waiting as their first DM. A
+    // notification is where "your invite was used" belongs; saying hi is the
+    // inviter's own choice, from the member's profile.
+    // Only while they're still in the chapter: removing a member leaves the
+    // invites they sent working, and the notice names the new member.
+    const inviterStillIn =
+      invite.created_by !== userId &&
+      (await this.memberRepo
+        .findByUserAndChapter(invite.created_by, chapterId)
+        .then(Boolean)
+        .catch(() => false));
+    const inviterId = inviterStillIn ? invite.created_by : null;
+    const sends: Promise<void>[] = [];
+    if (inviterId) {
+      sends.push(
+        this.notificationService.notifyMembers(chapterId, [inviterId], {
+          title: inviterNoticeTitle(name, invite.reusable),
+          body: 'Say hi from their profile in Members.',
+          priority: 'NORMAL',
+          category: 'members',
+          data,
+        }),
       );
+    }
+    // Named, and not sent to the member who just joined: "A new member has
+    // joined the chapter" told everyone nothing, the joiner included
+    // (notifications.md § What a push says). Sent only to the members who can
+    // act on a join (#3656), on the `members` category, whose switch
+    // `@repo/validation` shows to exactly this audience (#4008). Its own
+    // promise, so a failed roster read never costs the inviter their notice.
+    sends.push(
+      (async () => {
+        const holders = await this.rbac.findUserIdsWithAnyPermissions(
+          chapterId,
+          MEMBER_JOINED_AUDIENCE,
+        );
+        const recipients = holders.filter(
+          (id) => id !== userId && id !== inviterId,
+        );
+        if (recipients.length === 0) return;
+        await this.notificationService.notifyMembers(chapterId, recipients, {
+          title: name ? `${name} joined` : 'A new member joined',
+          body: 'New member of the chapter',
+          priority: 'NORMAL',
+          category: 'members',
+          data,
+        });
+      })(),
+    );
+    // Settled, not raced: each failure is reported on its own, and one never
+    // hides another.
+    for (const result of await Promise.allSettled(sends)) {
+      if (result.status === 'rejected') {
+        reportCaughtFailure(this.logger, {
+          level: 'error',
+          site: 'invite-redeem-new-member-notify-failed',
+          message: `Failed to send the member-joined notification (chapter ${chapterId})`,
+          error: result.reason,
+        });
+      }
     }
   }
 
@@ -807,18 +1368,35 @@ export class InviteService {
    * The chapter's invites, newest first, each with its status (#3607), so
    * clients read one field rather than inferring revoked from `used_at`.
    * `created_by` and `chapter_id` stay server-side: the list is the inviter's
-   * view of who was asked, not an audit of who asked.
+   * view of who was asked, not an audit of who asked. Only the invites the
+   * caller could have sent are listed ({@link inviteVisibility}): each row
+   * carries its link, and a lower officer never gets a higher one's.
    */
-  async findByChapter(chapterId: string): Promise<InviteListItem[]> {
+  async findByChapter(
+    chapterId: string,
+    viewerUserId: string,
+  ): Promise<InviteListItem[]> {
     const now = new Date();
-    const invites = await this.inviteRepo.findByChapter(chapterId);
-    return invites.map((invite) => toListItem(invite, now));
+    const [invites, visible] = await Promise.all([
+      this.inviteRepo.findByChapter(chapterId),
+      this.inviteVisibility(chapterId, viewerUserId),
+    ]);
+    // The chapter link has its own place on the screen
+    // (`GET /v1/invites/chapter-link`): this list is who was asked.
+    return invites
+      .filter((invite) => !invite.reusable && visible(invite))
+      .map((invite) => toListItem(invite, now));
   }
 
-  async revoke(id: string, chapterId: string): Promise<void> {
-    const invite = await this.inviteRepo.findById(id);
+  async revoke(id: string, chapterId: string, userId: string): Promise<void> {
+    const [invite, visible] = await Promise.all([
+      this.inviteRepo.findById(id),
+      this.inviteVisibility(chapterId, userId),
+    ]);
 
-    if (!invite || invite.chapter_id !== chapterId) {
+    // An invite ranked above the caller is not listed for them, so it is not
+    // found here either (#4546).
+    if (!invite || invite.chapter_id !== chapterId || !visible(invite)) {
       throw new NotFoundException('Invite not found');
     }
 
@@ -833,17 +1411,101 @@ export class InviteService {
 }
 
 /**
- * A role that is not seeded and gives none of the access every member needs.
- * See `InviteService.resolveRedeemRoles`.
+ * What a joiner reads when the invite's role is out of its sender's reach
+ * (#1830): the President's, or one ranked at or above the sender's roles now.
  */
-function lacksBaseAccess(role: {
-  is_system: boolean;
-  permissions: string[] | null;
-}): boolean {
-  if (role.is_system) return false;
-  const permissions = role.permissions ?? [];
+const INVITE_REDEEM_REFUSAL =
+  "This invite is for a role its sender can't give. Ask an officer for a new invite.";
+
+/** The 403 preview and redeem answer for such an invite. */
+function inviteRoleOutOfReach(): ForbiddenException {
+  return new ForbiddenException({
+    code: 'invite.role_out_of_reach',
+    message: INVITE_REDEEM_REFUSAL,
+  });
+}
+
+/**
+ * The invite rule (`inviteRefusal`, #4071, #1830) at create: the President's
+ * role never, and otherwise only a role ranked below the inviter whose
+ * permissions they hold. A chapter default the inviter can't reach gives way
+ * to the Everyone role before this check (`InviteService.resolveInviteRole`).
+ */
+function assertInviteRoleWithinReach(
+  context: RankContext,
+  roleName: string,
+): void {
+  const refusal = inviteRefusal(context, namedRole(context, roleName));
+  if (refusal) throw new ForbiddenException(refusal);
+}
+
+/**
+ * Refuses (400) a role name the chapter has no role for (#1830). Stored as
+ * typed, it would be matched by name at redeem, so a role created later under
+ * that name would capture the invite.
+ */
+function assertInviteRoleExists(context: RankContext, roleName: string): void {
+  if (context.roles.some((candidate) => candidate.name === roleName)) return;
+  throw new BadRequestException({
+    code: 'invite.role_unknown',
+    message: `This chapter has no role named "${roleName}".`,
+  });
+}
+
+/**
+ * The role an invite naming `roleName` is checked as when it is minted: the
+ * role of that name, or the Everyone role when none carries it. Only a chapter
+ * default can reach the fallback (`resolveInviteRole`), since a named role
+ * must exist (`assertInviteRoleExists`).
+ */
+/**
+ * The role an invite card or email names for an invite granting `role`.
+ * Joining with only the Everyone role (#4191) joins as nobody in particular,
+ * so it, like no role at all, is named as none.
+ */
+function shownInviteRole(role: Role | null | undefined): string | null {
+  return role && role.system_key !== SystemRoleKeys.EVERYONE ? role.name : null;
+}
+
+function namedRole(context: RankContext, roleName: string): Role | undefined {
   return (
-    !permissions.includes(WILDCARD) &&
-    !permissions.includes(SystemPermissions.MEMBERS_VIEW)
+    context.roles.find((candidate) => candidate.name === roleName) ??
+    everyoneRoleOf(context)
   );
+}
+
+/**
+ * The role an invite naming `roleName` is judged as for who may see and
+ * revoke it: the role of that name, or the Everyone role when none carries
+ * it or the one that does carries `*` (an invite minted before #4071). The
+ * redeem refuses that last kind (`InviteService.resolveRedeemRoles`), so any
+ * inviter may see and revoke it as a dead link.
+ */
+function redeemedRole(
+  context: RankContext,
+  roleName: string,
+): Role | undefined {
+  const named = context.roles.find((candidate) => candidate.name === roleName);
+  return named && !named.permissions.includes(WILDCARD)
+    ? named
+    : everyoneRoleOf(context);
+}
+
+/**
+ * Whether the caller in `context` may see, copy and revoke an invite
+ * (`InviteService.inviteVisibility`): a `*` holder any, anyone else one whose
+ * redeem grants a role they could invite someone into.
+ */
+function visibilityIn(context: RankContext): (invite: Invite) => boolean {
+  if (context.reach.wildcard) return () => true;
+  const visibleByRole = new Map<string, boolean>();
+  return (invite) => {
+    let visible = visibleByRole.get(invite.role);
+    if (visible === undefined) {
+      visible =
+        inviteRefusal(context, redeemedRole(context, invite.role)) === null;
+      visibleByRole.set(invite.role, visible);
+    }
+    return visible;
+  };
 }

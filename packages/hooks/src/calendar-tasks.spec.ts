@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_CALENDAR_LAYERS,
+  calendarKindOf,
   calendarTaskAccessibleLabel,
   calendarTasksByDay,
-  parseCalendarLayers,
+  parseHiddenCalendarKinds,
   selectCalendarTasks,
+  serializeHiddenCalendarKinds,
   type CalendarAssignedTask,
+  type CalendarTask,
+  type CalendarKind,
 } from "./calendar-tasks";
 
 const ME = "user-me";
@@ -152,12 +156,36 @@ describe("calendarTasksByDay", () => {
   });
 });
 
-describe("parseCalendarLayers", () => {
-  it("reads back known layers and refuses junk", () => {
-    expect(parseCalendarLayers('["mine","nope"]')).toEqual(new Set(["mine"]));
-    expect(parseCalendarLayers("[]")).toEqual(new Set());
-    expect(parseCalendarLayers("{")).toBeNull();
-    expect(parseCalendarLayers(null)).toBeNull();
+describe("colour key kinds (#5560)", () => {
+  it("files own and assigned tasks as Tasks, and birthdays as Birthdays", () => {
+    const [mine, assigned] = selectCalendarTasks(
+      [task(), task({ assignee_id: "m1", created_by: ME })],
+      ME,
+    );
+    expect(calendarKindOf(mine!)).toBe("tasks");
+    expect(calendarKindOf(assigned!)).toBe("tasks");
+    expect(
+      calendarKindOf({
+        kind: "birthdays",
+        key: "b",
+        title: "Dana",
+        userId: "u",
+        day: "2026-11-12",
+      }),
+    ).toBe("birthdays");
+  });
+
+  it("stores what's hidden and reads it back, dropping junk", () => {
+    const hidden = new Set<CalendarKind>(["birthdays", "tasks"]);
+    const raw = serializeHiddenCalendarKinds(hidden);
+    expect(JSON.parse(raw)).toEqual({ hidden: ["tasks", "birthdays"] });
+    expect(parseHiddenCalendarKinds(raw)).toEqual(hidden);
+    expect(parseHiddenCalendarKinds('{"hidden":["mine","events"]}')).toEqual(
+      new Set(["events"]),
+    );
+    expect(parseHiddenCalendarKinds('["events"]')).toBeNull();
+    expect(parseHiddenCalendarKinds("{")).toBeNull();
+    expect(parseHiddenCalendarKinds(null)).toBeNull();
   });
 });
 
@@ -176,6 +204,121 @@ describe("calendarTaskAccessibleLabel", () => {
     );
     expect(calendarTaskAccessibleLabel(assigned!)).toBe(
       "Dues form, assigned by you, 1 of 2 done",
+    );
+  });
+});
+
+describe("tasks due at a time (#5116)", () => {
+  // A local wall-clock moment, as the API returns `due_at`.
+  const at = (day: number, hour: number, minute = 0) =>
+    new Date(2026, 10, day, hour, minute).toISOString();
+
+  it("says the time, files the task on that moment's local day, and keeps untimed ones as they were", () => {
+    const [timed, untimed] = selectCalendarTasks(
+      [
+        task({ id: "a", due_date: "2026-11-12", due_at: at(12, 17) }),
+        task({ id: "b", due_date: "2026-11-12", due_at: null }),
+      ],
+      ME,
+    );
+    expect(timed).toMatchObject({
+      day: "2026-11-12",
+      dueMinute: 17 * 60,
+      timeLabel: "5 PM",
+      dueAt: at(12, 17),
+    });
+    expect(untimed).toMatchObject({
+      day: "2026-11-12",
+      dueAt: null,
+      dueMinute: null,
+      timeLabel: null,
+    });
+  });
+
+  it("files a task by its due moment's local day, not the day it was written with", () => {
+    // Written as Nov 12 on a device a zone away; here the moment is Nov 13.
+    const [item] = selectCalendarTasks(
+      [task({ due_date: "2026-11-12", due_at: at(13, 0, 30) })],
+      ME,
+    );
+    expect(item).toMatchObject({ day: "2026-11-13", dueMinute: 30 });
+  });
+
+  it("falls back to the due day when the time can't be read", () => {
+    const [item] = selectCalendarTasks(
+      [task({ due_date: "2026-11-12", due_at: "not a time" })],
+      ME,
+    );
+    expect(item).toMatchObject({ day: "2026-11-12", timeLabel: null });
+  });
+
+  it("keeps an officer's same task at two times as two items", () => {
+    const items = selectCalendarTasks(
+      [
+        task({
+          id: "1",
+          assignee_id: "m1",
+          created_by: ME,
+          due_at: at(12, 9, 30),
+        }),
+        task({
+          id: "2",
+          assignee_id: "m2",
+          created_by: ME,
+          due_at: at(12, 9, 30),
+        }),
+        task({
+          id: "3",
+          assignee_id: "m3",
+          created_by: ME,
+          due_at: at(12, 17),
+        }),
+        task({ id: "4", assignee_id: "m4", created_by: ME }),
+      ],
+      ME,
+    );
+    expect(
+      items.map((item) =>
+        item.kind === "assigned"
+          ? [item.timeLabel, item.assignees.length]
+          : null,
+      ),
+    ).toEqual([
+      ["9:30 AM", 2],
+      ["5 PM", 1],
+      [null, 1],
+    ]);
+  });
+
+  it("lists a day's timed tasks first by time, then the untimed ones, as Tasks does", () => {
+    const items = selectCalendarTasks(
+      [
+        task({ id: "1", title: "Late", due_at: at(12, 20) }),
+        task({ id: "2", title: "Anytime", status: "COMPLETED" }),
+        task({
+          id: "3",
+          title: "Early, assigned",
+          assignee_id: "m1",
+          created_by: ME,
+          due_at: at(12, 8),
+        }),
+      ],
+      ME,
+    );
+    const day = calendarTasksByDay(items, ALL_CALENDAR_LAYERS).get(
+      "2026-11-12",
+    );
+    expect(day?.map((item) => item.title)).toEqual([
+      "Early, assigned",
+      "Late",
+      "Anytime",
+    ]);
+  });
+
+  it("says the time to a screen reader", () => {
+    const [item] = selectCalendarTasks([task({ due_at: at(12, 17) })], ME);
+    expect(calendarTaskAccessibleLabel(item as CalendarTask)).toBe(
+      "Dues form, due 5 PM, your task, to do",
     );
   });
 });

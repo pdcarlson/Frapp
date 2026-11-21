@@ -23,6 +23,7 @@ import {
   dayDelta,
   formatDueLabel,
   formatDueOn,
+  formatPointsChip as pointsChipLabel,
   parseInstant,
   parseInstantOrBareLocalNoon,
 } from "@repo/formatting";
@@ -58,10 +59,12 @@ export function daysSinceCompletion(
 }
 
 /**
- * The subtitle under an open task's title.
+ * The subtitle under an open task's title: `@repo/formatting`'s countdown
+ * ("Due today", "Due Friday", "Overdue by 2 days", "Due today at 5 PM" for a
+ * task due at a time, #4003), the one web's chat task card reads too (#4135).
  *
- * Returns `null` for a date this module cannot read, so the row draws a title
- * with no subtitle rather than "Invalid Date" — `narrow.ts` states the same
+ * Returns `null` for a date it cannot read, so the row draws a title with no
+ * subtitle rather than "Invalid Date" — `narrow.ts` states the same
  * preference. The caller keeps the row: dropping a task the member owes is
  * worse than an odd-looking one.
  */
@@ -69,25 +72,7 @@ export function formatDueSubtitle(
   dueDate: string | null,
   now: Date,
 ): string | null {
-  if (!dueDate) return null;
-  // A task due at a time of day carries its `due_at` instant (#4003): the
-  // shared countdown names the time ("Due today at 5 PM") and counts an
-  // overdue one by the minute or hour.
-  if (isTimed(dueDate)) return formatDueLabel(dueDate, now);
-  const due = parseTaskDate(dueDate);
-  if (!due) return null;
-
-  const days = dayDelta(now, due);
-  if (days < 0) {
-    const overdueBy = -days;
-    return `Overdue by ${overdueBy} ${overdueBy === 1 ? "day" : "days"}`;
-  }
-  if (days === 0) return "Due today";
-  if (days === 1) return "Due tomorrow";
-  if (days < 7) {
-    return `Due ${due.toLocaleDateString(undefined, { weekday: "long" })}`;
-  }
-  return dueOn(due);
+  return dueDate ? formatDueLabel(dueDate, now) : null;
 }
 
 /**
@@ -95,37 +80,31 @@ export function formatDueSubtitle(
  * countdown would not be true, such as one already done: the chat task card
  * draws it once the live task is finished, or when the viewer can't read it.
  * `null` for a date this module cannot read, as `formatDueSubtitle` returns.
+ * The year shows outside `now`'s year, as everywhere else in the app.
  */
-export function formatDueDate(dueDate: string | null): string | null {
-  if (!dueDate) return null;
-  if (isTimed(dueDate)) return formatDueOn(dueDate);
-  const due = parseTaskDate(dueDate);
-  return due ? dueOn(due) : null;
-}
-
-/** A full timestamp (a task's `due_at`) rather than a bare `YYYY-MM-DD`. */
-function isTimed(value: string): boolean {
-  return value.length > 10;
-}
-
-function dueOn(due: Date): string {
-  return `Due ${due.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+export function formatDueDate(
+  dueDate: string | null,
+  now: Date = new Date(),
+): string | null {
+  return dueDate ? formatDueOn(dueDate, now) : null;
 }
 
 export type PointsChip =
-  /** Gold chip — points on offer, or earned but not yet confirmed. */
+  /** Points on offer, or earned but not yet confirmed: "+5 pts". */
   | { tone: "offered"; label: string }
-  /** Green chip with a check — the ledger has actually moved. */
+  /** The ledger has actually moved: "+5 pts ✓". */
   | { tone: "awarded"; label: string };
 
 /**
- * The trailing chip on a task row, or `null` for a task carrying no reward —
- * which is the drawn LATER row.
+ * A task's points as its row and the task screen say them, or `null` for a
+ * task carrying no reward (the drawn LATER row). The board draws both tones
+ * as muted text since #5570; the task screen's Points fact turns green once
+ * awarded.
  *
  * `points_awarded` is the column `confirm_task_completion` sets, so it is the
  * one honest signal that the ledger moved. A `COMPLETED` row still awaiting an
- * officer's confirm therefore keeps the gold chip: it has earned nothing yet,
- * and drawing the green check would claim an award that has not happened.
+ * officer's confirm therefore stays `offered`, with no check: it has earned
+ * nothing yet, and the check would claim an award that has not happened.
  * Canvas draws no such state — see the TODO-DESIGN in `task-row.tsx`.
  */
 export function formatPointsChip(
@@ -133,7 +112,7 @@ export function formatPointsChip(
   pointsAwarded: boolean,
 ): PointsChip | null {
   if (pointReward === null || pointReward <= 0) return null;
-  const label = `+${pointReward}`;
+  const label = pointsChipLabel(pointReward);
   return pointsAwarded
     ? { tone: "awarded", label: `${label} ✓` }
     : { tone: "offered", label };

@@ -23,6 +23,9 @@
  */
 export const ROLE_NAME_MAX_LENGTH = 100;
 
+/** A tier's name (`role_tiers_name_len`, migration `20261111140000`). */
+export const ROLE_TIER_NAME_MAX_LENGTH = 80;
+
 /**
  * Points magnitude for a single ledger write, applied symmetrically. The
  * service only *flags* large adjustments against the anomaly threshold — it
@@ -101,11 +104,95 @@ export const GRADUATION_YEAR_MAX = 2100;
 export const MAJOR_MAX_LENGTH = 100;
 
 /**
+ * A member's phone number (`users.phone`, #3711), as they typed it, trimmed.
+ * Room for an international number with its spaces and an extension; the
+ * column's check stops anything longer. {@link isPhoneNumber} is what the API
+ * and both forms accept.
+ */
+export const PHONE_MAX_LENGTH = 32;
+
+/**
+ * A member's name, as they set it themselves (`PATCH /v1/users/me`) or an
+ * officer corrects it (`PATCH /v1/members/{id}/profile`, #4367): the API's cap
+ * on both routes, and the `maxLength` of every field that edits it (web
+ * `/profile`, the phone's Edit profile sheet and welcome name step, and both
+ * correction forms). A name copied from a sign-in provider is cut to it
+ * (`AuthService.syncUser`).
+ */
+export const DISPLAY_NAME_MAX_LENGTH = 100;
+
+/**
+ * A member's own profile text (`PATCH /v1/users/me`): the bio, and where they
+ * live and work after graduating. A bio is a short paragraph, a city or
+ * company a line, so the bounds sit far above real use. The API refuses past
+ * them; web `/profile` and the phone's Edit profile sheet stop at them. An
+ * empty value still clears each.
+ */
+export const USER_BIO_MAX_LENGTH = 2_000;
+export const USER_CITY_MAX_LENGTH = 200;
+export const USER_COMPANY_MAX_LENGTH = 200;
+
+/**
+ * An event's name, on every route that writes one: `CreateEventDto`,
+ * `UpdateEventDto`, a meeting recorded off the calendar (`NewMeetingEventDto`)
+ * and the AI's proposed events, which are cut to it. Both apps' event forms
+ * stop at it.
+ */
+export const EVENT_NAME_MAX_LENGTH = 255;
+
+/**
+ * Free text on an event (`events.description`, `events.location`,
+ * `events.notes`), on create and edit, and on an AI-proposed event, which is
+ * cut to them. Each sits far above what an officer types: a description is a
+ * paragraph or two, a location a room or an address, and the notes a set of
+ * meeting minutes. They matter because a repeating event copies its
+ * description and notes onto every meeting of the series
+ * (`EventSeriesService`), and every event read returns them. Both apps' event
+ * forms stop at them.
+ */
+export const EVENT_DESCRIPTION_MAX_LENGTH = 5_000;
+export const EVENT_LOCATION_MAX_LENGTH = 500;
+export const EVENT_NOTES_MAX_LENGTH = 20_000;
+
+/**
+ * A chapter's name and university, on onboarding's create and the web
+ * Settings page's save alike, each trimmed first. The minimums are the
+ * onboarding wizard's since it shipped; the longest university in the chapter
+ * directory (`supabase/seed/chapter_directory.csv`) is 82 characters, and a
+ * name is an organization's, often with its chapter's.
+ */
+export const CHAPTER_NAME_MIN_LENGTH = 3;
+export const CHAPTER_NAME_MAX_LENGTH = 200;
+export const CHAPTER_UNIVERSITY_MIN_LENGTH = 2;
+export const CHAPTER_UNIVERSITY_MAX_LENGTH = 200;
+
+/**
  * A chapter document's title (`chapter_documents.title`), set by whoever
  * uploads it on web or mobile s21 (#3399). The API refuses a longer one, and
  * the phone's field stops at it.
  */
 export const DOCUMENT_TITLE_MAX_LENGTH = 255;
+
+/**
+ * Document types (#3642, piece 4). The name bound mirrors the CHECK
+ * constraint in `20261113053718_chapter_document_types.sql` (and the old
+ * free-text `document_type` limit, so every stored value fits); the count is
+ * an API-side cap on one chapter's list, which the upload form shows whole.
+ */
+export const DOCUMENT_TYPE_NAME_MAX_LENGTH = 100;
+export const DOCUMENT_TYPES_MAX = 50;
+
+/**
+ * The key two spellings of one document type share: lowercased, with
+ * everything but letters and digits removed, so "By-Laws", "bylaws" and
+ * " BYLAWS " are one type. The same rule as the database's
+ * `document_type_key` (`20261113053718_chapter_document_types.sql`), which the
+ * unique index, rename and delete match on; "" for a name with no letter or
+ * digit, which no type may have.
+ */
+export function documentTypeKey(name: string): string {
+  return name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
 
 /**
  * A task's title (`CreateTaskDto.title`), from the task board, the `/task`
@@ -140,14 +227,94 @@ export const POLL_OPTIONS_MIN = 2;
 
 /**
  * A poll's question and each option's label, as `CreatePollDto` bounds them
- * on the REST route (`POST /v1/channels/:id/polls`). Mobile's New poll sheet
- * stops its fields at the same lengths. That is a client-side cap only: a
- * phone poll posts a `kind: 'poll'` card through the chat send route, which
- * bounds `content` (`CHAT_MESSAGE_CONTENT_MAX_LENGTH`) but not the card's
- * option labels, and web's `/poll` applies no length limit.
+ * on the REST route (`POST /v1/channels/:id/polls`). Both New poll forms and
+ * web's `/poll` stop at the same lengths, and the chat send route holds every
+ * `kind: 'poll'` card to them (`normalizePollCard` in the API).
  */
 export const POLL_QUESTION_MAX_LENGTH = 500;
 export const POLL_OPTION_MAX_LENGTH = 200;
+
+/**
+ * A sign-up sheet card in chat (`kind: 'signup'`, #3926): its title, the
+ * optional details under it, how many slots it lists and each slot's label,
+ * and the most spots one slot may hold. The chat send route enforces every
+ * one of these on the card (`normalizeSignupCard` in the API); the forms on
+ * both clients stop at the same numbers.
+ */
+export const SIGNUP_TITLE_MAX_LENGTH = 200;
+export const SIGNUP_NOTE_MAX_LENGTH = 1_000;
+export const SIGNUP_SLOTS_MAX = 20;
+export const SIGNUP_SLOT_LABEL_MAX_LENGTH = 120;
+export const SIGNUP_SLOT_CAPACITY_MAX = 100;
+/**
+ * The note a member may add to their answer on a headcount (a sign-up card
+ * with `format: 'headcount'`, #3926 step 2): "running 10 minutes late".
+ */
+export const SIGNUP_ANSWER_NOTE_MAX_LENGTH = 140;
+/**
+ * A headcount's format and its two fixed slots, which the API writes onto
+ * the card whatever a client sent (`normalizeSignupCard`) and both clients
+ * draw and answer by (`@repo/chat-core/signups`). One copy, so a client can
+ * never key its Answer buttons on ids the server doesn't write.
+ */
+export const SIGNUP_HEADCOUNT_FORMAT = "headcount";
+export const HEADCOUNT_GOING_SLOT_ID = "going";
+export const HEADCOUNT_NOT_GOING_SLOT_ID = "not_going";
+export const HEADCOUNT_SLOTS: readonly {
+  id: string;
+  label: string;
+  capacity: null;
+}[] = [
+  { id: HEADCOUNT_GOING_SLOT_ID, label: "Going", capacity: null },
+  { id: HEADCOUNT_NOT_GOING_SLOT_ID, label: "Can’t make it", capacity: null },
+];
+/**
+ * How far ahead a chat card's end time may be set: a sign-up's, a form's and
+ * a poll's (`normalizeClosesAt` in the API). The API refuses later ones
+ * outright; the forms and web's `/poll` stop a day short of it, so a draft
+ * that passes in the client isn't refused by a clock a little ahead on the
+ * server.
+ */
+export const SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS = 366;
+
+/**
+ * A form card in chat (`kind: 'form'`, #3926 step 3): a questionnaire posted
+ * as a card that opens a full-page form, like Google Forms. The chat send
+ * route checks the card against these (`normalizeFormCard` in the API), the
+ * answer route checks every answer, and the builders on both clients stop at
+ * the same numbers. A form ends at a set time on the sign-up's limit,
+ * {@link SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS}.
+ */
+export const FORM_TITLE_MAX_LENGTH = 200;
+export const FORM_DESCRIPTION_MAX_LENGTH = 2_000;
+export const FORM_QUESTIONS_MAX = 40;
+export const FORM_QUESTION_TITLE_MAX_LENGTH = 300;
+export const FORM_OPTIONS_MAX = 30;
+export const FORM_OPTION_LABEL_MAX_LENGTH = 200;
+/** The longest answer to a short-answer question. */
+export const FORM_SHORT_ANSWER_MAX_LENGTH = 300;
+/** The longest answer to a paragraph question. */
+export const FORM_PARAGRAPH_ANSWER_MAX_LENGTH = 4_000;
+/**
+ * The kinds of question a form asks. `multiple_choice` and `dropdown` take one
+ * option, `checkboxes` any number, `yes_no` a yes or a no, and the two text
+ * kinds a line or a paragraph.
+ */
+export const FORM_QUESTION_TYPES = [
+  "short_answer",
+  "paragraph",
+  "multiple_choice",
+  "checkboxes",
+  "dropdown",
+  "yes_no",
+] as const;
+export type FormQuestionType = (typeof FORM_QUESTION_TYPES)[number];
+/** The question types that list options a member picks from. */
+export const FORM_CHOICE_QUESTION_TYPES: readonly FormQuestionType[] = [
+  "multiple_choice",
+  "checkboxes",
+  "dropdown",
+];
 
 /**
  * Pledge classes and a member's order number (#3939). The name and number
@@ -162,6 +329,15 @@ export const PLEDGE_CLASSES_MAX = 200;
 export const MEMBER_ORDER_NUMBER_MAX = 1_000_000;
 /** Members one `PUT /v1/pledge-classes/assignments` may carry. */
 export const PLEDGE_CLASS_ASSIGNMENTS_MAX = 500;
+
+/**
+ * Groups (#4076). The name bound mirrors the CHECK constraint in
+ * `20261113040007_chapter_groups.sql`; the counts are API-side caps on one
+ * chapter's manual groups and one `PUT /v1/groups/:id/members`.
+ */
+export const GROUP_NAME_MAX_LENGTH = 80;
+export const GROUPS_MAX = 200;
+export const GROUP_MEMBERS_MAX = 2_000;
 
 /**
  * Event types (#3730). The name bound mirrors the CHECK constraint in

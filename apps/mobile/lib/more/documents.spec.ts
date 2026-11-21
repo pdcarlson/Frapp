@@ -42,11 +42,13 @@ describe("selectDocuments", () => {
         description: "Ratified 2025",
         folder: "Governance",
         document_type: "Bylaws",
+        effective_date: null,
         uploaded_by: "u-1",
         created_at: "2026-08-12T14:00:00.000Z",
         content_type: null,
         storage_path: "chapters/c/documents/x/bylaws.pdf",
         pinned_at: "2026-11-11T00:00:00.000Z",
+        drive_file_id: null,
       },
     ]);
   });
@@ -83,7 +85,48 @@ describe("documentMeta", () => {
         ],
         { "u-1": "Ryan Castellano" },
       ),
-    ).toEqual(["Uploaded Aug 12 by Ryan Castellano · Governance · Bylaws"]);
+    ).toEqual(["Uploaded August 12 by Ryan Castellano · Governance · Bylaws"]);
+  });
+
+  it("says when it takes effect, as web's row does, unless that is the upload day", () => {
+    expect(
+      metaFor([
+        {
+          id: "d-1",
+          title: "Bylaws",
+          folder: "Governance",
+          created_at: "2026-08-12T14:00:00.000Z",
+          effective_date: "2026-09-01",
+        },
+        {
+          id: "d-2",
+          title: "Budget",
+          created_at: "2026-08-12T14:00:00.000Z",
+          effective_date: "2026-08-12",
+        },
+      ]),
+    ).toEqual([
+      "Uploaded August 12 · Governance · Effective September 1",
+      "Uploaded August 12",
+    ]);
+  });
+
+  it("says a Drive copy came from Google Drive, not who filed it (#5157)", () => {
+    expect(
+      metaFor(
+        [
+          {
+            id: "d-1",
+            title: "Minutes",
+            folder: "Rush",
+            uploaded_by: "u-1",
+            created_at: "2026-08-12T14:00:00.000Z",
+            drive_file_id: "drive-1",
+          },
+        ],
+        { "u-1": "Ryan Castellano" },
+      ),
+    ).toEqual(["From Google Drive, added August 12 · Rush"]);
   });
 
   it("leaves off an uploader the roster can't name", () => {
@@ -96,7 +139,7 @@ describe("documentMeta", () => {
           created_at: "2026-08-12T14:00:00.000Z",
         },
       ]),
-    ).toEqual(["Uploaded Aug 12"]);
+    ).toEqual(["Uploaded August 12"]);
   });
 
   it("omits the line when nothing is known", () => {

@@ -6,12 +6,14 @@ import {
   Get,
   InternalServerErrorException,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
   ApiCreatedResponse,
   ApiOkResponse,
@@ -45,6 +47,7 @@ import {
   RequestProofUploadUrlDto,
   ProofUploadUrlResponseDto,
   ReviewServiceEntryDto,
+  ServiceEntryResponseDto,
   ServiceLeaderboardQueryDto,
   ServicePointsRateResponseDto,
 } from '../dtos/service-entry.dto';
@@ -66,6 +69,7 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'List service entries (own or all for admins)' })
+  @ApiOkResponse({ type: [ServiceEntryResponseDto] })
   async list(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -113,8 +117,9 @@ export class ServiceEntryController {
 
   // Declared before `@Get(':id')` for the same reason as `leaderboard`.
   // Gated on `service:approve`, not `chapter-config:view`: the review queue's
-  // audience is approvers, and on stock roles no approver but the President
-  // can read the chapter config (#3862).
+  // audience is approvers, and on stock roles the chairs' tier approves
+  // without reading the chapter config (only the President could, in a
+  // chapter created before #4071) (#3862).
   @Get('points-rate')
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_APPROVE)
@@ -134,10 +139,11 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Get service entry by id' })
+  @ApiOkResponse({ type: ServiceEntryResponseDto })
   async getOne(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     const entry = await this.serviceEntryService.findById(id, chapterId);
     const isAdmin = await this.rbacService.memberHasAnyPermission(
@@ -193,7 +199,7 @@ export class ServiceEntryController {
   async getProofUrl(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     const isAdmin = await this.rbacService.memberHasAnyPermission(
       chapterId,
@@ -212,7 +218,15 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_LOG)
   @ApiOperation({ summary: 'Log a service entry' })
-  @ApiCreatedResponse({ type: CreateServiceEntryResponseDto })
+  @ApiCreatedResponse({
+    type: CreateServiceEntryResponseDto,
+    description:
+      'The entry, as created. A resend by the same member with a `proof_path` their entry already holds answers with that entry as saved, not a second one.',
+  })
+  @ApiBadRequestResponse({
+    description:
+      "A field is invalid; the chapter requires proof and none was sent (code `service_entry.receipt_required`); or `proof_path` is outside the chapter's service-proof folder, names no uploaded file, or is already on another member's entry. A client holding a refused `proof_path` drops it and uploads the file again.",
+  })
   @FeatureEvent(
     'service-hours-logged',
     ({
@@ -250,6 +264,7 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_APPROVE)
   @ApiOperation({ summary: 'Approve or reject a service entry' })
+  @ApiOkResponse({ type: ServiceEntryResponseDto })
   @FeatureEvent(
     'service-hours-reviewed',
     ({
@@ -263,7 +278,7 @@ export class ServiceEntryController {
   async review(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') reviewerId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReviewServiceEntryDto,
   ) {
     if (dto.status === 'APPROVED') {
@@ -294,7 +309,7 @@ export class ServiceEntryController {
   async delete(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     const isAdmin = await this.rbacService.memberHasAnyPermission(
       chapterId,

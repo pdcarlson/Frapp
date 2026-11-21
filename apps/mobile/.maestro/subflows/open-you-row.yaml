@@ -1,0 +1,16 @@
+# Opens one You row by its label (ROW), checks the screen it opens is titled
+# the same, screenshots it, and comes back.
+appId: live.frapp.mobile
+---
+- tapOn:
+    id: "tab-you"
+- scrollUntilVisible:
+    element:
+      text: ${ROW}
+    direction: DOWN
+    timeout: 10000
+- tapOn: ${ROW}
+- assertVisible: "Back to You"
+- assertVisible: ${ROW}
+- takeScreenshot: you-${ROW}
+- runFlow: back-to-you.yaml

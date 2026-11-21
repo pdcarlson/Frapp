@@ -1,8 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
-import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
-import { createRejectedSessionHandler, isSessionOver } from "./rejected-session";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  AuthApiError,
+  AuthRetryableFetchError,
+  AuthSessionMissingError,
+} from "@supabase/supabase-js";
+import { isSessionOver } from "@repo/hooks/auth-error-copy";
+import { createRejectedSessionHandler } from "./rejected-session";
 
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
+
+const reportAuthFailure = vi.hoisted(() => vi.fn());
+vi.mock("./sentry/auth-failures", () => ({ reportAuthFailure }));
 
 function fakeSupabase(result: { data: { user: unknown }; error: unknown }) {
   let session: unknown = { access_token: "t" };
@@ -26,7 +34,9 @@ describe("isSessionOver", () => {
   });
 
   it("keeps a live session and ignores an outage", () => {
-    expect(isSessionOver({ data: { user: { id: "u" } }, error: null })).toBe(false);
+    expect(isSessionOver({ data: { user: { id: "u" } }, error: null })).toBe(
+      false,
+    );
     expect(
       isSessionOver({
         data: { user: null },
@@ -37,6 +47,8 @@ describe("isSessionOver", () => {
 });
 
 describe("createRejectedSessionHandler", () => {
+  beforeEach(() => reportAuthFailure.mockClear());
+
   it("signs out once for a burst of 401s when Auth agrees", async () => {
     const supabase = fakeSupabase({
       data: { user: null },
@@ -57,12 +69,91 @@ describe("createRejectedSessionHandler", () => {
 
     expect(signOut).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledTimes(1);
+    // Auth's reason is counted once, with the error it answered (#3832).
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      flow: "session_check",
+      error: { code: "user_not_found" },
+    });
   });
+
+  it("ends a session revoked elsewhere, which Auth answers as no session (#4440)", async () => {
+    const supabase = fakeSupabase({
+      data: { user: null },
+      error: new AuthSessionMissingError(),
+    });
+    const signOut = vi.fn(async () => {});
+    const notify = vi.fn();
+    const handle = createRejectedSessionHandler({
+      getSupabase: () => supabase as never,
+      signOut,
+      notify,
+    });
+
+    handle();
+    await flush();
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      flow: "session_check",
+      code: "session_not_found",
+    });
+  });
+
+  it("asks Auth nothing once the local session is gone", async () => {
+    const supabase = fakeSupabase({
+      data: { user: null },
+      error: new AuthSessionMissingError(),
+    });
+    supabase.signOutLocally();
+    const signOut = vi.fn(async () => {});
+    const handle = createRejectedSessionHandler({
+      getSupabase: () => supabase as never,
+      signOut,
+      notify: vi.fn(),
+    });
+
+    handle();
+    await flush();
+
+    expect(supabase.auth.getUser).not.toHaveBeenCalled();
+    expect(signOut).not.toHaveBeenCalled();
+    expect(reportAuthFailure).not.toHaveBeenCalled();
+  });
+
+  // An outage is not Auth's verdict: signing out on it would sign every
+  // member out while Auth is down (`isSessionOver`).
+  it.each([
+    ["a dropped request", new AuthRetryableFetchError("fetch failed", 0)],
+    ["a 503", new AuthApiError("unavailable", 503, "unexpected_failure")],
+    ["a 429", new AuthApiError("slow down", 429, "over_request_rate_limit")],
+  ])(
+    "leaves the member signed in when Auth answers with %s",
+    async (_, error) => {
+      const signOut = vi.fn(async () => {});
+      const notify = vi.fn();
+      const handle = createRejectedSessionHandler({
+        getSupabase: () =>
+          fakeSupabase({ data: { user: null }, error }) as never,
+        signOut,
+        notify,
+      });
+
+      handle();
+      await flush();
+
+      expect(signOut).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+      expect(reportAuthFailure).not.toHaveBeenCalled();
+    },
+  );
 
   it("leaves a session Auth still recognises", async () => {
     const signOut = vi.fn(async () => {});
     const handle = createRejectedSessionHandler({
-      getSupabase: () => fakeSupabase({ data: { user: { id: "u" } }, error: null }) as never,
+      getSupabase: () =>
+        fakeSupabase({ data: { user: { id: "u" } }, error: null }) as never,
       signOut,
       notify: vi.fn(),
     });
@@ -71,6 +162,7 @@ describe("createRejectedSessionHandler", () => {
     await flush();
 
     expect(signOut).not.toHaveBeenCalled();
+    expect(reportAuthFailure).not.toHaveBeenCalled();
   });
 });
 

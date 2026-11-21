@@ -1,138 +1,225 @@
 "use client";
 
-import { forwardRef, useId, useState } from "react";
-import { formatDueEntry, parseDueEntryWithTime } from "@repo/formatting";
-import { Input } from "@/components/ui/input";
+import { forwardRef, useState } from "react";
+import { CalendarDays } from "lucide-react";
+import {
+  dueTimePassed,
+  formatDateEntry,
+  splitDueEntry,
+} from "@repo/formatting";
+import { DateField } from "@/components/ui/date-field";
+import { FOCUS_RING } from "@/components/ui/focus";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { DueTimeControl } from "./due-time-control";
+import { propertyChipClass } from "./property-chip";
 
 type DueDateFieldProps = Omit<
-  React.ComponentProps<"input">,
-  "value" | "onChange" | "type"
+  React.ComponentProps<typeof DateField>,
+  "lean" | "withTime" | "error"
 > & {
-  /**
-   * `YYYY-MM-DD`, `YYYY-MM-DDTHH:MM` when a time of day was typed (#4003),
-   * or `""` while nothing readable is typed. `dueEntryFields` turns it into
-   * what `POST /v1/tasks` takes.
-   */
-  value: string;
-  onChange: (isoDate: string) => void;
   /** The form was submitted without a due date: say so under the field. */
   missing?: boolean;
-  /** For specs; the field reads the clock otherwise. */
-  now?: Date;
+  /** The form was submitted with a time already gone by (`dueEntryPassed`). */
+  passed?: boolean;
+  /** The time field's class, to match the form's other fields. */
+  timeClassName?: string;
+  /**
+   * A date with no time of day (a meeting's action item): no "Add a time",
+   * and a typed time is not read.
+   */
+  withoutTime?: boolean;
+  /** The time field's name, where several due fields share a screen. */
+  timeLabel?: string;
 };
 
 /**
- * A task's due date on web (#3928): type a month and a day, `Nov 14` or
- * `11/14`, or a word like `Friday` or `tomorrow`, and the year is filled in
- * as the next time that date comes round. A year is typed only for a date
- * further out. A time may go with it, before or after the date, the way
- * Todoist reads one: `Fri 5pm`, `11/14 9:30am`, `tomorrow noon`, or `5pm`
- * alone for today (#4003). `parseDueEntryWithTime` in `@repo/formatting`
- * owns what is read, and the chat `/task` command reads its date the same
- * way.
- *
- * It replaced the browser's date input, which shows and asks for a full
- * `MM/DD/YYYY`. The quick entry is how Todoist, Linear and Asana take a due
- * date; mobile's New task sheet gets there with preset chips and the
- * platform's picker instead.
- *
- * The parent holds the date, updated on every keystroke so Enter submits what
- * is typed. While the text differs from the date it was read as, that reading
- * floats just under the field ("Sat, Nov 14", or "Mar 14, 2027" when it is
- * not an upcoming day this year); leaving the field writes it in.
- *
- * Nothing under the field appears or goes on blur. A line that did would move
- * the form's buttons between a click's press and its release, and the click
- * would miss (the reading was such a line until review caught it). So the
- * reading is laid over the form, taking no room in it (the Add a task row's
- * field is too narrow to hold it beside the text), and the one message that
- * does take room, for a submit with no readable date, comes and goes with a
- * submit or a keystroke.
+ * A task's due date on web (#3928): the shared {@link DateField} leaning
+ * ahead, with an optional time of day (#4003). The time can be typed the way
+ * Todoist reads one, `Fri 5pm`, or set with the "Add a time" control under
+ * the date (#4512), the phone's control on web. The value is what
+ * `dueEntryFields` turns into `POST /v1/tasks`'s fields. What this adds is
+ * the time control and the task form's messages for a submit with no
+ * readable date or a time already gone by.
  */
 export const DueDateField = forwardRef<HTMLInputElement, DueDateFieldProps>(
   function DueDateField(
     {
-      value,
-      onChange,
       missing,
-      now,
-      onBlur,
-      className,
-      "aria-describedby": describedBy,
-      ...inputProps
+      passed,
+      timeClassName,
+      timeLabel,
+      withoutTime = false,
+      ...props
     },
     ref,
   ) {
-    const at = now ?? new Date();
-    const noteId = useId();
-    const [text, setText] = useState(() =>
-      value ? formatDueEntry(value, at) : "",
-    );
-    // The parent moved the date without the member typing it (a reset after a
-    // create, a prefill): show that date. A change the typing itself caused
-    // already matches the text and leaves it alone.
-    const [seen, setSeen] = useState(value);
-    if (value !== seen) {
-      setSeen(value);
-      if (value !== (parseDueEntryWithTime(text, at) ?? "")) {
-        setText(value ? formatDueEntry(value, at) : "");
-      }
-    }
-
-    const shown = value ? formatDueEntry(value, at) : "";
-    const error =
-      missing && !value
-        ? text.trim() === ""
-          ? "Pick a due date."
-          : "Try a date like Nov 14 or Friday, with a time if it has one, like Friday 5pm."
-        : null;
-    const reading = value && text !== shown ? shown : null;
-
     return (
-      <>
-        <div className="relative">
-          <Input
-            {...inputProps}
+      <div className="grid gap-1">
+        <div>
+          <DateField
+            {...props}
             ref={ref}
-            type="text"
-            autoComplete="off"
-            value={text}
-            className={className}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={
-              [describedBy, error || reading ? noteId : null]
-                .filter(Boolean)
-                .join(" ") || undefined
+            lean="ahead"
+            withTime={!withoutTime}
+            error={(typed) =>
+              missing && !props.value
+                ? typed.trim() === ""
+                  ? DUE_PROBLEM.missing
+                  : withoutTime
+                    ? "Try a date like November 14 or Friday."
+                    : "Try a date like November 14 or Friday, with a time if it has one, like Friday 5pm."
+                : passed
+                  ? DUE_PROBLEM.passed
+                  : null
             }
-            onChange={(event) => {
-              const next = event.target.value;
-              setText(next);
-              onChange(parseDueEntryWithTime(next, at) ?? "");
-            }}
-            onBlur={(event) => {
-              if (value) setText(shown);
-              onBlur?.(event);
-            }}
           />
-          {reading ? (
-            <span
-              id={noteId}
-              className="pointer-events-none absolute left-0 top-full z-10 mt-1 whitespace-nowrap rounded-md border border-border bg-popover px-2 py-1 text-caption text-foreground shadow-md"
-            >
-              {reading}
-            </span>
-          ) : null}
         </div>
-        {error ? (
-          <p
-            id={noteId}
-            role="alert"
-            className="mt-1 text-caption text-destructive-text"
-          >
-            {error}
-          </p>
-        ) : null}
-      </>
+        {withoutTime ? null : (
+          <DueTimeControl
+            value={props.value}
+            onChange={props.onChange}
+            className={timeClassName}
+            label={timeLabel}
+            disabled={props.disabled}
+            now={props.now}
+          />
+        )}
+      </div>
     );
   },
 );
+
+const DUE_PROBLEM = {
+  missing: "Pick a due date.",
+  passed: "That time has already passed. Pick a later time or another day.",
+} as const;
+
+/**
+ * What a {@link DueChip} says is wrong, for its card to show under the chips:
+ * the chip's own field, which says it too, is only on screen while its
+ * popover is open.
+ */
+export function dueChipProblem({
+  value,
+  missing = false,
+  passed = false,
+}: {
+  value: string;
+  missing?: boolean;
+  passed?: boolean;
+}): string | null {
+  if (missing && !value) return DUE_PROBLEM.missing;
+  return passed ? DUE_PROBLEM.passed : null;
+}
+
+/**
+ * A due date drawn as a property chip, "Wednesday · 5 PM", that opens the
+ * due field (the date, its month, and Add a time) in a popover: a suggested
+ * task's card (#5562; Paul, 2026-11-19), where full fields read as a form to
+ * fill in. `note` says inside the popover why a guessed day was picked, so
+ * nothing hangs under the chip.
+ */
+export function DueChip({
+  value,
+  onChange,
+  label,
+  timeLabel,
+  placeholder = "When?",
+  guessed = false,
+  missing = false,
+  passed = false,
+  note,
+  disabled,
+  now,
+  "aria-describedby": describedBy,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  /** The chip's accessible name, "Due date for Book the venue". */
+  label: string;
+  timeLabel?: string;
+  placeholder?: string;
+  guessed?: boolean;
+  missing?: boolean;
+  passed?: boolean;
+  note?: string | null;
+  disabled?: boolean;
+  now?: Date;
+  /** The card's line saying what is wrong ({@link dueChipProblem}). */
+  "aria-describedby"?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const shown = value ? formatDateEntry(value, now ?? new Date()) : null;
+  const problem = (missing && !value) || passed;
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={
+            shown
+              ? `${label}: ${shown}${guessed && note ? `. ${note}` : ""}`
+              : label
+          }
+          title={guessed && note ? note : undefined}
+          aria-invalid={problem || undefined}
+          aria-describedby={problem ? describedBy : undefined}
+          className={cn(
+            propertyChipClass({
+              guessed: guessed && !!value && !problem,
+              missing: problem,
+              empty: !value,
+            }),
+            FOCUS_RING,
+          )}
+        >
+          <CalendarDays className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">{shown ?? placeholder}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        collisionPadding={12}
+        className="w-[min(18rem,calc(100vw-1.5rem))] space-y-2 p-3"
+      >
+        <DueDateField
+          aria-label={label}
+          timeLabel={timeLabel}
+          placeholder="Due: Fri 5pm"
+          missing={missing}
+          passed={passed}
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          now={now}
+        />
+        {note && !problem ? (
+          <p className="text-caption text-muted-foreground">{note}</p>
+        ) : null}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * True when a due entry's time has already gone by today, so the task would
+ * be overdue the moment it's saved. `kept` is an edit's stored entry: a task
+ * keeps its own time even once that has passed (#4296).
+ */
+export function dueEntryPassed(
+  entry: string,
+  now: Date = new Date(),
+  kept?: string,
+): boolean {
+  return dueTimePassed(
+    splitDueEntry(entry),
+    now,
+    kept === undefined ? undefined : splitDueEntry(kept),
+  );
+}

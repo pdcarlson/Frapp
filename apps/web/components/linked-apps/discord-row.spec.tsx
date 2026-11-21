@@ -1,0 +1,361 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryObserver,
+} from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { emptyCache, mergeServerRow } from "@repo/chat-core/cache";
+import {
+  CHAT_MESSAGE_QUERY_ROOT,
+  chatMessagesKey,
+  type RawChatMessage,
+} from "@repo/chat-core/types";
+
+const state = vi.hoisted(() => ({
+  chapterId: "chapter-1" as string | null,
+  link: {
+    isPending: false,
+    isError: false,
+    data: {
+      available: true,
+      linked: false,
+      discord_user_id: null as string | null,
+      discord_username: null as string | null,
+      linked_at: null as string | null,
+    },
+    refetch: vi.fn(),
+  },
+  begin: vi.fn(),
+  confirm: vi.fn(),
+  unlink: vi.fn(),
+  toast: vi.fn(),
+}));
+
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    useActiveChapterId: () => state.chapterId,
+    useDiscordAuthorLink: () => state.link,
+    useBeginDiscordAuthorLink: () => ({
+      mutateAsync: state.begin,
+      isPending: false,
+    }),
+    useConfirmDiscordAuthorLink: () => ({
+      mutateAsync: state.confirm,
+      isPending: false,
+    }),
+    useUnlinkDiscordAuthor: () => ({
+      mutateAsync: state.unlink,
+      isPending: false,
+    }),
+  };
+});
+
+vi.mock("@/lib/hooks/use-toast", () => ({
+  useToast: () => ({ toast: state.toast }),
+}));
+
+const { DiscordRow, DISCORD_LINK_OUTCOME_MESSAGES, linkedMessage } =
+  await import("./discord-row");
+
+function renderCard(client = new QueryClient()) {
+  return render(
+    <QueryClientProvider client={client}>
+      <ul>
+        <DiscordRow />
+      </ul>
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  state.chapterId = "chapter-1";
+  state.link.isPending = false;
+  state.link.isError = false;
+  state.link.data = {
+    available: true,
+    linked: false,
+    discord_user_id: null,
+    discord_username: null,
+    linked_at: null,
+  };
+  state.begin.mockReset();
+  state.confirm.mockReset();
+  state.unlink.mockReset();
+  state.toast.mockReset();
+  window.history.replaceState(null, "", "/profile");
+});
+
+/**
+ * A client holding one cached chat thread and one unrelated query, neither
+ * observed, so both are inactive. Linking and unlinking rewrite attribution
+ * on imported rows that never arrive over Realtime, so the card drops cached
+ * threads; nothing else may go with them.
+ */
+function clientWithCachedThread() {
+  const client = new QueryClient();
+  client.setQueryData([CHAT_MESSAGE_QUERY_ROOT, "chan-1"], { pages: [] });
+  client.setQueryData(["profile", "me"], { id: "me" });
+  return client;
+}
+
+function holdsThread(client: QueryClient) {
+  return client.getQueryData([CHAT_MESSAGE_QUERY_ROOT, "chan-1"]) !== undefined;
+}
+
+/** An open chat timeline holding one imported message by `externalId`, as the chat panel beside this page keeps it. */
+function openTimeline(
+  client: QueryClient,
+  channelId: string,
+  externalId: string,
+) {
+  const cache = mergeServerRow(emptyCache(), {
+    id: `m-${channelId}`,
+    channel_id: channelId,
+    sender_id: "me",
+    author_external_id: externalId,
+    content: "from the Discord archive",
+    kind: "imported",
+    created_at: "2026-01-01T12:00:00Z",
+    client_message_id: null,
+  } as RawChatMessage);
+  const queryFn = vi.fn(async () => cache);
+  client.setQueryData(chatMessagesKey(channelId), cache);
+  new QueryObserver(client, {
+    queryKey: chatMessagesKey(channelId),
+    queryFn,
+    staleTime: Infinity,
+  }).subscribe(() => {});
+  return queryFn;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("DiscordRow (#2878, #5407)", () => {
+  it("offers to link when nothing is linked, and sends the browser to Discord", async () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    state.begin.mockResolvedValue({
+      authorize_url: "https://discord.com/oauth2/authorize?state=s",
+      expires_at: "2026-09-29T12:15:00Z",
+    });
+    renderCard();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Link Discord account" }),
+    );
+    expect(state.begin).toHaveBeenCalledTimes(1);
+    expect(assign).toHaveBeenCalledWith(
+      "https://discord.com/oauth2/authorize?state=s",
+    );
+  });
+
+  it("shows the linked account and unlinks it", async () => {
+    state.link.data = {
+      available: true,
+      linked: true,
+      discord_user_id: "1100000000000000001",
+      discord_username: "jkslayer",
+      linked_at: "2026-09-29T12:00:00Z",
+    };
+    state.unlink.mockResolvedValue({ unlinked: true, messages_restored: 3 });
+    const client = clientWithCachedThread();
+    renderCard(client);
+
+    expect(screen.getByText("jkslayer")).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "More for Discord" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Unlink" }),
+    );
+    expect(state.unlink).toHaveBeenCalledTimes(1);
+    expect(state.toast).toHaveBeenCalledWith({
+      description:
+        "Discord account unlinked. 3 imported messages show under the Discord name again.",
+    });
+    expect(holdsThread(client)).toBe(false);
+    expect(client.getQueryData(["profile", "me"])).toEqual({ id: "me" });
+  });
+
+  // #4543: chat stays mounted beside this page, and its open timeline is
+  // cached with staleTime Infinity, so it must be refetched explicitly.
+  it("refetches the open thread that holds the account's imported messages on unlink", async () => {
+    state.link.data = {
+      available: true,
+      linked: true,
+      discord_user_id: "1100000000000000001",
+      discord_username: "jkslayer",
+      linked_at: "2026-09-29T12:00:00Z",
+    };
+    state.unlink.mockResolvedValue({ unlinked: true, messages_restored: 1 });
+    const client = new QueryClient();
+    const mine = openTimeline(client, "chan-mine", "1100000000000000001");
+    const theirs = openTimeline(client, "chan-theirs", "1100000000000000002");
+    renderCard(client);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "More for Discord" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Unlink" }),
+    );
+
+    await waitFor(() => expect(mine).toHaveBeenCalledTimes(1));
+    expect(theirs).not.toHaveBeenCalled();
+  });
+
+  it("draws no row while linking isn't offered, rather than a button that fails", () => {
+    state.link.data = { ...state.link.data, available: false };
+    renderCard();
+    expect(
+      screen.queryByRole("button", { name: "Link Discord account" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("Discord")).not.toBeInTheDocument();
+  });
+
+  it("draws the state: a check once linked, greyed until then", () => {
+    const { container, rerender } = renderCard();
+    expect(
+      container
+        .querySelector("[data-linked-state]")
+        ?.getAttribute("data-linked-state"),
+    ).toBe("off");
+    expect(
+      screen.getByRole("img", { name: "Not connected" }),
+    ).toBeInTheDocument();
+    state.link.data = {
+      ...state.link.data,
+      linked: true,
+      discord_username: "jkslayer",
+    };
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <ul>
+          <DiscordRow />
+        </ul>
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("img", { name: "Connected" })).toBeInTheDocument();
+  });
+
+  it("confirms a returning handshake once and strips it from the address bar", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/profile?discord=pending&handshake=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    );
+    state.confirm.mockResolvedValue({
+      available: true,
+      linked: true,
+      discord_user_id: "1100000000000000001",
+      discord_username: "jkslayer",
+      linked_at: "2026-09-29T12:00:00Z",
+      messages_linked: 412,
+    });
+    const client = clientWithCachedThread();
+    renderCard(client);
+
+    await waitFor(() =>
+      expect(state.toast).toHaveBeenCalledWith({
+        description: linkedMessage(412),
+      }),
+    );
+    expect(state.confirm).toHaveBeenCalledTimes(1);
+    expect(state.confirm).toHaveBeenCalledWith({
+      handshake: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    });
+    expect(window.location.search).toBe("");
+    expect(holdsThread(client)).toBe(false);
+    expect(client.getQueryData(["profile", "me"])).toEqual({ id: "me" });
+  });
+
+  it("on a confirmed link, refetches open threads holding the new or the replaced account's messages, and no other", async () => {
+    state.link.data = {
+      available: true,
+      linked: true,
+      discord_user_id: "1100000000000000009",
+      discord_username: "old-account",
+      linked_at: "2026-09-01T12:00:00Z",
+    };
+    window.history.replaceState(
+      null,
+      "",
+      "/profile?discord=pending&handshake=cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    );
+    state.confirm.mockResolvedValue({
+      available: true,
+      linked: true,
+      discord_user_id: "1100000000000000001",
+      discord_username: "jkslayer",
+      linked_at: "2026-09-29T12:00:00Z",
+      messages_linked: 2,
+    });
+    const client = new QueryClient();
+    const linked = openTimeline(client, "chan-new", "1100000000000000001");
+    const replaced = openTimeline(client, "chan-old", "1100000000000000009");
+    const other = openTimeline(client, "chan-other", "1100000000000000002");
+    renderCard(client);
+
+    await waitFor(() => expect(linked).toHaveBeenCalledTimes(1));
+    expect(replaced).toHaveBeenCalledTimes(1);
+    expect(other).not.toHaveBeenCalled();
+  });
+
+  it("reports a declined link by its code, never by text from the URL", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/profile?discord=declined&error_description=Click%20here",
+    );
+    renderCard();
+
+    await waitFor(() =>
+      expect(state.toast).toHaveBeenCalledWith({
+        variant: undefined,
+        description: DISCORD_LINK_OUTCOME_MESSAGES.declined,
+      }),
+    );
+    expect(state.confirm).not.toHaveBeenCalled();
+  });
+
+  it("ignores an outcome code that only names an inherited property", async () => {
+    window.history.replaceState(null, "", "/profile?discord=constructor");
+    renderCard();
+
+    await waitFor(() => expect(window.location.search).toBe(""));
+    expect(state.toast).not.toHaveBeenCalled();
+  });
+
+  it("reports a refused confirm", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/profile?discord=pending&handshake=bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    );
+    state.confirm.mockRejectedValue(
+      new Error(
+        "That Discord account is already linked to another member of this chapter.",
+      ),
+    );
+    renderCard();
+
+    await waitFor(() =>
+      expect(state.toast).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: "destructive" }),
+      ),
+    );
+  });
+
+  it("words the zero-message link for a chapter that has not imported yet", () => {
+    expect(linkedMessage(0)).toMatch(/when your chapter imports them/);
+    expect(linkedMessage(1)).toBe(
+      "Discord account linked. 1 imported message now shows as yours.",
+    );
+  });
+});

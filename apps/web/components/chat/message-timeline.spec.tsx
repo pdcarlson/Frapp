@@ -8,6 +8,7 @@ import {
   TOMBSTONE_TEXT,
 } from "@repo/chat-core/block-copy";
 import { reactionActionType, type ChatMessage } from "@repo/chat-core/types";
+import type { AskExchange } from "@repo/hooks";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { blockState, timelineBlockProps } from "@/tests/block-list";
 
@@ -176,6 +177,16 @@ vi.mock("@/components/ui/avatar", async (importOriginal) => {
     ),
   };
 });
+
+// A turn asked of Frapp from this channel (#4713). The row itself reads the
+// Ask conversation through `AskHost`, which a bare `render()` does not mount;
+// `ask-in-channel.spec.tsx` has its rules. Here it only has to be drawn in
+// the right place.
+vi.mock("@/components/ask/ask-in-channel", () => ({
+  AskChannelTurn: ({ id }: { id: string }) => (
+    <article data-ask-channel-turn={id}>turn {id}</article>
+  ),
+}));
 
 const { MessageTimeline } = await import("./message-timeline");
 type MessageTimelineHandle = import("./message-timeline").MessageTimelineHandle;
@@ -1972,5 +1983,392 @@ describe("MessageTimeline thread cards (#4297)", () => {
     );
     expect(screen.getByText("2 new")).toBeInTheDocument();
     expect(screen.queryByText("9 new")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #4537: Paul sent from a line or two above the end of #Discussion and his
+ * message went nowhere: the list followed new rows only from within 16px of
+ * its end, so his own landed below the fold with the list left where it was.
+ * And web had no way back to the newest message short of scrolling, which
+ * mobile has had as `JumpToLatestButton`.
+ */
+describe("MessageTimeline own sends and Jump to latest (#4537)", () => {
+  const thread = [
+    message({ id: "m-1", client_message_id: "cm-1", content: "one" }),
+    message({ id: "m-2", client_message_id: "cm-2", content: "two" }),
+  ];
+
+  function view(messages: ChatMessage[], channelId = "chan-1") {
+    return (
+      <MessageTimeline
+        channelId={channelId}
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        avatarFor={avatarFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(messages, VIEWER)}
+      />
+    );
+  }
+
+  /** A 600px scroller over `scrollHeight`, scrolled to `scrollTop`. */
+  function scroller(scrollHeight: number, scrollTop: number) {
+    const element = document.createElement("div");
+    Object.defineProperty(element, "clientHeight", { value: 600 });
+    Object.defineProperty(element, "scrollHeight", {
+      value: scrollHeight,
+      writable: true,
+    });
+    element.scrollTop = scrollTop;
+    return element;
+  }
+
+  function scrollTo(element: HTMLElement, scrollTop: number) {
+    element.scrollTop = scrollTop;
+    act(() => {
+      element.dispatchEvent(new Event("scroll"));
+    });
+  }
+
+  const jumpButton = () =>
+    screen.queryByRole("button", { name: /Jump to latest/ });
+
+  /** The timeline jumps to a send a frame after it lands. */
+  const nextFrame = () =>
+    act(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+
+  beforeEach(() => virtuosoProps.scrollToIndex.mockClear());
+
+  const pending = (id: string, extra: Partial<ChatMessage> = {}) =>
+    message({
+      id,
+      client_message_id: id,
+      sender_id: VIEWER,
+      content: "mine",
+      _status: "pending",
+      ...extra,
+    });
+
+  it("takes the member to their own send from wherever they were reading", async () => {
+    const { rerender } = render(view(thread));
+    rerender(view([...thread, pending("cm-mine")]));
+
+    await nextFrame();
+    expect(virtuosoProps.scrollToIndex).toHaveBeenLastCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+    // Anyone else's message still follows only from the bottom.
+    expect(virtuosoProps.current.followOutput).toBe("smooth");
+  });
+
+  it("finds the send when a slow device clock sorts it under a newer message", async () => {
+    const { rerender } = render(view(thread));
+    rerender(
+      view([
+        ...thread,
+        pending("cm-mine"),
+        message({ id: "m-bob", client_message_id: "cm-bob", sender_id: BOB }),
+      ]),
+    );
+
+    await nextFrame();
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the reader where they are for anyone else's message", async () => {
+    const { rerender } = render(view(thread));
+    rerender(
+      view([
+        ...thread,
+        message({ id: "m-3", client_message_id: "cm-3", sender_id: BOB }),
+      ]),
+    );
+
+    await nextFrame();
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("does not move the reader when rows backfill under a send already waiting", async () => {
+    // An outbox send waiting on a reconnect is pending and newest; the
+    // messages posted during the outage merge in beneath it.
+    const waiting = pending("cm-waiting");
+    const { rerender } = render(view([...thread, waiting]));
+    rerender(
+      view([
+        ...thread,
+        message({ id: "m-3", client_message_id: "cm-3", sender_id: BOB }),
+        waiting,
+      ]),
+    );
+    // Nor when the server confirms it.
+    rerender(
+      view([
+        ...thread,
+        message({ id: "m-3", client_message_id: "cm-3", sender_id: BOB }),
+        { ...waiting, id: "m-confirmed", _status: "confirmed" },
+      ]),
+    );
+
+    await nextFrame();
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+  });
+
+  it("does not jump on opening a channel that has a send waiting", async () => {
+    const { rerender } = render(view(thread));
+    rerender(view([...thread, pending("cm-other")], "chan-2"));
+    await nextFrame();
+
+    // Once, the switch's own open at the newest row, and not again for the
+    // send that was already waiting there.
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the control on the member's own send", async () => {
+    const { rerender } = render(view(thread));
+    const element = scroller(3000, 2400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    scrollTo(element, 500);
+    expect(jumpButton()).toBeInTheDocument();
+
+    rerender(view([...thread, pending("cm-mine")]));
+    await nextFrame();
+    expect(jumpButton()).not.toBeInTheDocument();
+  });
+
+  it("offers Jump to latest a screen or more back, and takes the reader there", async () => {
+    const user = userEvent.setup();
+    render(view(thread));
+    const element = scroller(3000, 2400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    expect(jumpButton()).not.toBeInTheDocument();
+
+    // Within a screen of the end: no control, the way the phone draws it.
+    scrollTo(element, 2000);
+    expect(jumpButton()).not.toBeInTheDocument();
+
+    scrollTo(element, 1000);
+    expect(jumpButton()).toHaveAccessibleName("Jump to latest");
+
+    await user.click(jumpButton()!);
+    expect(virtuosoProps.scrollToIndex).toHaveBeenLastCalledWith({
+      index: "LAST",
+      align: "end",
+      behavior: "auto",
+    });
+    expect(jumpButton()).not.toBeInTheDocument();
+  });
+
+  it("says when someone else's message lands out of sight, and not for the reader's own", () => {
+    const { rerender } = render(view(thread));
+    const element = scroller(3000, 2400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    // Off the end, but within a screen of it.
+    scrollTo(element, 2200);
+    expect(jumpButton()).not.toBeInTheDocument();
+
+    const mine = message({
+      id: "m-mine",
+      client_message_id: "cm-mine",
+      sender_id: VIEWER,
+    });
+    rerender(view([...thread, mine]));
+    expect(jumpButton()).not.toBeInTheDocument();
+
+    rerender(
+      view([
+        ...thread,
+        mine,
+        message({ id: "m-bob", client_message_id: "cm-bob", sender_id: BOB }),
+      ]),
+    );
+    expect(jumpButton()).toHaveAccessibleName("New messages. Jump to latest");
+    expect(screen.getByTestId("jump-to-latest-dot")).toBeInTheDocument();
+  });
+
+  it("starts each channel at its newest row, with no control", () => {
+    const { rerender } = render(view(thread));
+    const element = scroller(3000, 2400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    scrollTo(element, 500);
+    expect(jumpButton()).toBeInTheDocument();
+
+    rerender(view(thread, "chan-2"));
+    expect(jumpButton()).not.toBeInTheDocument();
+
+    // And works there as it did in the first.
+    scrollTo(element, 2400);
+    scrollTo(element, 500);
+    expect(jumpButton()).toBeInTheDocument();
+  });
+
+  it("raises no dot for a tombstone or a deleted message landing out of sight", () => {
+    const { rerender } = render(view(thread));
+    const element = scroller(3000, 2400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    scrollTo(element, 2200);
+
+    rerender(
+      view([
+        ...thread,
+        message({
+          id: "m-gone",
+          client_message_id: "cm-gone",
+          sender_id: BOB,
+          is_deleted: true,
+        }),
+      ]),
+    );
+    expect(jumpButton()).not.toBeInTheDocument();
+  });
+
+  it("does not flash the control while the list follows a tall arrival in", () => {
+    render(view(thread));
+    const element = scroller(3000, 2400);
+    act(() => virtuosoProps.current.scrollerRef?.(element));
+    // A photo taller than the screen lands; the list scrolls down to it.
+    Object.defineProperty(element, "scrollHeight", { value: 3900 });
+    scrollTo(element, 2500);
+    expect(jumpButton()).not.toBeInTheDocument();
+    scrollTo(element, 3300);
+    expect(jumpButton()).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * #4713: a question asked of Frapp from a channel is drawn in that channel,
+ * for the asker alone, under the message that was newest when it was asked.
+ * It is not a message: the rows the list is virtualized on stay the
+ * messages' own.
+ */
+describe("MessageTimeline draws the member's private Frapp turns (#4713)", () => {
+  const at = (minute: number) =>
+    new Date(2026, 7, 16, 17, minute).toISOString();
+  const turn = (
+    id: string,
+    origin: { after?: string | null; at: string },
+  ): AskExchange => ({
+    id,
+    question: `question ${id}`,
+    phase: "done",
+    step: null,
+    preview: "",
+    answer: null,
+    proposal: null,
+    resolution: null,
+    failure: null,
+    origin: { channelId: "chan-1", ...origin },
+  });
+  const messages = [
+    message({ id: "m1", client_message_id: "c1", created_at: at(1) }),
+    message({ id: "m2", client_message_id: "c2", created_at: at(3) }),
+    message({ id: "m3", client_message_id: "c3", created_at: at(5) }),
+  ];
+  const rowOf = (element: Element) =>
+    element.closest("[data-index]")?.getAttribute("data-index");
+  const turnEl = (id: string) =>
+    document.querySelector(`[data-ask-channel-turn="${id}"]`)!;
+
+  beforeEach(() => virtuosoProps.scrollToIndex.mockClear());
+
+  it("puts a turn under the message that was newest when it was asked, and adds no row", () => {
+    const { container } = renderTimeline(messages, {
+      askTurns: [turn("t1", { after: "c2", at: at(4) })],
+    });
+    expect(container.querySelectorAll("[data-index]")).toHaveLength(3);
+    const drawn = turnEl("t1");
+    expect(drawn).toHaveTextContent("turn t1");
+    expect(rowOf(drawn)).toBe(rowOf(screen.getAllByText("hello")[1]!));
+    // After that row's message, not before it.
+    expect(
+      screen.getAllByText("hello")[1]!.compareDocumentPosition(drawn) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("keeps a turn in place by its time once its message is gone", () => {
+    renderTimeline(messages, {
+      askTurns: [turn("t1", { after: "gone", at: at(4) })],
+    });
+    expect(rowOf(turnEl("t1"))).toBe(rowOf(screen.getAllByText("hello")[1]!));
+  });
+
+  it("draws a turn older than every loaded message above the first one", () => {
+    renderTimeline(messages, {
+      askTurns: [turn("t0", { after: null, at: at(0) })],
+    });
+    const drawn = turnEl("t0");
+    const first = screen.getAllByText("hello")[0]!;
+    expect(rowOf(drawn)).toBe(rowOf(first));
+    expect(
+      drawn.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("draws a turn asked in an empty channel under the channel's start", () => {
+    renderTimeline([], {
+      askTurns: [turn("t1", { after: null, at: at(4) })],
+    });
+    expect(turnEl("t1")).toHaveTextContent("turn t1");
+  });
+
+  it("draws none without any, as for a member without Ask", () => {
+    renderTimeline(messages);
+    expect(document.querySelector("[data-ask-channel-turn]")).toBeNull();
+  });
+
+  it("brings the list to a question just asked under the newest message", () => {
+    const view = renderTimeline(messages, { askTurns: [] });
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
+    const props = {
+      channelId: "chan-1",
+      messages,
+      viewerId: VIEWER,
+      nameFor,
+      avatarFor,
+      isLoading: false,
+      loadError: null,
+      onReact: vi.fn(),
+      onUnreact: vi.fn(),
+      ...timelineBlockProps(messages, VIEWER),
+    };
+    view.rerender(
+      <MessageTimeline
+        {...props}
+        askTurns={[turn("t1", { after: "c3", at: at(6) })]}
+      />,
+    );
+    expect(virtuosoProps.scrollToIndex).toHaveBeenCalledWith(
+      expect.objectContaining({ index: "LAST" }),
+    );
+  });
+
+  it("moves nothing for a turn that sits further up the channel", () => {
+    const view = renderTimeline(messages, { askTurns: [] });
+    view.rerender(
+      <MessageTimeline
+        channelId="chan-1"
+        messages={messages}
+        viewerId={VIEWER}
+        nameFor={nameFor}
+        avatarFor={avatarFor}
+        isLoading={false}
+        loadError={null}
+        onReact={vi.fn()}
+        onUnreact={vi.fn()}
+        {...timelineBlockProps(messages, VIEWER)}
+        askTurns={[turn("t1", { after: "c1", at: at(2) })]}
+      />,
+    );
+    expect(virtuosoProps.scrollToIndex).not.toHaveBeenCalled();
   });
 });

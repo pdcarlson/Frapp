@@ -43,7 +43,7 @@ import {
  * than trusting the paste. Anything more configurable turns a one-time paste
  * into a `redirect_uri mismatch` nobody can debug from the error alone.
  */
-export const DISCORD_CALLBACK_PATH = '/v1/discord/connect/callback';
+const DISCORD_CALLBACK_PATH = '/v1/discord/connect/callback';
 
 /**
  * How long a verdict on the Discord application is reused.
@@ -74,19 +74,20 @@ function checkTtlMs(check: DiscordApplicationCheck): number {
  * a state left in a closed tab is not a standing capability to bind a guild
  * onto a chapter.
  */
-export const OAUTH_STATE_TTL_MS = 15 * 60_000;
+const OAUTH_STATE_TTL_MS = 15 * 60_000;
 
 /** Where the browser lands when the flow ends and nothing said otherwise. */
 export const DEFAULT_RETURN_PATH = '/discord-import';
 
 /**
- * Where a member's link handshake returns (#2878): the Discord history section
- * of the web personal Settings page that started it, which confirms the parked
- * account from the member's own session. It was `/profile` until that section
- * moved (#3856). A handshake lives minutes, so one minted before the move and
- * finished after it lands on `/profile` unspent, and the member links again.
+ * Where a member's link handshake returns (#2878): the Linked apps section of
+ * the web personal Settings page that started it, which confirms the parked
+ * account from the member's own session. It was `/profile` until #3856, then
+ * `?section=discord` until Linked apps took the Discord row (#5407); the web
+ * still resolves `discord` to Linked apps, so a handshake minted before the
+ * move is spent where it lands.
  */
-export const AUTHOR_LINK_RETURN_PATH = '/preferences?section=discord';
+export const AUTHOR_LINK_RETURN_PATH = '/preferences?section=apps';
 
 /**
  * How long the browser has to activate what the callback parked.
@@ -95,7 +96,7 @@ export const AUTHOR_LINK_RETURN_PATH = '/preferences?section=discord';
  * browser follows immediately rather than a human reading a consent screen.
  * Anything longer leaves a pending guild activatable for no reason.
  */
-export const CONFIRM_TOKEN_TTL_MS = 5 * 60_000;
+const CONFIRM_TOKEN_TTL_MS = 5 * 60_000;
 
 /**
  * Guild permissions that count as "runs this server".

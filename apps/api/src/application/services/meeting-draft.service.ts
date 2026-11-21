@@ -1,0 +1,1272 @@
+import { randomUUID } from 'node:crypto';
+import type { LanguageModelUsage } from '#domain/adapters/language-model.interface';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  type OnModuleInit,
+} from '@nestjs/common';
+import {
+  EMPTY_MEETING_DRAFT_REVIEW,
+  MEETING_DRAFT_FAILURE_COPY,
+  MEETING_DRAFT_PROMPT_VERSION,
+  MEETING_NOTES_MAX_LENGTH,
+  MeetingDraftOutputSchema,
+  MeetingDraftReviewSchema,
+  type MeetingDraftOutput,
+  type MeetingActionItem,
+  type MeetingDecision,
+  STANDARDS_MEETING_REFUSAL,
+  STANDARDS_MEETING_TYPE,
+  isMeetingDraftFailure,
+  isModuleEnabled,
+  readMeetingContent,
+  type MeetingContent,
+  type MeetingDraftFailure,
+  type MeetingDraftReview,
+  type MeetingDraftStatus,
+} from '@repo/validation';
+import {
+  MEETING_DRAFT_REPOSITORY,
+  type IMeetingDraftRepository,
+} from '#domain/repositories/meeting-draft.repository.interface';
+import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
+import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type { Meeting, MeetingDraft } from '#domain/entities/meeting.entity';
+import type {
+  AiRunFailureReason,
+  AiRunRef,
+} from '#domain/entities/ai-run.entity';
+import { SystemPermissions } from '#domain/constants/permissions';
+import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
+import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
+import {
+  buildMinutesDraftPrompt,
+  verifyMinutesDraft,
+  type MinutesDraftRequest,
+  type MinutesRosterMember,
+  readableSources,
+  type MinutesSource,
+} from '#domain/utils/minutes-draft';
+import { mergeParts, partRequests } from '#domain/utils/minutes-draft-parts';
+import { mergeFollowUps } from '#domain/utils/minutes-context';
+import {
+  MinutesNotesOutputSchema,
+  buildMinutesNotesPrompt,
+  notesOutline,
+} from '#domain/utils/minutes-notes';
+import {
+  ReviewedMinutesSchema,
+  applyReview,
+  buildReviewPrompt,
+  dropProcedure,
+} from '#domain/utils/minutes-draft-review';
+import { MeetingService } from './meeting.service';
+import { MeetingNotesService } from './meeting-notes.service';
+import { MeetingDraftContextService } from './meeting-draft-context.service';
+import { RbacService } from './rbac.service';
+import type { EnabledModules } from './module-gate';
+import { AiRunService } from './ai-run.service';
+import {
+  AiRunFailure,
+  AiRunRegistry,
+  type AiRunContext,
+  type AiRunHandler,
+  type AiRunHandlerRun,
+} from './ai-run-registry';
+import { AiGatewayService, type AiObjectResult } from './ai/ai-gateway.service';
+import { AiConsentService } from './ai/ai-consent.service';
+import { aiConsentRefusal } from './ai/ai-consent-refusal';
+import {
+  NotificationService,
+  type NotifyPayload,
+} from './notification.service';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+
+/** The catalog task, and the AI run kind, for a draft from notes. */
+const MINUTES_DRAFT_TASK = 'minutes.draft';
+const MINUTES_NOTES_TASK = 'minutes.notes';
+const MINUTES_DRAFT_RUN_KIND = 'minutes_draft';
+
+/** What the editor reads about a meeting's draft from notes. */
+export interface MeetingDraftState {
+  status: MeetingDraftStatus;
+  /** The officer's notes, so the box is as they left it. Empty when none. */
+  notes: string;
+  failure: MeetingDraftFailure | null;
+  /** The failure in plain words. */
+  failure_message: string | null;
+  /**
+   * The drafted sections, only while `ready`: the minutes changed while the
+   * draft was written, so it waits for the officer to use it.
+   */
+  content: Partial<MeetingContent> | null;
+  /** What to check the draft against; empty until one is written. */
+  review: MeetingDraftReview;
+  requested_at: string | null;
+  /**
+   * Why this viewer can't ask for a draft right now, known before they paste
+   * anything: the chapter has meeting notes off, or they have not said yes on
+   * the AI sheet. Null when they can ask.
+   */
+  blocked: 'chapter_off' | 'consent_required' | null;
+}
+
+export interface RequestMeetingDraftInput {
+  /**
+   * The officer's notes, saved as theirs before the draft is asked for.
+   * Optional since #4935: the notes box saves as it is typed, and the draft
+   * reads every note-taker's notes and the transcript.
+   */
+  notes?: string;
+  /** The minutes' `updated_at` the editor has; a draft over a newer save is refused. */
+  expected_updated_at: string;
+  /** The meeting's calendar day where the officer is, `YYYY-MM-DD`. */
+  meeting_date?: string;
+}
+
+/** How long a request with no run may read as `drafting`. */
+const ORPHANED_REQUEST_MS = 5 * 60 * 1000;
+
+const NO_DRAFT: MeetingDraftState = {
+  status: 'none',
+  notes: '',
+  failure: null,
+  failure_message: null,
+  content: null,
+  review: EMPTY_MEETING_DRAFT_REVIEW,
+  requested_at: null,
+  blocked: null,
+};
+
+/** How a run that ended without the handler saying why reads to the officer. */
+const RUN_FAILURES: Partial<Record<AiRunFailureReason, MeetingDraftFailure>> = {
+  ai_unavailable: 'unavailable',
+  not_permitted: 'not_permitted',
+  source_gone: 'not_permitted',
+  spend_limit: 'spend_limit',
+};
+
+/** The draft ends that the officer hears about when they have left the page. */
+const NOTIFIED_FAILURES: ReadonlySet<MeetingDraftFailure> = new Set([
+  'spend_limit',
+  'unavailable',
+  'refused',
+  'failed',
+]);
+
+/**
+ * The notice to the officer who asked for a draft, once it is in the minutes
+ * or has stopped (`meetings.md` § Drafting from notes; Paul, 2026-11-19: the
+ * page says they can leave, so they need to hear). It names the meeting and
+ * never a word of the minutes. `admin`, like "Discord import finished": it
+ * answers a job they started, so it has no switch. NORMAL, so quiet hours
+ * hold. It opens the minutes, as "Minutes posted" does.
+ */
+export function draftFinishedNotification(
+  meeting: Pick<Meeting, 'id' | 'event_id' | 'event_name'>,
+  outcome: 'drafted' | 'stopped',
+): NotifyPayload {
+  const name = meeting.event_name.trim() || 'your meeting';
+  return {
+    priority: 'NORMAL',
+    category: 'admin',
+    data: {
+      target: {
+        screen: 'events',
+        ...(meeting.event_id ? { eventId: meeting.event_id } : {}),
+        meetingId: meeting.id,
+      },
+    },
+    ...(outcome === 'drafted'
+      ? {
+          title: 'Minutes drafted',
+          body: `The minutes from ${name} are ready for you to read over and post.`,
+        }
+      : {
+          title: 'Minutes not drafted',
+          body: `Frapp couldn't draft the minutes from ${name}. Open them to try again.`,
+        }),
+  };
+}
+
+/**
+ * Minutes drafted from an officer's notes (`spec/behavior/meetings.md`
+ * § Drafting from notes, #4312, ADR-28 decision 6).
+ *
+ * The officer pastes notes and asks; the draft is written by an AI run
+ * (`minutes_draft`) through the gateway, checked by Frapp
+ * (`#domain/utils/minutes-draft`), and put into the same minutes the officer
+ * edits by hand. Nothing is posted here: posting stays the officer's act in
+ * `MeetingService`.
+ *
+ * Refused before any text is stored or sent: a Standards meeting, minutes
+ * the caller can't edit, posted minutes, a chapter with meeting notes off,
+ * and an officer who has not said yes on the AI sheet. The gateway checks
+ * consent and the spend caps again when the run runs.
+ *
+ * The notes live in `meeting_drafts` and nowhere else, and never in a log,
+ * an error or an event.
+ */
+@Injectable()
+export class MeetingDraftService implements AiRunHandler, OnModuleInit {
+  private readonly logger = new Logger(MeetingDraftService.name);
+
+  readonly kind = MINUTES_DRAFT_RUN_KIND;
+  readonly label = 'Drafting minutes';
+  readonly actsForMember = true;
+  /** Still an officer who may write minutes when the run runs. */
+  readonly runPermissions = [SystemPermissions.MEETINGS_RECORD];
+  /**
+   * An officer is waiting on the page: two tries. A try is the draft, the
+   * editor's read and the notes pass on the strongest model, which for a
+   * four-hour meeting writes for several minutes, so a try gets fifteen; the
+   * worker's heartbeat renews the lease (`AI_RUN_LEASE_MS`) while it runs.
+   */
+  readonly maxAttempts = 2;
+  readonly timeoutMs = 15 * 60 * 1000;
+
+  constructor(
+    @Inject(MEETING_DRAFT_REPOSITORY)
+    private readonly drafts: IMeetingDraftRepository,
+    @Inject(ATTENDANCE_REPOSITORY)
+    private readonly attendanceRepo: IAttendanceRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    private readonly meetings: MeetingService,
+    private readonly meetingNotes: MeetingNotesService,
+    private readonly rbac: RbacService,
+    private readonly runs: AiRunService,
+    private readonly registry: AiRunRegistry,
+    private readonly gateway: AiGatewayService,
+    private readonly consent: AiConsentService,
+    private readonly context: MeetingDraftContextService,
+    private readonly notifications: NotificationService,
+  ) {}
+
+  onModuleInit(): void {
+    this.registry.register(this);
+  }
+
+  /** Where the meeting's draft stands, for whoever may edit its minutes. */
+  async state(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+  ): Promise<MeetingDraftState> {
+    await this.meetings.editableBy(chapterId, meetingId, userId);
+    const [draft, consent, notes] = await Promise.all([
+      this.drafts.find(chapterId, meetingId),
+      this.consentFor(chapterId, userId),
+      this.meetingNotes.ownNotes(chapterId, meetingId, userId),
+    ]);
+    const blocked = consent.allowed
+      ? null
+      : consent.reason === 'chapter_off'
+        ? 'chapter_off'
+        : 'consent_required';
+    if (!draft) return { ...NO_DRAFT, notes, blocked };
+    return { ...this.stateOf(await this.settled(draft)), notes, blocked };
+  }
+
+  /**
+   * Queues a draft from every note-taker's notes and the recording's
+   * transcript (#4935), saving the officer's own notes first when they are
+   * sent. Asking again replaces the earlier request and result, and stops
+   * its run.
+   */
+  async request(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+    input: RequestMeetingDraftInput,
+  ): Promise<MeetingDraftState> {
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
+    this.assertDraftable(meeting);
+
+    const notes = (input.notes ?? '').trim();
+    if (notes.length > MEETING_NOTES_MAX_LENGTH) {
+      throw new BadRequestException(
+        `Notes can be up to ${MEETING_NOTES_MAX_LENGTH.toLocaleString('en-US')} characters. Shorten them, or draft the meeting in two parts.`,
+      );
+    }
+    if (meeting.updated_at !== input.expected_updated_at) {
+      throw new ConflictException({
+        code: 'meeting.stale',
+        message:
+          'Someone else saved these minutes while you were editing. Reload to see their changes.',
+      });
+    }
+
+    // The same check the gateway makes when the run runs, made now so the
+    // officer is told at once and no notes are stored for a call that can't
+    // be made.
+    const consent = await this.consentFor(chapterId, userId);
+    if (!consent.allowed) throw aiConsentRefusal(consent.reason);
+
+    if (notes) {
+      await this.meetingNotes.saveForDraft(chapterId, meeting, userId, notes);
+    }
+    const { sources, sourceUserIds } = await this.meetingNotes.sourcesFor(
+      chapterId,
+      meeting,
+    );
+
+    const earlier = await this.drafts.find(chapterId, meetingId);
+    if (earlier?.status === 'drafting' && earlier.run_id) {
+      await this.runs.cancel(chapterId, earlier.run_id);
+    }
+
+    const requestId = randomUUID();
+    const draft = await this.drafts.replace({
+      meeting_id: meetingId,
+      chapter_id: chapterId,
+      request_id: requestId,
+      requested_by: userId,
+      notes: readableSources(sources),
+      sources,
+      source_user_ids: sourceUserIds,
+      meeting_date: meetingDateOf(meeting, input.meeting_date),
+      base_updated_at: meeting.updated_at,
+    });
+
+    try {
+      const run = await this.runs.enqueue({
+        chapterId,
+        kind: MINUTES_DRAFT_RUN_KIND,
+        // One run per request: a new request is new work, never the answer
+        // to an older one.
+        dedupeKey: `meeting:${meetingId}:${requestId}`,
+        requestedBy: userId,
+        actingUserId: userId,
+        input: { meeting_id: meetingId, request_id: requestId },
+      });
+      await this.drafts.setRun(chapterId, meetingId, requestId, run.id);
+      return { ...this.stateOf({ ...draft, run_id: run.id }), notes };
+    } catch (error) {
+      // Nothing will draft from these notes. They are kept, so the officer
+      // doesn't paste them twice, and the request reads as failed.
+      await this.drafts.finish(chapterId, meetingId, requestId, ['drafting'], {
+        status: 'failed',
+        failure_code: 'unavailable',
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Clears the notes and the draft, and stops a run still writing one. With
+   * `keepNotes`, only stops: the request ends as `stopped` and the notes stay
+   * for the officer to ask again.
+   */
+  async discard(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+    options: { keepNotes?: boolean } = {},
+  ): Promise<void> {
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
+    const draft = await this.drafts.find(chapterId, meetingId);
+    if (!options.keepNotes && meeting.status === 'draft') {
+      // The officer's own notes go with Clear notes; other note-takers'
+      // stay theirs.
+      await this.meetingNotes.saveForDraft(chapterId, meeting, userId, '');
+    }
+    if (!draft) return;
+    if (draft.status === 'drafting' && draft.run_id) {
+      await this.runs.cancel(chapterId, draft.run_id);
+    }
+    if (options.keepNotes) {
+      // Only a draft still being written is stopped; one that has landed
+      // stays as it is.
+      await this.drafts.finish(
+        chapterId,
+        meetingId,
+        draft.request_id,
+        ['drafting'],
+        { status: 'failed', failure_code: 'stopped' },
+      );
+      return;
+    }
+    await this.drafts.delete(chapterId, meetingId);
+  }
+
+  /**
+   * Puts a draft that waited (`ready`) into the minutes, at the version the
+   * officer now has on screen. The same compare-and-set as a save, so it
+   * can't overwrite one either: 409 `meeting.stale` when the minutes moved
+   * again. 409 `meeting.draft_not_waiting` when there is no such draft.
+   */
+  async use(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+    expectedUpdatedAt: string,
+  ): Promise<MeetingDraftState> {
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
+    this.assertDraftable(meeting);
+    const draft = await this.drafts.find(chapterId, meetingId);
+    const stored = draft?.result ?? {};
+    const drafted =
+      stored.content && typeof stored.content === 'object'
+        ? draftedSections(stored.content as Record<string, unknown>)
+        : null;
+    if (!draft || draft.status !== 'ready' || !drafted) {
+      throw new ConflictException({
+        code: 'meeting.draft_not_waiting',
+        message: 'There is no draft waiting to be used. Ask for one again.',
+      });
+    }
+    await this.meetings.update(chapterId, meetingId, userId, {
+      expected_updated_at: expectedUpdatedAt,
+      content: drafted,
+    });
+    const used = await this.drafts.finish(
+      chapterId,
+      meetingId,
+      draft.request_id,
+      ['ready'],
+      { status: 'applied', result: { review: stored.review ?? null } },
+    );
+    const consent = await this.consentFor(chapterId, userId);
+    return {
+      ...this.stateOf(used ?? { ...draft, status: 'applied' }),
+      // The stored notes are every source's; the box shows the caller's own.
+      notes: await this.meetingNotes.ownNotes(chapterId, meetingId, userId),
+      blocked: consent.allowed
+        ? null
+        : consent.reason === 'chapter_off'
+          ? 'chapter_off'
+          : 'consent_required',
+    };
+  }
+
+  /**
+   * What "Report this" keeps of a draft (#4315): the notes it was written
+   * from and what it wrote, for whoever may see that draft (an editor of the
+   * minutes). Once the draft is in the minutes the row keeps only the review,
+   * so the minutes as they are now stand in for what it wrote. Null when
+   * there is no draft. Never a Standards meeting: none is ever drafted, and
+   * a report must not hold Standards material either.
+   */
+  async forReport(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+    enabledModules: EnabledModules | null,
+  ): Promise<{
+    /** One per request: a draft asked for again is a new thing to report. */
+    requestId: string;
+    notes: string;
+    meetingDate: string;
+    status: string;
+    result: Record<string, unknown> | null;
+    minutesNow: unknown;
+    /** The officer who asked for it. */
+    requestedBy: string | null;
+    /** Everyone whose words the draft holds: the asker and each note-taker. */
+    quoted: string[];
+  } | null> {
+    // The draft routes' own gates (`@RequireModule('meetings')` and
+    // `meetings:record` on the controller): a report reads no draft its
+    // reporter could not open there.
+    if (
+      enabledModules !== null &&
+      !isModuleEnabled(enabledModules, 'meetings')
+    ) {
+      return null;
+    }
+    const held = await this.rbac.getEffectivePermissions(chapterId, userId);
+    if (
+      !held.includes('*') &&
+      !held.includes(SystemPermissions.MEETINGS_RECORD)
+    ) {
+      return null;
+    }
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
+    if ((meeting.meeting_type as string) === STANDARDS_MEETING_TYPE) {
+      return null;
+    }
+    const draft = await this.drafts.find(chapterId, meetingId);
+    if (!draft || draft.status === 'drafting') return null;
+    return {
+      requestId: draft.request_id,
+      notes: draft.notes,
+      meetingDate: draft.meeting_date,
+      status: draft.status,
+      result: draft.result,
+      minutesNow: draft.status === 'applied' ? meeting.content : null,
+      requestedBy: draft.requested_by,
+      quoted: [
+        ...new Set([
+          ...(draft.requested_by ? [draft.requested_by] : []),
+          ...(draft.source_user_ids ?? []),
+        ]),
+      ],
+    };
+  }
+
+  /**
+   * The retention sweep: every request, and every note-taker's notes, older
+   * than the limit, everywhere.
+   */
+  async deleteExpired(now: Date = new Date()): Promise<number> {
+    const [drafts, notes] = await Promise.all([
+      this.drafts.deleteRequestedBefore(
+        meetingRetentionCutoff(now).toISOString(),
+      ),
+      this.meetingNotes.deleteExpired(now),
+    ]);
+    return drafts + notes;
+  }
+
+  /**
+   * Puts another version of a disagreement into the minutes (#4935): the
+   * author read the note-takers' lines under "Notes disagreed" and picked a
+   * different one, or settled a tie. The version on screen replaces the one
+   * the draft put in, by its drafted text; one the officer has since
+   * rewritten stays, and the picked version is added beside it. The same
+   * compare-and-set as a save.
+   */
+  async choose(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+    input: { conflict: number; version: number; expected_updated_at: string },
+  ): Promise<MeetingDraftState> {
+    const meeting = await this.meetings.editableBy(
+      chapterId,
+      meetingId,
+      userId,
+    );
+    this.assertDraftable(meeting);
+    const draft = await this.drafts.find(chapterId, meetingId);
+    const parsed = MeetingDraftReviewSchema.safeParse(draft?.result?.review);
+    const conflict = parsed.success
+      ? parsed.data.conflicts[input.conflict]
+      : undefined;
+    const picked = conflict?.versions[input.version];
+    if (!draft || draft.status !== 'applied' || !parsed.success || !picked) {
+      throw new ConflictException({
+        code: 'meeting.draft_not_waiting',
+        message:
+          'That disagreement is no longer in the draft. Ask for a draft again.',
+      });
+    }
+    const review = parsed.data;
+    const before =
+      conflict.chosen === null ? null : conflict.versions[conflict.chosen];
+    const content = readMeetingContent(meeting.content);
+    const patch: Partial<MeetingContent> = {};
+    if (conflict.kind === 'decision') {
+      const item: MeetingDecision = { text: picked.text, vote: picked.vote };
+      patch.decisions = swapItem(content.decisions, before?.text, item);
+    } else {
+      const item: MeetingActionItem = {
+        text: picked.text,
+        owner_user_id: picked.owner_user_id,
+        due_date: picked.due_date,
+      };
+      patch.action_items = swapItem(content.action_items, before?.text, item);
+    }
+    await this.meetings.update(chapterId, meetingId, userId, {
+      expected_updated_at: input.expected_updated_at,
+      content: patch,
+    });
+    const sources = review.sources.filter(
+      (source) =>
+        !(source.kind === conflict.kind && source.text === before?.text),
+    );
+    sources.push({
+      kind: conflict.kind,
+      text: picked.text,
+      quote: picked.quote,
+      from: picked.from,
+    });
+    const conflicts = review.conflicts.map((c, index) =>
+      index === input.conflict
+        ? { ...c, chosen: input.version, settled_by: 'author' as const }
+        : c,
+    );
+    const saved = await this.drafts.finish(
+      chapterId,
+      meetingId,
+      draft.request_id,
+      ['applied'],
+      {
+        status: 'applied',
+        result: { review: { ...review, sources, conflicts } },
+      },
+    );
+    return {
+      ...this.stateOf(saved ?? draft),
+      notes: await this.meetingNotes.ownNotes(chapterId, meetingId, userId),
+    };
+  }
+
+  // ── The AI run ────────────────────────────────────────────────────────────
+
+  /**
+   * Writes the draft. Safe to run twice for one request: a request that has
+   * already ended, or that the officer replaced or cleared, writes nothing.
+   */
+  async run({ run, input, signal }: AiRunContext) {
+    const meetingId = String(input.meeting_id);
+    const requestId = String(input.request_id);
+    const chapterId = run.chapter_id;
+    const userId = run.acting_user_id;
+
+    const draft = await this.drafts.find(chapterId, meetingId);
+    if (
+      !draft ||
+      draft.request_id !== requestId ||
+      draft.status !== 'drafting'
+    ) {
+      return;
+    }
+    // Nothing about the minutes is told to anyone until the officer's
+    // access is checked.
+    let checked = false;
+    const fail = async (
+      failure: MeetingDraftFailure,
+      reason: AiRunFailureReason,
+    ): Promise<never> => {
+      const ended = await this.drafts.finish(
+        chapterId,
+        meetingId,
+        requestId,
+        ['drafting'],
+        { status: 'failed', failure_code: failure },
+      );
+      if (ended && checked && userId && NOTIFIED_FAILURES.has(failure)) {
+        await this.tellOfficer(userId, chapterId, meetingId, 'stopped');
+      }
+      throw new AiRunFailure(reason, `minutes draft ended: ${failure}`);
+    };
+    if (!userId) return fail('not_permitted', 'not_permitted');
+
+    // The officer's access now, not when they asked.
+    let meeting: Meeting;
+    try {
+      meeting = await this.meetings.editableBy(chapterId, meetingId, userId);
+      this.assertDraftable(meeting);
+    } catch (error) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException ||
+        error instanceof BadRequestException ||
+        error instanceof ConflictException
+      ) {
+        return fail('not_permitted', 'not_permitted');
+      }
+      throw error;
+    }
+    checked = true;
+
+    const request = await this.draftRequest(chapterId, meeting, draft, userId);
+    if (request.sources) {
+      // Who may still contribute is checked as late as the call: a
+      // note-taker who said No to Frapp AI or left since the officer asked
+      // is not sent (#4935).
+      request.sources = await this.meetingNotes.stillContributing(
+        chapterId,
+        meeting,
+        request.sources,
+      );
+      if (request.sources.length === 0) {
+        return fail('not_permitted', 'not_permitted');
+      }
+    }
+    const context = { chapterId, actingUserId: userId, runId: run.id };
+    const result = await this.drafted(request, signal, context);
+
+    if (result.status === 'unavailable') {
+      if (result.reason === 'consent') {
+        return fail(
+          result.detail === 'chapter_off' ? 'chapter_off' : 'consent_required',
+          'not_permitted',
+        );
+      }
+      if (result.reason === 'spend_cap') {
+        return fail('spend_limit', 'spend_limit');
+      }
+      return fail('unavailable', 'ai_unavailable');
+    }
+    if (result.status === 'refused') return fail('refused', 'handler_failed');
+    if (result.status === 'invalid_output') {
+      // A second try often fits; the run fails as exhausted if it doesn't.
+      throw new AiRunFailure(
+        'handler_failed',
+        'minutes draft did not match its schema',
+        true,
+      );
+    }
+
+    const verified = verifyMinutesDraft(result.value, request);
+    // The officer asked again, stopped or cleared their notes while this was
+    // written: nothing of it goes anywhere. Read again here, as late as it
+    // can be, because the row stays `drafting` until the minutes are settled
+    // (a page that polls must never see a draft "waiting" that is about to
+    // be put in).
+    const current = await this.drafts.find(chapterId, meetingId);
+    if (
+      !current ||
+      current.request_id !== requestId ||
+      current.status !== 'drafting'
+    ) {
+      return;
+    }
+
+    const counts = {
+      decision_count: verified.content.decisions?.length ?? 0,
+      action_item_count: verified.content.action_items?.length ?? 0,
+      left_out_count: verified.review.left_out,
+    };
+    try {
+      // Only onto the version the officer asked on: a save made since is
+      // never overwritten, and the draft then waits as `ready`.
+      await this.meetings.update(chapterId, meetingId, userId, {
+        expected_updated_at: draft.base_updated_at,
+        content: verified.content,
+      });
+    } catch (error) {
+      if (error instanceof ConflictException) {
+        // Someone saved since: the draft waits, sections and all, for the
+        // officer to use.
+        const waiting = await this.drafts.finish(
+          chapterId,
+          meetingId,
+          requestId,
+          ['drafting'],
+          {
+            status: 'ready',
+            result: { content: verified.content, review: verified.review },
+          },
+        );
+        if (waiting) {
+          await this.tellOfficer(userId, chapterId, meetingId, 'drafted');
+        }
+        return { meeting_id: meetingId, applied: false, ...counts };
+      }
+      if (
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException
+      ) {
+        return fail('not_permitted', 'not_permitted');
+      }
+      // The minutes refused what was drafted (an owner who has since left).
+      if (error instanceof BadRequestException) {
+        return fail('failed', 'handler_failed');
+      }
+      throw error;
+    }
+    // In the minutes now, so the drafted sections are not kept a second
+    // time: only what the officer checks them against.
+    const applied = await this.drafts.finish(
+      chapterId,
+      meetingId,
+      requestId,
+      ['drafting'],
+      { status: 'applied', result: { review: verified.review } },
+    );
+    if (applied) {
+      await this.tellOfficer(userId, chapterId, meetingId, 'drafted');
+    }
+    return { meeting_id: meetingId, applied: true, ...counts };
+  }
+
+  /**
+   * The run ended failed in the queue without the handler recording why: its
+   * tries ran out (a timeout, an error, a draft that never fit its schema).
+   * The draft ends as failed and its officer hears, as they would of any
+   * other failure. A failure `run` already recorded finds the draft ended and
+   * does nothing.
+   */
+  async onFailed(
+    run: AiRunHandlerRun,
+    input: AiRunRef,
+    reason: AiRunFailureReason,
+  ): Promise<void> {
+    const chapterId = run.chapter_id;
+    const meetingId = String(input.meeting_id);
+    const requestId = String(input.request_id);
+    const draft = await this.drafts.find(chapterId, meetingId);
+    if (
+      !draft ||
+      draft.request_id !== requestId ||
+      draft.status !== 'drafting'
+    ) {
+      return;
+    }
+    const failure = RUN_FAILURES[reason] ?? 'failed';
+    const ended = await this.drafts.finish(
+      chapterId,
+      meetingId,
+      requestId,
+      ['drafting'],
+      { status: 'failed', failure_code: failure },
+    );
+    if (ended && run.acting_user_id && NOTIFIED_FAILURES.has(failure)) {
+      await this.tellOfficer(
+        run.acting_user_id,
+        chapterId,
+        meetingId,
+        'stopped',
+      );
+    }
+  }
+
+  /**
+   * Tells the officer who asked that the draft is in, or stopped. Their access
+   * is read again first: an officer who lost it while the draft was written,
+   * or minutes posted meanwhile, gets no notice naming the meeting.
+   * Best-effort: the draft has landed either way, so a failed notice is
+   * reported and never fails (or retries) the run, which would write the
+   * draft twice.
+   */
+  private async tellOfficer(
+    userId: string,
+    chapterId: string,
+    meetingId: string,
+    outcome: 'drafted' | 'stopped',
+  ): Promise<void> {
+    let meeting: Meeting;
+    try {
+      meeting = await this.meetings.editableBy(chapterId, meetingId, userId);
+      this.assertDraftable(meeting);
+    } catch {
+      return;
+    }
+    try {
+      await this.notifications.notifyUser(
+        userId,
+        chapterId,
+        draftFinishedNotification(meeting, outcome),
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'minutes-draft-finished-notify',
+        message: `Could not tell the officer about the draft of meeting ${meeting.id}`,
+        error,
+      });
+    }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * The model's draft: a first pass over the notes, or for a long meeting one
+   * per part (`minutes-draft-parts.ts`), then the editor's read over every
+   * candidate (`minutes-draft-review.ts`). Every draft gets the editor's
+   * read, because a procedural motion reads as a decision in an hour's notes
+   * as much as in four. A part that can't be drafted ends the whole draft the
+   * way a one-pass failure would, because a draft missing an hour of the
+   * meeting reads as complete when it isn't.
+   */
+  private async drafted(
+    request: MinutesDraftRequest,
+    signal: AbortSignal | undefined,
+    context: { chapterId: string; actingUserId: string; runId: string },
+  ): Promise<AiObjectResult<MeetingDraftOutput>> {
+    const draftOf = (part: MinutesDraftRequest) =>
+      this.gateway.generateObject(
+        MINUTES_DRAFT_TASK,
+        {
+          ...buildMinutesDraftPrompt(part),
+          schema: MeetingDraftOutputSchema,
+          signal,
+        },
+        context,
+      );
+    // Pass 1: every candidate, from the notes or from each part of a long
+    // transcript side by side. Beside it, the notes pass writes the meeting
+    // up topic by topic from every source read whole (`minutes-notes.ts`).
+    const parts = partRequests(request) ?? [request];
+    // Its own stop, so a draft that ends early never leaves it running (and
+    // billing) with nobody to read it. It never rejects: a notes pass that
+    // fails leaves the draft's own notes.
+    const notesStop = new AbortController();
+    const stopNotes = () => notesStop.abort();
+    signal?.addEventListener('abort', stopNotes, { once: true });
+    const notesRun = this.gateway
+      .generateObject(
+        MINUTES_NOTES_TASK,
+        {
+          ...buildMinutesNotesPrompt(request),
+          schema: MinutesNotesOutputSchema,
+          signal: notesStop.signal,
+        },
+        context,
+      )
+      .catch(() => null);
+    try {
+      const results = await Promise.all(parts.map(draftOf));
+      const outputs: MeetingDraftOutput[] = [];
+      const usages: LanguageModelUsage[] = [];
+      for (const result of results) {
+        if (result.status !== 'ok') return result;
+        outputs.push(result.value);
+        usages.push(result.usage);
+      }
+
+      // Pass 2: the editor's read over the whole meeting
+      // (`minutes-draft-review.ts`), while the notes pass is still writing.
+      // Several note-takers' conflicts are settled by the first pass and
+      // pass through untouched.
+      const reviewed = await this.gateway
+        .generateObject(
+          MINUTES_DRAFT_TASK,
+          {
+            ...buildReviewPrompt(request, outputs),
+            schema: ReviewedMinutesSchema,
+            signal,
+          },
+          context,
+        )
+        .catch((error: unknown) => {
+          // A cancelled run stays cancelled; any other failure of this pass
+          // (a timeout, a provider error) leaves the first pass standing.
+          if (signal?.aborted) throw error;
+          return null;
+        });
+
+      const noted = await notesRun;
+      signal?.throwIfAborted();
+      const notes = noted?.status === 'ok' ? noted.value : null;
+      if (noted?.status === 'ok') usages.push(noted.usage);
+      /**
+       * The notes pass's summary and notes over the draft's own, when it
+       * wrote them. Without it (a failure, a refusal, the spend cap) the
+       * draft's own stand, so a draft is never lost to it.
+       */
+      const withNotes = (draft: MeetingDraftOutput): MeetingDraftOutput => {
+        if (!notes) return draft;
+        const outline = notesOutline(notes);
+        return {
+          ...draft,
+          summary: notes.summary.trim() || draft.summary,
+          discussion_log: outline || draft.discussion_log,
+        };
+      };
+
+      // Where each carried item stands is read by the first pass, from the
+      // sources; the editor's read never sees them, so they pass through.
+      const followUps = mergeFollowUps(outputs);
+      if (reviewed?.status === 'ok') {
+        usages.push(reviewed.usage);
+        return {
+          status: 'ok',
+          value: withNotes({
+            ...applyReview(outputs, reviewed.value),
+            follow_ups: followUps,
+          }),
+          usage: usageOf(usages),
+        };
+      }
+      // The first pass is already paid for and already checked word for
+      // word, so whatever stopped the editor's read (a reply that didn't
+      // parse, a refusal, the spend cap reached on this call, an error)
+      // leaves its draft, with procedure taken out, rather than nothing.
+      const merged = mergeParts(outputs);
+      return {
+        status: 'ok',
+        value: withNotes({
+          ...merged,
+          decisions: dropProcedure(merged.decisions),
+          follow_ups: followUps,
+        }),
+        usage: usageOf(usages),
+      };
+    } finally {
+      // Settled by now on every path that read it; on any other (a part
+      // that failed or threw) this stops it.
+      notesStop.abort();
+      signal?.removeEventListener('abort', stopNotes);
+    }
+  }
+
+  /** The chapter's switch and the member's answer, for this task. */
+  private consentFor(chapterId: string, userId: string) {
+    const entry = aiCatalogEntry(MINUTES_DRAFT_TASK);
+    return this.consent.check({
+      chapterId,
+      actingUserId: userId,
+      task: MINUTES_DRAFT_TASK,
+      family: entry.family,
+      provider: entry.provider,
+      model: entry.model,
+      promptVersion: MEETING_DRAFT_PROMPT_VERSION,
+    });
+  }
+
+  private assertDraftable(meeting: Meeting): void {
+    assertMeetingDraftable(meeting);
+  }
+
+  /**
+   * What the model is told: the meeting, the template, the roster, the
+   * notes, and what it knows from before tonight (#5477), read as the
+   * officer the draft acts for.
+   */
+  private async draftRequest(
+    chapterId: string,
+    meeting: Meeting,
+    draft: MeetingDraft,
+    userId: string,
+  ): Promise<MinutesDraftRequest> {
+    const [sections, members, roles, attendance] = await Promise.all([
+      this.meetings.getTemplate(chapterId),
+      this.memberRepo.findChapterMemberIdentities(chapterId),
+      this.rbac.findByChapter(chapterId),
+      meeting.event_id
+        ? this.attendanceRepo.findByEvent(meeting.event_id)
+        : Promise.resolve([]),
+    ]);
+    const roleNames = new Map(roles.map((role) => [role.id, role.name]));
+    const checkedIn = new Set(
+      attendance
+        .filter((row) => row.status === 'PRESENT' || row.status === 'LATE')
+        .map((row) => row.user_id),
+    );
+    const roster: MinutesRosterMember[] = members
+      .filter((member) => member.display_name.trim().length > 0)
+      .map((member) => ({
+        userId: member.user_id,
+        name: member.display_name.trim(),
+        roles: member.role_ids.flatMap((id) => roleNames.get(id) ?? []),
+        checkedIn: checkedIn.has(member.user_id),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const sources = storedSources(draft.sources);
+    // The background helps; it is never worth the draft. A read that fails
+    // (a database hiccup) leaves the draft to tonight's sources, as before.
+    const { agenda, background } = await this.context
+      .contextFor(chapterId, meeting, userId, roster)
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `minutes draft background unavailable: ${error instanceof Error ? error.name : 'error'}`,
+        );
+        return { agenda: [], background: undefined };
+      });
+    return {
+      meetingName: meeting.event_name,
+      meetingType: meeting.meeting_type,
+      otherLabel: meeting.other_label,
+      meetingDate: draft.meeting_date,
+      sections,
+      roster,
+      // A draft asked before several note-takers has its notes alone.
+      ...(sources.length > 0 ? { sources } : { notes: draft.notes }),
+      agenda,
+      ...(background ? { background } : {}),
+    };
+  }
+
+  /**
+   * A request still marked `drafting` whose run has ended without the
+   * handler recording why (it ran out of tries, was cancelled, or its member
+   * left) is recorded as failed here, so the page stops waiting.
+   */
+  private async settled(draft: MeetingDraft): Promise<MeetingDraft> {
+    if (draft.status !== 'drafting') return draft;
+    let failure: MeetingDraftFailure | null = null;
+    if (!draft.run_id || !draft.requested_by) {
+      // No run was ever queued for it (the server stopped between storing
+      // the notes and queueing the work), or its member is gone. Past the
+      // time a draft takes, nothing is coming.
+      const waited = Date.now() - Date.parse(draft.requested_at);
+      if (waited > ORPHANED_REQUEST_MS) failure = 'failed';
+    } else
+      try {
+        const run = await this.runs.getForMember(
+          draft.chapter_id,
+          draft.requested_by,
+          draft.run_id,
+        );
+        if (run.status === 'failed' || run.status === 'cancelled') {
+          failure =
+            (run.failure_reason && RUN_FAILURES[run.failure_reason]) ||
+            'failed';
+        }
+      } catch (error) {
+        if (!(error instanceof NotFoundException)) throw error;
+        // The run is gone, or AI was switched off since.
+        failure = 'unavailable';
+      }
+    if (!failure) return draft;
+    const ended = await this.drafts.finish(
+      draft.chapter_id,
+      draft.meeting_id,
+      draft.request_id,
+      ['drafting'],
+      { status: 'failed', failure_code: failure },
+    );
+    // Lost to the handler finishing at the same moment: read what it wrote.
+    return (
+      ended ??
+      (await this.drafts.find(draft.chapter_id, draft.meeting_id)) ??
+      draft
+    );
+  }
+
+  private stateOf(draft: MeetingDraft): MeetingDraftState {
+    const failure =
+      draft.status === 'failed'
+        ? isMeetingDraftFailure(draft.failure_code)
+          ? draft.failure_code
+          : 'failed'
+        : null;
+    const result = draft.result ?? {};
+    const review = MeetingDraftReviewSchema.safeParse(result.review);
+    const drafted =
+      result.content && typeof result.content === 'object'
+        ? (result.content as Record<string, unknown>)
+        : null;
+    return {
+      status: draft.status,
+      notes: draft.notes,
+      failure,
+      failure_message: failure ? MEETING_DRAFT_FAILURE_COPY[failure] : null,
+      content:
+        draft.status === 'ready' && drafted ? draftedSections(drafted) : null,
+      review: review.success ? review.data : EMPTY_MEETING_DRAFT_REVIEW,
+      requested_at: draft.requested_at,
+      blocked: null,
+    };
+  }
+}
+
+/**
+ * A draft is written only for unposted minutes of a type Frapp drafts.
+ * Standards is refused here as well as where minutes are started and typed,
+ * before any text or audio is stored or sent (§ Standards meetings). The
+ * recording upload asks the same question (`MeetingRecordingService`).
+ */
+export function assertMeetingDraftable(meeting: Meeting): void {
+  if ((meeting.meeting_type as string) === STANDARDS_MEETING_TYPE) {
+    throw new BadRequestException({
+      code: 'meeting.standards_refused',
+      message: STANDARDS_MEETING_REFUSAL,
+    });
+  }
+  if (meeting.status !== 'draft') {
+    throw new ConflictException({
+      code: 'meeting.draft_posted',
+      message: 'These minutes are already posted. Edit them by hand from here.',
+    });
+  }
+}
+
+/**
+ * The sources stored with a request, each checked, since the column is
+ * jsonb: anything that doesn't read as a source is dropped.
+ */
+function storedSources(stored: unknown): MinutesSource[] {
+  if (!Array.isArray(stored)) return [];
+  return stored.flatMap((value): MinutesSource[] => {
+    if (!value || typeof value !== 'object') return [];
+    const row = value as Record<string, unknown>;
+    if (
+      typeof row.id !== 'string' ||
+      (row.kind !== 'notes' && row.kind !== 'recording') ||
+      typeof row.label !== 'string' ||
+      typeof row.rank !== 'number' ||
+      typeof row.text !== 'string'
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: row.id,
+        kind: row.kind,
+        label: row.label,
+        standing: typeof row.standing === 'string' ? row.standing : null,
+        rank: row.rank,
+        userId: typeof row.userId === 'string' ? row.userId : null,
+        text: row.text,
+      },
+    ];
+  });
+}
+
+/**
+ * The list with `item` in place of the one whose text is `replacing`, or
+ * added at the end when none has that text any more.
+ */
+function swapItem<T extends { text: string }>(
+  list: readonly T[],
+  replacing: string | undefined,
+  item: T,
+): T[] {
+  const at =
+    replacing === undefined ? -1 : list.findIndex((x) => x.text === replacing);
+  if (at < 0) {
+    return list.some((x) => x.text === item.text) ? [...list] : [...list, item];
+  }
+  return list.map((x, index) => (index === at ? item : x));
+}
+
+/** The stored sections, read as minutes; only the sections that were drafted. */
+function draftedSections(
+  stored: Record<string, unknown>,
+): Partial<MeetingContent> {
+  const read = readMeetingContent(stored);
+  return Object.fromEntries(
+    Object.entries(read).filter(([key]) => key in stored),
+  );
+}
+
+/**
+ * The meeting's calendar day. The officer's browser knows it; the server
+ * only has the event's start in UTC, which is a day off for an evening
+ * meeting west of Greenwich. The client's day is used when it is within a
+ * day of the event's start, and the UTC day otherwise.
+ */
+function meetingDateOf(meeting: Meeting, fromClient?: string): string {
+  const utcDay = meeting.event_start_time.slice(0, 10);
+  if (!fromClient || !/^\d{4}-\d{2}-\d{2}$/.test(fromClient)) return utcDay;
+  const noon = new Date(`${fromClient}T12:00:00.000Z`);
+  // A real calendar day: "2026-02-30" parses, as 2 March.
+  if (
+    Number.isNaN(noon.getTime()) ||
+    noon.toISOString().slice(0, 10) !== fromClient
+  ) {
+    return utcDay;
+  }
+  const apart = Math.abs(noon.getTime() - Date.parse(meeting.event_start_time));
+  return apart <= 36 * 60 * 60 * 1000 ? fromClient : utcDay;
+}
+
+/** The parts' token counts together, as the one draft they make. */
+function usageOf(usages: readonly LanguageModelUsage[]): LanguageModelUsage {
+  return usages.reduce(
+    (total, usage) => ({
+      inputTokens: total.inputTokens + usage.inputTokens,
+      outputTokens: total.outputTokens + usage.outputTokens,
+      cachedInputTokens: total.cachedInputTokens + usage.cachedInputTokens,
+    }),
+    { inputTokens: 0, outputTokens: 0, cachedInputTokens: 0 },
+  );
+}

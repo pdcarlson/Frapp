@@ -17,12 +17,10 @@ import {
   guardDecimalDraft,
   guardIntDraft,
   labelled,
-  neutralizeFormulaCell,
   parseGuardedDecimal,
   parseGuardedInt,
   readLastExportFormat,
   rememberExportFormat,
-  rowsToCsv,
   rowsToTsv,
   rowsToXlsxData,
 } from "./utils";
@@ -264,45 +262,6 @@ describe("cn with the Signet type scale", () => {
   });
 });
 
-// #3969: the exports offer CSV, Excel and a clipboard copy for Google Sheets.
-// A member-typed cell must be safe in all three.
-describe("neutralizeFormulaCell", () => {
-  it("prefixes a cell a spreadsheet would run as a formula", () => {
-    for (const cell of [
-      '=HYPERLINK("https://evil.example","Click")',
-      "+1+1",
-      "-1+1",
-      "@SUM(A1:A2)",
-      "\t=1+1",
-      "\r=1+1",
-    ]) {
-      expect(neutralizeFormulaCell(cell)).toBe(`'${cell}`);
-    }
-  });
-
-  it("leaves numbers, currency and ordinary text as they are", () => {
-    for (const cell of ["-5", "+5", "-12.50", "-$12.00", "Late arrival", "", "a=b", "🎉 party"]) {
-      expect(neutralizeFormulaCell(cell)).toBe(cell);
-    }
-  });
-});
-
-describe("rowsToCsv", () => {
-  it("quotes commas, quotes and line breaks, and keeps emoji", () => {
-    const csv = rowsToCsv([
-      { Description: 'Said "hi", twice\nthen left 🎉', Amount: "-5" },
-    ]);
-    expect(csv).toBe(
-      '\uFEFFDescription,Amount\r\n"Said ""hi"", twice\nthen left 🎉",-5',
-    );
-  });
-
-  it("makes a formula-shaped cell inert, header included", () => {
-    const csv = rowsToCsv([{ "=cmd": "=1+1", Note: "@here, now" }]);
-    expect(csv).toBe("\uFEFF'=cmd,Note\r\n'=1+1,\"'@here, now\"");
-  });
-});
-
 describe("rowsToTsv", () => {
   it("separates cells with tabs and rows with newlines, with no BOM", () => {
     expect(
@@ -343,7 +302,12 @@ describe("rowsToXlsxData", () => {
         Due: "2026-08-01",
         Time: "2026-08-01T12:00:00Z",
       },
-      { Amount: "-5", Paid: "-$5.00", Due: "", Time: "2026-08-02T12:00:00+00:00" },
+      {
+        Amount: "-5",
+        Paid: "-$5.00",
+        Due: "",
+        Time: "2026-08-02T12:00:00+00:00",
+      },
     ]);
     expect(header!.map((cell) => cell?.value)).toEqual([
       "Amount",
@@ -449,7 +413,9 @@ describe("exportRows", () => {
 
   it("rejects when the clipboard is refused, so the menu can say so", async () => {
     Object.defineProperty(navigator, "clipboard", {
-      value: { writeText: vi.fn(async () => Promise.reject(new Error("denied"))) },
+      value: {
+        writeText: vi.fn(async () => Promise.reject(new Error("denied"))),
+      },
       configurable: true,
     });
 

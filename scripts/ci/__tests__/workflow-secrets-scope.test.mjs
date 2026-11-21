@@ -304,7 +304,7 @@ describe("workflow secrets scope (#2518)", () => {
     // reads no secret itself and names no environment.
     const shared = byName.get("_deploy.yml")?.jobs.find((j) => j.id === "deploy");
     assert.ok(shared, "_deploy.yml's deploy job must be parsed");
-    assert.ok(secretsOf(shared.body).includes("RENDER_API_KEY"));
+    assert.ok(secretsOf(shared.body).includes("VERCEL_API_KEY"));
     assert.deepEqual(environmentOf(shared.body), { name: "${{ inputs.environment }}", literal: false });
     for (const [file, environment] of [["deploy-staging.yml", "staging"], ["deploy-production.yml", "production"]]) {
       const caller = byName.get(file)?.jobs.find((j) => j.id === "deploy");

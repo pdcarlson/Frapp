@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import ReactMarkdown from "react-markdown";
+import { describe, expect, it, vi } from "vitest";
 import {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
   extractMentionTokens,
@@ -15,6 +16,18 @@ import {
 } from "@repo/chat-core/test/markdown-parse-budget.fixtures";
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { TextRenderer } from "./text-renderer";
+
+// The real react-markdown, recorded: what remark was handed tells whether a
+// body skipped the parse without timing it.
+vi.mock("react-markdown", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-markdown")>();
+  return { ...actual, default: vi.fn(actual.default) };
+});
+
+/** The source remark was last handed: `""` when the parse was skipped. */
+const parsedSource = () =>
+  (vi.mocked(ReactMarkdown).mock.lastCall?.[0] as { children?: unknown })
+    .children;
 
 // #369: the timeline used to render `message.content` as plain text, so a
 // sender who typed `**bold**` (per `spec/behavior/chat/README.md`'s "Text
@@ -502,8 +515,8 @@ describe("TextRenderer over-nested bodies", () => {
  * Where the parse would render something else (a link, emphasis, a decoded
  * entity, an unwrapped quote or list), rendering the body exactly as typed
  * proves the parse was skipped. Where it would render the same text (a run
- * the depth cap flattens, raw HTML shown as typed), the loose time bound is
- * what tells.
+ * the depth cap flattens, raw HTML shown as typed), the empty source remark
+ * was handed is what tells.
  */
 describe("TextRenderer bodies too costly to parse", () => {
   it.each(COSTLY_MARKDOWN_BODIES.map((c) => [c.label, c.body]))(
@@ -512,15 +525,8 @@ describe("TextRenderer bodies too costly to parse", () => {
       expect(body.length).toBeLessThanOrEqual(CHAT_MESSAGE_CONTENT_MAX_LENGTH);
       expect(skipsMarkdownParse(body)).toBe(true);
 
-      const started = performance.now();
       const { container } = render(<TextRenderer message={message(body)} />);
-      // Timed only on one line. A body of thousands of lines costs jsdom a
-      // `<br>` per line even as raw text (about 0.5 s on CI), and each of
-      // those carries quote or list markers a parse would strip, so the
-      // raw-text assertion below is the proof for them.
-      if (!body.includes("\n")) {
-        expect(performance.now() - started).toBeLessThan(500);
-      }
+      expect(parsedSource()).toBe("");
 
       expect(container.querySelector("strong, em, a")).toBeNull();
       // The raw-text path keeps every character but a line's leading
@@ -540,6 +546,7 @@ describe("TextRenderer bodies too costly to parse", () => {
     const started = performance.now();
     const { container } = render(<TextRenderer message={message(body)} />);
     expect(performance.now() - started).toBeLessThan(1_000);
+    expect(parsedSource()).toBe(body);
     // Deeper than the cap, so it renders as its raw text after the parse.
     expect(drawn(container.querySelector('[data-slot="message-body"]')!)).toBe(
       body,

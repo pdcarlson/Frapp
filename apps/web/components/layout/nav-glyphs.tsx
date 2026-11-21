@@ -72,6 +72,10 @@ export function ChatGlyph(props: NavGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.chat} {...props} />;
 }
 
+export function DirectMessagesGlyph(props: NavGlyphProps) {
+  return <NavGlyph paths={NAV_GLYPHS.direct} {...props} />;
+}
+
 export function ActivityGlyph(props: NavGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.activity} {...props} />;
 }
@@ -107,6 +111,10 @@ export function PollsGlyph(props: NavGlyphProps) {
 
 export function DocumentsGlyph(props: NavGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.documents} {...props} />;
+}
+
+export function MeetingsGlyph(props: NavGlyphProps) {
+  return <NavGlyph paths={NAV_GLYPHS.meetings} {...props} />;
 }
 
 export function BackworkGlyph(props: NavGlyphProps) {
@@ -161,6 +169,11 @@ export function NotificationsGlyph({ className, active }: NavGlyphProps) {
   );
 }
 
+/**
+ * @public `spec/ui/design-system/iconography.md` § 6.2 names it for the top
+ * bar's mobile nav trigger, which still draws lucide's `Menu`; whether to wire
+ * it or drop it from the spec is #4571.
+ */
 export function MenuGlyph({ className }: NavGlyphProps) {
   // A hamburger has no silhouette to fill; its three rules are all detail
   // strokes, so this one is legitimately stroke-only under the recipe.

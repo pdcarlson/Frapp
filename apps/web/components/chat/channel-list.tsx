@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -10,31 +11,51 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronRight, ListFilter } from "lucide-react";
+import {
+  Check,
+  CheckCheck,
+  ChevronDown,
+  ChevronRight,
+  ListFilter,
+  Plus,
+} from "lucide-react";
+import {
+  CONVERSATION_READ_STATUS_LABEL,
+  type ConversationReadStatus,
+} from "@repo/chat-core/channel-preview";
 import {
   arrangeChannelSidebar,
   canHideConversation,
   compareChannelOrder,
+  compareLatestFirst,
   directChannelDisplayName,
   groupChannelsByCategory,
   HIDDEN_CONVERSATIONS_LABEL,
   FILTER_CHANNELS_LABEL,
   FILTER_CHANNELS_ON_LABEL,
+  FILTER_ONLY_CHANNELS_LABEL,
+  FILTER_ONLY_CHANNELS_ON_LABEL,
   foldedSectionAnnouncement,
   HIDE_MUTED_LABEL,
   isAddressed,
+  countsLookUnread,
+  channelsWithUnreadThreads,
   NO_MATCHING_CHANNELS,
   otherMemberId,
   SHOW_ALL_CHANNELS_LABEL,
   sidebarSections,
+  SIDEBAR_SORT_OPTIONS,
+  SORT_CHANNELS_LABEL,
   UNREAD_ONLY_LABEL,
+  withUnreadThreadChannels,
   type DisplayNameMap,
   type MemberAvatarTint,
+  type MemberThread,
   type SidebarFilterChange,
   type SidebarPreferences,
   type SidebarUnreadCounts,
 } from "@repo/hooks";
-import type { SidebarSectionKey } from "@repo/validation";
+import type { SidebarSectionKey, SidebarSort } from "@repo/validation";
 import { isDirectChannel } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,10 +66,18 @@ import {
 } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { SegmentedChoice } from "@/components/ui/segmented";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
 import { ChannelRowMenu, type ChannelRowActions } from "./channel-row-menu";
+import {
+  CHANNEL_MARK_PX,
+  ChannelThreadRows,
+  DIRECT_MARK_PX,
+  THREAD_ROW_PX,
+} from "./channel-thread-rows";
+import { RailUnreadPip, railRowTone } from "./rail-row";
 import {
   useRailReorder,
   type RailDrag,
@@ -172,6 +201,7 @@ const DEFAULT_PREFERENCES: SidebarPreferences = {
   pinnedIds: new Set(),
   collapsed: new Set(),
   filters: { unreadOnly: false, hideMuted: false },
+  sort: "chapter",
 };
 
 /**
@@ -198,6 +228,105 @@ function isDm(channel: ChatChannel): boolean {
 }
 
 /**
+ * A row's marks carry their own quiet tone, so they don't inherit the row's
+ * hover lift; this lifts them with the name, on hover and while the row's
+ * right-click menu is open (`group/row` is the row's `<li>`).
+ */
+const ROW_LIFT =
+  "group-hover/row:text-foreground group-data-[state=open]/row:text-foreground";
+
+/**
+ * A row's name, then the muted mark (`MuteGlyph`, the crossed-out speaker)
+ * straight after it on a muted channel, where the phone's row and GroupMe put
+ * theirs (#4136): the mark describes the name, and the row's far end stays
+ * the count badge's. The name truncates
+ * first, so the mark never leaves it.
+ *
+ * The glyph is `aria-hidden` (every duotone glyph is), so it carries its own
+ * `sr-only` word. The muted state used to be the literal text "muted", which a
+ * screen reader read for free; swapping it for a mark without this would have
+ * silently dropped it.
+ */
+function ChannelRowName({
+  title,
+  muted,
+  lift,
+}: {
+  title: string;
+  muted: boolean;
+  /** Lift the mark with the row on hover; off on the active row. */
+  lift: boolean;
+}) {
+  if (!muted) return <span className="truncate">{title}</span>;
+  return (
+    <span className="flex min-w-0 items-center gap-1">
+      <span className="truncate">{title}</span>
+      <MuteGlyph
+        className={cn("h-3.5 w-3.5 shrink-0 text-muted", lift && ROW_LIFT)}
+        active
+      />
+      <span className="sr-only">Muted</span>
+    </span>
+  );
+}
+
+/**
+ * A row's count: the mention-red badge when it addresses the member, else,
+ * for a merely unread row, the same words for a screen reader alone. One
+ * copy, so a channel row and a Direct messages row (which draws it at the end
+ * of its last line, #5519) can't announce unread differently.
+ */
+function RowCount({
+  counts,
+  isDirect,
+  showBadge,
+  announce,
+}: {
+  counts: ChannelUnread;
+  isDirect: boolean;
+  showBadge: boolean;
+  announce: boolean;
+}) {
+  if (showBadge) {
+    return (
+      <Badge
+        variant="mention"
+        className="h-6 justify-center px-2"
+        aria-label={unreadAnnouncement(counts, isDirect)}
+      >
+        {badgeLabel(counts.unreadCount, counts.mentionCount)}
+      </Badge>
+    );
+  }
+  // No number to draw, but a screen reader still hears it.
+  return announce ? (
+    <span className="sr-only">{unreadAnnouncement(counts, isDirect)}</span>
+  ) : null;
+}
+
+/**
+ * One check for sent, two for read (#5519), before the viewer's own last line:
+ * the shapes the phone draws (`CheckGlyph`, `CheckAllGlyph`). Read takes the
+ * chapter accent, sent stays muted. The words are for a screen reader.
+ */
+function ReadStatusMark({ status }: { status: ConversationReadStatus }) {
+  const Glyph = status === "read" ? CheckCheck : Check;
+  return (
+    <>
+      <Glyph
+        data-read-status={status}
+        aria-hidden="true"
+        className={cn(
+          "h-3.5 w-3.5 shrink-0",
+          status === "read" ? "text-accent-text" : "text-muted",
+        )}
+      />
+      <span className="sr-only">{CONVERSATION_READ_STATUS_LABEL[status]}:</span>
+    </>
+  );
+}
+
+/**
  * Badge text. A mention badge leads with `@` and shows the **mention** count,
  * not the total — s04 draws `@ 2` on a row whose unread total is higher. Same
  * rule mobile's `channel-row.tsx` ships, and the same 99+ cap.
@@ -206,6 +335,7 @@ function isDm(channel: ChatChannel): boolean {
  * a cross-app change that does not belong in a web repaint. Consolidation into
  * `@repo/formatting` is #1194.
  */
+
 export function badgeLabel(unreadCount: number, mentionCount: number): string {
   const count = mentionCount > 0 ? mentionCount : unreadCount;
   const capped = count > 99 ? "99+" : String(count);
@@ -236,7 +366,47 @@ export function unreadAnnouncement(
   return plural(unreadCount, "unread message");
 }
 
+/** What a Direct messages row draws beside its name and last line (#5519). */
+export interface ConversationRowMeta {
+  time: string | null;
+  /** The same instant in full, for the tooltip and a screen reader. */
+  timeLabel: string | null;
+  readStatus: ConversationReadStatus | null;
+}
+
+/** Sorts an open hidden DM, which has no latest row, ahead of any real time. */
+const OPEN_HIDDEN_FIRST = "9999-12-31T23:59:59.999Z";
+
 export interface ChannelListProps {
+  /**
+   * Which list this is (#3774). `direct` is the Direct messages panel, given
+   * only direct and group messages: its one section needs no heading under a
+   * column already titled "Direct messages", so the rows sit straight under
+   * the header, with Pinned above them and Hidden conversations below.
+   */
+  kind?: "channels" | "direct";
+  /**
+   * Each conversation's or channel's latest message time
+   * (`GET /v1/channels/latest`). Direct messages always sort by it, newest
+   * first, as the phone's Messages screen does; the channels rail sorts by it
+   * only when the member picked Recent (#2877). Absent until that read
+   * answers, when the list keeps its other order rather than reordering under
+   * the pointer twice.
+   */
+  latestAt?: ReadonlyMap<string, string>;
+  /**
+   * Direct messages only: each conversation's last line, worded by
+   * `channelPreviewLine` (`@repo/chat-core/channel-preview`). Rows hold a blank
+   * line until it answers, so none changes height when the lines land.
+   */
+  previews?: ReadonlyMap<string, string>;
+  /**
+   * Direct messages only (#5519): each conversation's last-message time
+   * (`formatConversationTime`) at the end of its name line, and the sent or
+   * read check before its last line when that message is the viewer's
+   * (`conversationReadStatus`). A conversation with no entry draws neither.
+   */
+  rowMeta?: ReadonlyMap<string, ConversationRowMeta>;
   channels: ChatChannel[];
   activeChannelId: string | null;
   /** Viewer's `users.id`, subtracted when naming a DM by its other participant. */
@@ -257,7 +427,22 @@ export interface ChannelListProps {
    * *and* no read/unread emphasis, rather than asserting "all caught up" on
    * missing data.
    */
-  unreadByChannelId?: Map<string, ChannelUnread>;
+  unreadByChannelId?: ReadonlyMap<string, ChannelUnread>;
+  /**
+   * Threads under their channel (#5300): each channel's active threads, as
+   * `sidebarThreadsByChannel` (`@repo/chat-core/threads`) picks them, drawn
+   * indented under its row. A channel with a thread with new replies also
+   * counts as unread for Unread only and a folded section, as on the phone,
+   * since thread replies never count toward the channel's own unread. Absent,
+   * no row has threads under it.
+   */
+  threads?: {
+    byChannel: ReadonlyMap<string, readonly MemberThread[]>;
+    /** The thread open in the panel, drawn as the current row. */
+    activeRootId: string | null;
+    nameFor: (userId: string) => string | null;
+    onOpen: (channelId: string, rootId: string) => void;
+  };
   /**
    * Chapter channel categories, in the order they should render.
    *
@@ -292,6 +477,13 @@ export interface ChannelListProps {
    * row or heading drags.
    */
   reorder?: ChannelReorderControls;
+  /**
+   * New channel from the rail (#3838, Shawn 2026-11-11), for a member with
+   * `channels:manage`: a + beside the Channels heading and each category's,
+   * as Discord and Slack draw it. `categoryId` is the heading's category,
+   * null for the default Channels group. Absent, no heading offers it.
+   */
+  onCreateChannel?: (categoryId: string | null) => void;
 }
 
 /**
@@ -305,7 +497,12 @@ export interface ChannelReorderControls {
 }
 
 /** Copy for the reorder (#4178), rostered in writing.md § Arrange the channel list. */
-export const EMPTY_CATEGORY_HINT = "Drag channels here";
+const EMPTY_CATEGORY_HINT = "Drag channels here";
+
+/** The heading +'s name: "New channel", or "New channel in Exec" under a category. */
+function newChannelLabel(categoryName: string | null): string {
+  return categoryName ? `New channel in ${categoryName}` : "New channel";
+}
 export const REORDER_SAVE_FAILED_TITLE = "Couldn't save the channel order";
 export const REORDER_SAVE_FAILED_BODY =
   "Nothing changed. Check your connection and try again.";
@@ -380,8 +577,9 @@ function HeldCopy({
  * s04 also draws a message preview and a timestamp per row, which mobile
  * has drawn since 2026-11-06 from `GET /v1/channels/latest` (`useChannelLatestMessages`, worded by
  * `channelPreviewLine` in `@repo/chat-core/channel-preview`;
- * spec/behavior/chat/README.md § Channel list previews). The rail doesn't yet:
- * #1191.
+ * spec/behavior/chat/README.md § Channel list previews). On web the Direct
+ * messages list draws that line too (`previews`, #3774); the channels rail
+ * doesn't yet: #1191.
  *
  * **Red means one thing.** A mention or a DM takes the fixed `#E5484D` badge and
  * nothing else does — a plain unread channel carries no badge, only its bold name (2026-11-07),
@@ -389,6 +587,10 @@ function HeldCopy({
  * every chapter seed (foundations.md §5, accent-engine.md §5).
  */
 export function ChannelList({
+  kind = "channels",
+  latestAt,
+  previews,
+  rowMeta,
   channels,
   activeChannelId,
   viewerId,
@@ -401,6 +603,8 @@ export function ChannelList({
   rowActions,
   sidebar,
   reorder,
+  onCreateChannel,
+  threads,
 }: ChannelListProps) {
   const preferences = sidebar?.preferences ?? DEFAULT_PREFERENCES;
   const mutedChannelIds = sidebar?.mutedChannelIds;
@@ -455,6 +659,21 @@ export function ChannelList({
    * categories moves no uncategorized channel. A chapter that categorizes
    * everything just sees that group's empty section disappear.
    */
+  // What the arrangement reads as unread: the server's counts, plus a channel
+  // whose listed thread has new replies (#5300, the phone's rule since #5277),
+  // so Unread only keeps it and its threads, and a folded section reads unread
+  // over it. The rows' own weight and badges read the server's counts alone.
+  const threadsByChannel = threads?.byChannel;
+  const arrangementUnread = useMemo(
+    () =>
+      threadsByChannel
+        ? withUnreadThreadChannels(
+            unreadByChannelId,
+            channelsWithUnreadThreads(threadsByChannel),
+          )
+        : unreadByChannelId,
+    [unreadByChannelId, threadsByChannel],
+  );
   const { arranged, hiddenDms, inputSections, sectionOrder } = useMemo(() => {
     // A DM the member hid (#2303) moves to the collapsed group at the end,
     // except while it is the open channel, so a jump into one does not leave
@@ -495,29 +714,71 @@ export function ChannelList({
         sectionOrder.set(section.key, [...section.channels].sort(byOrder));
       }
     }
-    const arranged = arrangeChannelSidebar({
+    let arranged = arrangeChannelSidebar({
       sections: inputSections,
       pinnedIds,
-      collapsed: preferences.collapsed,
+      // The Direct messages panel draws no heading for its one section, so
+      // a fold left from when DMs were a section of the channel list must
+      // not hide the whole list with no control to unfold it.
+      collapsed:
+        kind === "direct" && preferences.collapsed.has("direct")
+          ? new Set(
+              [...preferences.collapsed].filter((key) => key !== "direct"),
+            )
+          : preferences.collapsed,
       filters: preferences.filters,
+      // The member's sort (#2877). The Direct messages panel ignores it and
+      // re-sorts newest first below.
+      sort: preferences.sort,
+      latestAtByChannelId: kind === "channels" ? latestAt : undefined,
       activeChannelId,
       titleOf: titleFor,
-      unreadByChannelId,
+      unreadByChannelId: arrangementUnread,
       mutedChannelIds,
     });
     hiddenDms.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
+    // Direct messages run newest first, pinned ones still on top (#3774):
+    // the order the phone's Messages screen uses (`compareLatestFirst`, one
+    // rule for both), and the one a member reads conversations by. An open
+    // hidden DM has no latest row, since the server leaves hidden ones out,
+    // so it leads: it is the conversation on screen.
+    if (kind === "direct" && latestAt) {
+      const newestFirst = compareLatestFirst<ChatChannel>(
+        (channel) =>
+          latestAt.get(channel.id) ??
+          (channel.hidden && channel.id === activeChannelId
+            ? OPEN_HIDDEN_FIRST
+            : undefined),
+        titleFor,
+      );
+      arranged = {
+        ...arranged,
+        sections: arranged.sections.map((section) => ({
+          ...section,
+          rows: [...section.rows].sort(newestFirst),
+        })),
+      };
+    }
     return { arranged, hiddenDms, inputSections, sectionOrder };
   }, [
+    kind,
+    latestAt,
     channels,
     titleFor,
     categories,
     activeChannelId,
     preferences,
-    unreadByChannelId,
+    arrangementUnread,
     mutedChannelIds,
   ]);
 
   // ── Drag to reorder (#4178) ──────────────────────────────────────────────
+  // Channel rows drag only while the member sorts by Chapter order (#2877):
+  // under Recent or A–Z the rows aren't drawn in the chapter's order, so a
+  // drop would save an order nobody sees. Categories still draw in the
+  // chapter's order under every sort, so they keep dragging, and an empty
+  // category keeps its heading and its +.
+  const rowsInChapterOrder = preferences.sort === "chapter";
   const [announcement, setAnnouncement] = useState("");
   // Which row or heading to give focus back to once a keyboard move redraws
   // it: React moves the node, and moving a focused node blurs it.
@@ -537,6 +798,7 @@ export function ChannelList({
     ): { position: number; of: number; label: string } | null => {
       if (!reorder) return null;
       if (drag.kind === "channel") {
+        if (!rowsInChapterOrder) return null;
         const section =
           drop.kind === "row" || drop.kind === "header" ? drop.section : null;
         if (!section || !isOrderableSection(section)) return null;
@@ -572,7 +834,7 @@ export function ChannelList({
       reorder.onReorderCategories(next);
       return { position: at + 1, of: next.length, label: "categories" };
     },
-    [reorder, sectionOrder, categories, sectionLabel],
+    [reorder, rowsInChapterOrder, sectionOrder, categories, sectionLabel],
   );
 
   const nameOfDrag = useCallback(
@@ -658,6 +920,8 @@ export function ChannelList({
 
   const renderRow = (channel: ChatChannel, sectionKey?: string) => {
     const isActive = channel.id === activeChannelId;
+    const twoLine = kind === "direct" && (!channel.hidden || isActive);
+    const meta = twoLine ? rowMeta?.get(channel.id) : undefined;
     const countsKnown = unreadByChannelId !== undefined;
     const counts = unreadByChannelId?.get(channel.id) ?? NO_UNREAD;
     // Red is "you were addressed", and foundations §5 spells that
@@ -672,25 +936,44 @@ export function ChannelList({
     // disagree — a red badge on a read-styled row is a contradiction
     // on screen.
     const isUnread = countsKnown && (counts.unreadCount > 0 || hasMention);
-    // Mobile's rule (`channel-row.tsx`), so the two clients agree: a muted
-    // channel reads as unread only when it addresses the member, and
-    // otherwise sits quietly in `--muted`.
+    // `countsLookUnread` is the rule the phone's row and the arrangement's
+    // header totals and Unread only read too (#3999): a muted channel reads as
+    // unread only when it addresses the member, and otherwise sits quietly in
+    // `--muted`. It quiets from the arrangement's own muted set, as the phone's
+    // row does, so a failed refetch of the levels (which `channel.muted` rides
+    // out on the last good answer) can't leave a read-looking row under a lit
+    // folded header. Without the sidebar there is no header to disagree with.
     const isMuted = !!channel.muted;
-    const looksUnread = isUnread && (!isMuted || hasMention);
+    const quietedByMute = sidebar
+      ? (mutedChannelIds?.has(channel.id) ?? false)
+      : isMuted;
+    const looksUnread =
+      countsKnown &&
+      countsLookUnread(isDirectChannel(channel), counts, quietedByMute);
     const pinned = preferences.pinnedIds.has(channel.id);
     const offersHide =
       !!onHide && canHideConversation(channel) && !channel.hidden;
     // A row an officer can drag (#4178): one in the default group or a
-    // category, never Pinned, Direct messages, System or Hidden.
+    // category, never Pinned, Direct messages, System or Hidden, and only
+    // while the rows are drawn in the chapter's order (#2877).
     const draggable =
-      !!reorder && sectionKey !== undefined && isOrderableSection(sectionKey);
+      !!reorder &&
+      rowsInChapterOrder &&
+      sectionKey !== undefined &&
+      isOrderableSection(sectionKey);
     const drag: RailDrag | null = draggable
       ? { kind: "channel", id: channel.id, section: sectionKey }
       : null;
     // Every row action lives in the right-click menu (owner, 2026-11-06:
     // "take away the pin option on hover"). The row draws no hover controls,
     // so its end is free for the mute mark and the badge alone.
-    return (
+    // Its active threads, under it (#5300). Not under a hidden conversation's
+    // row: the Hidden group is a list to reopen from, not to read.
+    const rowThreads =
+      threads && !channel.hidden
+        ? threads.byChannel.get(channel.id)
+        : undefined;
+    const row = (
       <ChannelRowMenu
         key={channel.id}
         channel={channel}
@@ -704,6 +987,7 @@ export function ChannelList({
           // The row stays lit while its menu is open, so the member can see
           // which channel the menu is for.
           className={cn(
+            "group/row",
             !isActive &&
               "[&[data-state=open]>button]:bg-card [&[data-state=open]>button]:text-foreground",
           )}
@@ -728,22 +1012,20 @@ export function ChannelList({
             // `ChannelRow` matches). A muted channel's plain unread stays
             // grey; a mention gets past the mute.
             className={cn(
-              "relative flex h-8 w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
-              isActive
-                ? "bg-accent-subtle font-semibold text-accent-text"
-                : looksUnread
-                  ? "font-bold text-foreground hover:bg-card"
-                  : isMuted
-                    ? "text-muted hover:bg-card hover:text-foreground"
-                    : "text-muted-foreground hover:bg-card hover:text-foreground",
+              "relative flex w-full items-center gap-2 rounded-xs px-2 text-left text-sm transition-colors",
+              // Two lines in Direct messages: the name, then the last line.
+              // A row in Hidden conversations has no line (the server keeps
+              // no preview for it), so it stays one line.
+              twoLine ? "h-12" : "h-8",
+              railRowTone({
+                active: isActive,
+                unread: looksUnread,
+                muted: isMuted,
+              }),
             )}
           >
             {looksUnread && !isActive ? (
-              <span
-                aria-hidden
-                data-testid="channel-unread-pip"
-                className="absolute left-0 top-1/2 h-2 w-1 -translate-y-1/2 rounded-r-full bg-foreground"
-              />
+              <RailUnreadPip testId="channel-unread-pip" />
             ) : null}
             <ChannelMark
               channel={channel}
@@ -752,30 +1034,75 @@ export function ChannelList({
               // The `#`, lock and audit marks follow mobile's sigil: the
               // row's own tone when unread or active, `--muted` when read,
               // and `--disabled` with a muted row.
+              // Like the name, it lifts to `--foreground` on hover and while
+              // the row's menu is open (#3999).
               tone={
                 isActive || looksUnread
                   ? undefined
-                  : isMuted
-                    ? "text-disabled"
-                    : "text-muted"
+                  : cn(isMuted ? "text-disabled" : "text-muted", ROW_LIFT)
               }
             />
-            <span className="truncate">{titleFor(channel)}</span>
-            <span className="ml-auto flex shrink-0 items-center gap-1.5">
-              {/*
-              The glyphs below are `aria-hidden` (every duotone
-              glyph is), so each carries its own `sr-only` word.
-              The muted state used to be the literal text "muted",
-              which a screen reader read for free; swapping it for a
-              mark without this would have silently dropped it.
-            */}
-              {channel.muted ? (
-                <>
-                  <MuteGlyph className="h-4 w-4 text-muted" active />
-                  <span className="sr-only">Muted</span>
-                </>
-              ) : null}
-              {/*
+            {twoLine ? (
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="flex min-w-0 items-baseline gap-2">
+                  <ChannelRowName
+                    title={titleFor(channel)}
+                    muted={!!channel.muted}
+                    lift={!isActive}
+                  />
+                  {/* When the last line was sent, at the end of the name
+                      line, as WhatsApp and iMessage put it (#5519). */}
+                  {meta?.time ? (
+                    <time
+                      data-row-time=""
+                      title={meta.timeLabel ?? undefined}
+                      className="ml-auto shrink-0 text-caption font-normal tabular-nums text-muted-foreground"
+                    >
+                      <span aria-hidden="true">{meta.time}</span>
+                      <span className="sr-only">
+                        {meta.timeLabel ?? meta.time}
+                      </span>
+                    </time>
+                  ) : null}
+                </span>
+                <span className="flex min-w-0 items-center gap-1">
+                  {meta?.readStatus ? (
+                    <ReadStatusMark status={meta.readStatus} />
+                  ) : null}
+                  {/*
+                    Caption, muted, never bold: the name carries the unread
+                    weight, as on the phone. A non-breaking space holds the
+                    line while the previews load.
+                  */}
+                  <span
+                    data-preview=""
+                    className="min-w-0 flex-1 truncate text-caption font-normal text-muted-foreground"
+                  >
+                    {previews?.get(channel.id) ?? "\u00a0"}
+                  </span>
+                  {/* The badge ends the last line, under the time (#5519).
+                      No height of its own, so a row never moves when one
+                      arrives. */}
+                  <span className="flex h-0 shrink-0 items-center">
+                    <RowCount
+                      counts={counts}
+                      isDirect={isDm(channel)}
+                      showBadge={countsKnown && hasMention}
+                      announce={isUnread}
+                    />
+                  </span>
+                </span>
+              </span>
+            ) : (
+              <ChannelRowName
+                title={titleFor(channel)}
+                muted={!!channel.muted}
+                lift={!isActive}
+              />
+            )}
+            {twoLine ? null : (
+              <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                {/*
               No read-only mark here any more (#2877). The lock that used to
               sit at this end meant "read-only" while the same glyph at the
               start of a row means "private", and the Discord import makes
@@ -783,27 +1110,44 @@ export function ChannelList({
               row. The channel says it is read-only where that matters, in
               its composer.
             */}
-              {/* A number only when it addresses the member, as Discord does:
+                {/* A number only when it addresses the member, as Discord does:
                   a merely unread channel says so with its bold name
                   (2026-11-07). */}
-              {countsKnown && hasMention ? (
-                <Badge
-                  variant="mention"
-                  className="h-6 justify-center px-2"
-                  aria-label={unreadAnnouncement(counts, isDm(channel))}
-                >
-                  {badgeLabel(counts.unreadCount, counts.mentionCount)}
-                </Badge>
-              ) : isUnread ? (
-                // No number to draw, but a screen reader still hears it.
-                <span className="sr-only">
-                  {unreadAnnouncement(counts, isDm(channel))}
-                </span>
-              ) : null}
-            </span>
+                <RowCount
+                  counts={counts}
+                  isDirect={isDm(channel)}
+                  showBadge={countsKnown && hasMention}
+                  announce={isUnread}
+                />
+              </span>
+            )}
           </button>
         </li>
       </ChannelRowMenu>
+    );
+    // Always the same keyed Fragment, so a channel gaining its first thread
+    // or losing its last adds or drops only the sibling below, and the row
+    // keeps its open menu and its focus.
+    return (
+      <Fragment key={channel.id}>
+        {row}
+        {threads && rowThreads && rowThreads.length > 0 ? (
+          // Slides with its channel while an officer drags the rail (#4178).
+          <li data-flip={`threads:${channel.id}`}>
+            <ChannelThreadRows
+              threads={rowThreads}
+              channelLabel={
+                isDm(channel) ? titleFor(channel) : `#${titleFor(channel)}`
+              }
+              markPx={isDm(channel) ? DIRECT_MARK_PX : CHANNEL_MARK_PX}
+              activeThreadRootId={threads.activeRootId}
+              nameFor={threads.nameFor}
+              viewerId={viewerId}
+              onOpen={threads.onOpen}
+            />
+          </li>
+        ) : null}
+      </Fragment>
     );
   };
 
@@ -892,7 +1236,15 @@ export function ChannelList({
     slot = { kind: "category", before: others[index] ?? null, others };
   }
 
-  /** The slot a dragged channel would land in, drawn as a row-sized space. */
+  /**
+   * The slot a dragged channel would land in, drawn as a space its size: its
+   * row, and the thread rows under it (#5300), which leave with it, so the
+   * rows below don't close up under the pointer as the drag starts.
+   */
+  const draggedThreadRows =
+    dragging?.kind === "channel"
+      ? (threads?.byChannel.get(dragging.id)?.length ?? 0)
+      : 0;
   const channelSlot = (
     <li
       key="__reorder-slot"
@@ -900,7 +1252,9 @@ export function ChannelList({
       data-reorder-gap=""
       aria-hidden="true"
       className={DROP_SLOT}
-      style={{ height: lift?.height ?? 32 }}
+      style={{
+        height: (lift?.height ?? 32) + draggedThreadRows * THREAD_ROW_PX,
+      }}
     />
   );
 
@@ -913,6 +1267,37 @@ export function ChannelList({
       kept.splice(Math.min(slot.index, kept.length), 0, channelSlot);
     }
     return kept;
+  };
+
+  /**
+   * The heading's + (#3838): shown while the pointer is over the heading or
+   * the + has focus, as Discord and Slack show theirs, so a rail full of
+   * headings doesn't carry a column of + signs. Never on Pinned, Direct
+   * messages, System or Hidden, which the chapter doesn't fill.
+   */
+  const createButtonFor = (key: string, label: string) => {
+    if (!onCreateChannel || kind !== "channels") return null;
+    // Gone while anything is held, so the heading under the pointer is the
+    // whole drop target it was.
+    if (!isOrderableSection(key) || dragging) return null;
+    const categoryId = categoryIdOf(key);
+    const name = newChannelLabel(categoryId ? label : null);
+    return (
+      <button
+        type="button"
+        aria-label={name}
+        title={name}
+        onClick={() => onCreateChannel(categoryId)}
+        className={cn(
+          // `mb-1` matches the heading's own bottom padding, so the + sits
+          // on the label's line.
+          "mb-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-card hover:text-foreground",
+          "opacity-0 focus-visible:opacity-100 group-hover/head:opacity-100",
+        )}
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    );
   };
 
   /** A section block's drag attributes. */
@@ -938,24 +1323,27 @@ export function ChannelList({
     const slotHere = slot?.kind === "channel" && slot.section === key;
     return (
       <div key={key} {...blockProps(key)}>
-        <p
-          data-flip={`head:${key}`}
-          data-reorder-header={key}
-          tabIndex={0}
-          onPointerDown={drag ? railReorder.pointerDownFor(drag) : undefined}
-          onKeyDown={drag ? railReorder.keyDownFor(drag) : undefined}
-          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-          className={cn(
-            "flex items-center gap-1 pb-1 text-muted-foreground",
-            sidebar ? "px-2" : "px-3",
-            EYEBROW,
-          )}
-        >
-          {sidebar ? (
-            <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          ) : null}
-          <span className="truncate">{label}</span>
-        </p>
+        <div className="group/head flex items-center gap-1 pr-2">
+          <p
+            data-flip={`head:${key}`}
+            data-reorder-header={key}
+            tabIndex={0}
+            onPointerDown={drag ? railReorder.pointerDownFor(drag) : undefined}
+            onKeyDown={drag ? railReorder.keyDownFor(drag) : undefined}
+            aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+            className={cn(
+              "flex min-w-0 flex-1 items-center gap-1 pb-1 text-muted-foreground",
+              sidebar ? "px-2" : "px-3",
+              EYEBROW,
+            )}
+          >
+            {sidebar ? (
+              <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            ) : null}
+            <span className="truncate">{label}</span>
+          </p>
+          {createButtonFor(key, label)}
+        </div>
         {slotHere ? (
           <ul aria-hidden="true">{channelSlot}</ul>
         ) : draggingCategory ? null : (
@@ -1099,59 +1487,67 @@ export function ChannelList({
               total, red when anything inside addresses the member, so folding
               never hides a mention.
             */}
-            {sidebar ? (
-              <button
-                type="button"
-                id={headerId}
-                data-flip={`head:${section.key}`}
-                {...headerProps}
-                aria-expanded={!section.collapsed}
-                onClick={() =>
-                  sidebar.onSetCollapsed(section.key, !section.collapsed)
-                }
+            {kind === "direct" && section.key === "direct" ? null : sidebar ? (
+              <div
                 className={cn(
-                  "flex w-full items-center gap-1 px-2 pb-1 text-left text-muted-foreground hover:text-foreground",
+                  "group/head flex items-center gap-1 pr-2",
                   // Pinned to the top of the rail while its rows scroll under
                   // it, until the next heading pushes it off (owner
                   // 2026-11-07). The rail's own surface, so no row shows
                   // through; the 4px pulled up and padded back keeps the
-                  // resting layout and gives the pinned label room.
+                  // resting layout and gives the pinned label room. On the
+                  // row, not the fold button, so the heading's + stays with it.
                   "sticky top-0 z-10 -mt-1 bg-surface-1 pt-1",
-                  EYEBROW,
-                  // Folded with something unread inside, it reads as an
-                  // unread row does, since only a mention carries a number:
-                  // `--foreground` bold (foundations.md §5), as mobile draws it.
-                  section.collapsed &&
-                    section.unreadCount > 0 &&
-                    "font-bold text-foreground",
                 )}
               >
-                {section.collapsed ? (
-                  <ChevronRight
-                    className="h-3.5 w-3.5 shrink-0"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <ChevronDown
-                    className="h-3.5 w-3.5 shrink-0"
-                    aria-hidden="true"
-                  />
-                )}
-                <span className="truncate">{section.label}</span>
-                {section.collapsed && section.addressed ? (
-                  <Badge
-                    variant="mention"
-                    className="ml-auto h-6 justify-center px-2 normal-case tracking-normal"
-                    aria-label={foldedSectionAnnouncement(section)}
-                  >
-                    {badgeLabel(section.addressedCount, section.mentionCount)}
-                  </Badge>
-                ) : section.collapsed && section.unreadCount > 0 ? (
-                  <span className="sr-only">
-                    {foldedSectionAnnouncement(section)}
-                  </span>
-                ) : null}
-              </button>
+                <button
+                  type="button"
+                  id={headerId}
+                  data-flip={`head:${section.key}`}
+                  {...headerProps}
+                  aria-expanded={!section.collapsed}
+                  onClick={() =>
+                    sidebar.onSetCollapsed(section.key, !section.collapsed)
+                  }
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-1 px-2 pb-1 text-left text-muted-foreground hover:text-foreground",
+                    EYEBROW,
+                    // Folded with something unread inside, it reads as an
+                    // unread row does, since only a mention carries a number:
+                    // `--foreground` bold (foundations.md §5), as mobile draws it.
+                    section.collapsed &&
+                      section.unreadCount > 0 &&
+                      "font-bold text-foreground",
+                  )}
+                >
+                  {section.collapsed ? (
+                    <ChevronRight
+                      className="h-3.5 w-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <ChevronDown
+                      className="h-3.5 w-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span className="truncate">{section.label}</span>
+                  {section.collapsed && section.addressed ? (
+                    <Badge
+                      variant="mention"
+                      className="ml-auto h-6 justify-center px-2 normal-case tracking-normal"
+                      aria-label={foldedSectionAnnouncement(section)}
+                    >
+                      {badgeLabel(section.addressedCount, section.mentionCount)}
+                    </Badge>
+                  ) : section.collapsed && section.unreadCount > 0 ? (
+                    <span className="sr-only">
+                      {foldedSectionAnnouncement(section)}
+                    </span>
+                  ) : null}
+                </button>
+                {createButtonFor(section.key, section.label)}
+              </div>
             ) : (
               <p
                 id={headerId}
@@ -1162,9 +1558,12 @@ export function ChannelList({
                 {section.label}
               </p>
             )}
-            {rows.length > 0 ? (
+            {rows.length === 0 ? null : kind === "direct" &&
+              section.key === "direct" ? (
+              <ul aria-label="Direct messages">{rows}</ul>
+            ) : (
               <ul aria-labelledby={headerId}>{rows}</ul>
-            ) : null}
+            )}
           </div>
         );
       })}
@@ -1265,18 +1664,30 @@ function ChannelMark({
 }
 
 /**
- * The rail's two filters (#2877), behind one control in the Channels header.
+ * The rail's sort and two filters (#2877), behind one control in the Channels
+ * header.
  *
- * A popover of two switches rather than two chips: the channels column is
- * 240px wide and its header already carries the column title. The trigger
- * shows a dot while any filter is on, so a shortened list never reads as a
- * chapter that simply has fewer channels.
+ * A popover rather than chips: the channels column is 240px wide and its
+ * header already carries the column title. The sort is a three-way segmented
+ * control on top, the way Slack's sidebar menu offers "Sort" above its
+ * filters, so the held answer is always in view. The trigger shows a dot
+ * while any filter is on, so a shortened list never reads as a chapter that
+ * simply has fewer channels; a sort shortens nothing, so it lights no dot.
  */
 export function ChannelFilters({
   filters,
+  sort,
+  reorderable = false,
   onChange,
 }: {
   filters: SidebarPreferences["filters"];
+  /** The member's sort. Absent, the popover offers none (the Direct messages panel). */
+  sort?: SidebarSort;
+  /**
+   * The member may drag the rail into the chapter's order, which only works
+   * while they sort by it: the popover says so under any other sort.
+   */
+  reorderable?: boolean;
   onChange: (change: SidebarFilterChange) => void;
 }) {
   const active = filters.unreadOnly || filters.hideMuted;
@@ -1289,7 +1700,15 @@ export function ChannelFilters({
           variant="ghost"
           size="icon"
           className={cn(compactControlClassName, "relative ml-auto")}
-          aria-label={active ? FILTER_CHANNELS_ON_LABEL : FILTER_CHANNELS_LABEL}
+          aria-label={
+            sort
+              ? active
+                ? FILTER_CHANNELS_ON_LABEL
+                : FILTER_CHANNELS_LABEL
+              : active
+                ? FILTER_ONLY_CHANNELS_ON_LABEL
+                : FILTER_ONLY_CHANNELS_LABEL
+          }
         >
           <ListFilter className="h-4 w-4" aria-hidden="true" />
           {active ? (
@@ -1300,7 +1719,30 @@ export function ChannelFilters({
           ) : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-60 space-y-3 p-3">
+      <PopoverContent align="end" className="w-64 space-y-3 p-3">
+        {sort ? (
+          <div className="space-y-1.5">
+            <p
+              className="text-caption text-muted-foreground"
+              aria-hidden="true"
+            >
+              {SORT_CHANNELS_LABEL}
+            </p>
+            <SegmentedChoice
+              label={SORT_CHANNELS_LABEL}
+              options={SIDEBAR_SORT_OPTIONS}
+              value={sort}
+              onChange={(next) => onChange({ sort: next })}
+              fill
+              dense
+            />
+            {reorderable && sort !== "chapter" ? (
+              <p className="text-caption text-muted-foreground">
+                Switch to Chapter order to drag channels.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor={unreadId}>{UNREAD_ONLY_LABEL}</Label>
           <Switch

@@ -1,7 +1,8 @@
-import { ReactNode } from "react";
+import { ReactNode, useRef, type Ref, type RefObject } from "react";
 import {
   type AccessibilityRole,
   type AccessibilityState,
+  type LayoutChangeEvent,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,8 +10,10 @@ import {
   View,
 } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
+import { DisclosureGlyph, SearchGlyph } from "@/components/control-glyphs";
 import { PressableRow } from "@/components/list-section";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { useRaisedSurfaces } from "@/lib/surfaces";
 import { fieldTypeRole, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -58,6 +61,10 @@ export interface FilterChip {
   count?: number | null;
   /** A small glyph before the label, e.g. s12's pin or star (#3934). */
   mark?: ReactNode;
+  /** A small glyph after the label, e.g. s12's chevron on a folder that holds folders (#5337). */
+  trailing?: ReactNode;
+  /** What a screen reader says instead of the label, when the glyphs carry meaning. */
+  accessibilityLabel?: string;
   /**
    * A long press's action, e.g. s12's folder actions (#3934). Also offered
    * as a named accessibility action, so it is never press-and-hold only.
@@ -73,9 +80,18 @@ export interface FilterChip {
  *
  * On: the chapter's solid accent with its own label colour, as components.md
  * §3 paints a control that stays on. Off: `surface1` with a hairline, the
- * tone of the lists below. Pressing an off chip ripples on Android and lifts
+ * input step; a chip drawn on a card passes `onCard` and takes the step above
+ * that card instead (`lib/surfaces.ts`), since `surface1` on a screen's card
+ * is the card's own fill. Pressing an off chip ripples on Android and lifts
  * a step on iOS (`usePressFeedback`, through `PressableRow`). An on chip ripples on Android and holds
  * still on iOS: its fill is the state, and the lift would paint over it.
+ *
+ * Quiet (#5568, Paul 2026-11-19): a list's filter row, where the accent fill
+ * made the chip the loudest thing on screen, louder than the rows it filters.
+ * On is then a neutral step up instead: the card fill, the control edge and
+ * foreground text, as iOS Mail's and Slack's filter pills light without
+ * colour, so the colour on the screen stays on the content. A chip that picks
+ * a value in a form keeps the accent.
  */
 export function Chip({
   label,
@@ -86,8 +102,12 @@ export function Chip({
   accessibilityLabel,
   accessibilityHint,
   mark,
+  trailing,
   onLongPress,
   longPressLabel,
+  onLayout,
+  onCard = false,
+  quiet = false,
 }: {
   label: string;
   on: boolean;
@@ -97,10 +117,19 @@ export function Chip({
   accessibilityLabel?: string;
   accessibilityHint?: string;
   mark?: ReactNode;
+  /** A small glyph after the label: a menu chip's chevron (#5278). */
+  trailing?: ReactNode;
   onLongPress?: () => void;
   longPressLabel?: string;
+  /** Where the chip landed, for a row that scrolls to its lit chip. */
+  onLayout?: (event: LayoutChangeEvent) => void;
+  /** The chip is drawn on a card, not on a screen or a sheet's own fill. */
+  onCard?: boolean;
+  /** A list's filter: on draws neutral, not in the accent (see above). */
+  quiet?: boolean;
 }) {
   const { tokens } = useFrappTheme();
+  const surfaces = useRaisedSurfaces();
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
   const slop = (tokens.touch.minimum - CHIP_HEIGHT) / 2;
@@ -115,6 +144,7 @@ export function Chip({
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
       hitSlop={{ top: slop, bottom: slop }}
+      onLayout={onLayout}
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityActions={
@@ -129,17 +159,38 @@ export function Chip({
             }
           : undefined
       }
+      // The idle chip's own fill is the input step, on a screen and in a
+      // sheet, and the step above the card when it is drawn on one.
+      onControl
+      onCard={onCard}
       lifts={!on}
       style={[
         styles.chip,
-        mark ? styles.chipWithMark : null,
-        on ? { backgroundColor: accentPrimary } : styles.chipIdle,
+        mark || trailing ? styles.chipWithMark : null,
+        on && quiet
+          ? styles.chipOnQuiet
+          : on
+            ? { backgroundColor: accentPrimary }
+            : [
+                styles.chipIdle,
+                onCard ? { backgroundColor: surfaces.raised } : null,
+              ],
       ]}
     >
       {mark}
-      <Text style={[styles.chipText, on ? { color: accentOnPrimary } : null]}>
+      <Text
+        style={[
+          styles.chipText,
+          on && quiet
+            ? styles.chipTextOnQuiet
+            : on
+              ? { color: accentOnPrimary }
+              : null,
+        ]}
+      >
         {label}
       </Text>
+      {trailing}
     </PressableRow>
   );
 }
@@ -150,11 +201,15 @@ export function Chip({
  * touch slop and takes that back with a negative margin, so the slop is
  * inside its bounds and the layout around it doesn't move.
  */
-function ChipRow({
+export function ChipRow({
   scroll,
+  scrollRef,
+  onScrollerLayout,
   children,
 }: {
   scroll: boolean;
+  scrollRef?: RefObject<ScrollView | null>;
+  onScrollerLayout?: (event: LayoutChangeEvent) => void;
   children: ReactNode;
 }) {
   const { tokens } = useFrappTheme();
@@ -169,6 +224,8 @@ function ChipRow({
   }
   return (
     <ScrollView
+      ref={scrollRef}
+      onLayout={onScrollerLayout}
       horizontal
       showsHorizontalScrollIndicator={false}
       // Lets a chip take a tap while a search field holds the keyboard, as
@@ -186,6 +243,49 @@ function ChipRow({
   );
 }
 
+/**
+ * A scrolling row opens with its lit chip in view (#4402): a screen that
+ * remembers its chip (Activity) can open on the sixth or seventh, which
+ * starts off the edge of a narrow phone, and then nothing on screen says a
+ * filter is on. Once, when the row and that chip have both been laid out, it
+ * scrolls just far enough to show the chip with a little of the one before
+ * it; a chip already in view moves nothing. Later picks are the member's own
+ * scrolling, so it never moves the row again.
+ */
+function useRevealSelectedChip(scroll: boolean, lead: number) {
+  const scrollRef = useRef<ScrollView | null>(null);
+  const width = useRef<number | null>(null);
+  const chip = useRef<{ x: number; width: number } | null>(null);
+  const done = useRef(false);
+
+  const tryReveal = () => {
+    if (!scroll || done.current || width.current === null || !chip.current) {
+      return;
+    }
+    done.current = true;
+    const { x, width: chipWidth } = chip.current;
+    if (x + chipWidth > width.current) {
+      scrollRef.current?.scrollTo({
+        x: Math.max(0, x - lead),
+        animated: false,
+      });
+    }
+  };
+
+  return {
+    scrollRef,
+    onScrollerLayout: (event: LayoutChangeEvent) => {
+      width.current = event.nativeEvent.layout.width;
+      tryReveal();
+    },
+    onSelectedLayout: (event: LayoutChangeEvent) => {
+      const { x, width: chipWidth } = event.nativeEvent.layout;
+      chip.current = { x, width: chipWidth };
+      tryReveal();
+    },
+  };
+}
+
 export function FilterChips({
   chips,
   selected,
@@ -193,6 +293,7 @@ export function FilterChips({
   accessibilityLabel,
   scroll = false,
   trailing,
+  quiet = false,
 }: {
   chips: readonly FilterChip[];
   selected: string | null;
@@ -209,12 +310,19 @@ export function FilterChips({
    * (Directory's Filters chip).
    */
   trailing?: ReactNode;
+  /** A list's filter row: the selected chip draws neutral (`Chip`'s quiet). */
+  quiet?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const reveal = useRevealSelectedChip(scroll, tokens.spacing.lg);
 
   return (
-    <ChipRow scroll={scroll}>
+    <ChipRow
+      scroll={scroll}
+      scrollRef={reveal.scrollRef}
+      onScrollerLayout={reveal.onScrollerLayout}
+    >
       <View
         accessibilityRole="tablist"
         accessibilityLabel={accessibilityLabel}
@@ -223,11 +331,17 @@ export function FilterChips({
         {chips.map((chip) => (
           <Chip
             key={chip.value ?? "__all"}
+            onLayout={
+              selected === chip.value ? reveal.onSelectedLayout : undefined
+            }
             accessibilityRole="tab"
             accessibilityState={{ selected: selected === chip.value }}
             on={selected === chip.value}
+            quiet={quiet}
             onPress={() => onSelect(chip.value)}
             mark={chip.mark}
+            trailing={chip.trailing}
+            accessibilityLabel={chip.accessibilityLabel}
             onLongPress={chip.onLongPress}
             longPressLabel={chip.longPressLabel}
             // A count is omitted rather than shown as `· 0` while its query
@@ -245,6 +359,45 @@ export function FilterChips({
   );
 }
 
+/**
+ * A filter chip that opens its choices in a sheet (#5278): its name at rest,
+ * the pick once set, lit while set, with a down chevron, as Google Drive's
+ * Type, People and Modified chips read on a phone. Documents and Logs use it.
+ */
+export function MenuChip({
+  name,
+  value,
+  hint,
+  onPress,
+}: {
+  name: string;
+  value: string | undefined;
+  hint: string;
+  onPress: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accentOnPrimary } = useChapterBranding();
+  const set = value !== undefined;
+  return (
+    <Chip
+      accessibilityRole="button"
+      accessibilityState={{ selected: set }}
+      accessibilityLabel={set ? `${name}: ${value}` : name}
+      accessibilityHint={hint}
+      label={value ?? name}
+      on={set}
+      trailing={
+        <DisclosureGlyph
+          color={set ? accentOnPrimary : tokens.color.text.muted}
+          size={14}
+          direction="down"
+        />
+      }
+      onPress={onPress}
+    />
+  );
+}
+
 export function SearchField({
   value,
   onChangeText,
@@ -252,6 +405,8 @@ export function SearchField({
   accessibilityLabel,
   autoCapitalize = "none",
   keyboardType = "default",
+  searchGlyph = false,
+  inputRef,
 }: {
   value: string;
   onChangeText: (next: string) => void;
@@ -262,12 +417,19 @@ export function SearchField({
   autoCapitalize?: "none" | "words";
   /** "number-pad" for a graduation-year filter; the default suits free text. */
   keyboardType?: "default" | "number-pad";
+  /** Leads the field with a magnifier, for a search rather than a filter
+   * value (#4137): web's search fields and iOS's search bar draw one. */
+  searchGlyph?: boolean;
+  /** For a screen that focuses the field from elsewhere, as Messages' pencil
+   * does (#4668). */
+  inputRef?: Ref<TextInput>;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
-  return (
+  const input = (
     <TextInput
+      ref={inputRef}
       value={value}
       onChangeText={onChangeText}
       placeholder={placeholder}
@@ -276,8 +438,18 @@ export function SearchField({
       autoCapitalize={autoCapitalize}
       autoCorrect={false}
       keyboardType={keyboardType}
-      style={styles.search}
+      style={[styles.search, searchGlyph ? styles.searchWithGlyph : null]}
     />
+  );
+  if (!searchGlyph) return input;
+  return (
+    <View>
+      {input}
+      {/* Decorative: the field's own label names it. */}
+      <View pointerEvents="none" style={styles.searchGlyph}>
+        <SearchGlyph color={tokens.color.text.muted} size={SEARCH_GLYPH_SIZE} />
+      </View>
+    </View>
   );
 }
 
@@ -345,15 +517,37 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.mutedForeground,
     },
+    chipOnQuiet: {
+      backgroundColor: tokens.color.surface.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.control,
+    },
+    chipTextOnQuiet: {
+      color: tokens.color.text.foreground,
+    },
     search: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
       ...fieldTypeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
+    // Room for the glyph: its inset, its width, then the field's own gap.
+    searchWithGlyph: {
+      paddingLeft: tokens.spacing.md + SEARCH_GLYPH_SIZE + tokens.spacing.sm,
+    },
+    searchGlyph: {
+      position: "absolute",
+      left: tokens.spacing.md,
+      top: 0,
+      bottom: 0,
+      justifyContent: "center",
+    },
   });
 }
+
+/** Web's toolbar search glyph is 16px (`h-4 w-4`). */
+const SEARCH_GLYPH_SIZE = 16;

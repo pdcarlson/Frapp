@@ -480,9 +480,9 @@ describe("an empty sha resolves inside validate (#3114)", () => {
 // A whole-file grep for DEPLOY_SHA is satisfied by a single match, and the
 // shared job has a dozen steps that pass it, so most of them could lose theirs
 // with the suite still green. That is the identical shape #2265 fixed for the
-// Vercel build step. The worst is the production Render deploy:
-// `deploy-render-production.mjs` calls `requireEnv("DEPLOY_SHA")`, the step
-// runs AFTER `Run migrations (apply)`, and no dry run reaches it. A regression
+// Vercel build step. The worst is the production API deploy:
+// `deploy-cloud-run.mjs` reads `DEPLOY_SHA`, the step runs AFTER
+// `Run migrations (apply)`, and no dry run reaches it. A regression
 // there fails a production run with the database already migrated.
 //
 // So: assert per STEP, over every step that passes the value.
@@ -494,8 +494,9 @@ describe("DEPLOY_SHA is sourced per step, not somewhere in the file", () => {
   const PLANNED = new Map([["Verify staging serves the commit", "${{ steps.plan.outputs.verify_sha }}"]]);
   const PRODUCTION_CARRIERS = [
     "Check out the commit being deployed",
+    "Build the API image",
     "Build the Vercel production bundles (web + landing)",
-    "Deploy the commit to Render (production)",
+    "Deploy the API to Cloud Run",
     "Verify production serves the commit",
     "Deploy the commit to Vercel production (web + landing)",
   ];
@@ -522,15 +523,15 @@ describe("DEPLOY_SHA is sourced per step, not somewhere in the file", () => {
 
   // Named explicitly because this one runs after the apply, and because no dry
   // run executes it: its only protection is this assertion.
-  it("the production Render deploy passes DEPLOY_SHA, and it runs after the apply", () => {
-    const render = steps().find((s) => s.name === "Deploy the commit to Render (production)");
-    assert.ok(render, "the production Render deploy step is missing");
-    assert.equal(render.env.get("DEPLOY_SHA"), INPUT_SHA);
+  it("the Cloud Run deploy passes DEPLOY_SHA, and it runs after the apply", () => {
+    const cloudRun = steps().find((s) => s.name === "Deploy the API to Cloud Run");
+    assert.ok(cloudRun, "the Cloud Run deploy step is missing");
+    assert.equal(cloudRun.env.get("DEPLOY_SHA"), INPUT_SHA);
 
     const names = steps().map((s) => s.name);
     assert.ok(
-      names.indexOf("Run migrations (apply)") < names.indexOf("Deploy the commit to Render (production)"),
-      "the Render deploy is expected to run after the migration apply",
+      names.indexOf("Run migrations (apply)") < names.indexOf("Deploy the API to Cloud Run"),
+      "the Cloud Run deploy is expected to run after the migration apply",
     );
   });
 });
@@ -550,11 +551,12 @@ describe("production's steps run in the order that fails before it writes", () =
     "Stop the disposable Supabase stack",
     "Run migrations (dry-run)",
     "Assert supabase config was not rewritten by link (before the apply)",
+    "Build the API image",
     "Build the Vercel production bundles (web + landing)",
     "Stop here (dry run only)",
     "Run migrations (apply)",
     "Assert supabase config was not rewritten by link",
-    "Deploy the commit to Render (production)",
+    "Deploy the API to Cloud Run",
     "Verify production serves the commit",
     "Check the API answers its clients (production)",
     "Deploy the commit to Vercel production (web + landing)",
@@ -586,6 +588,7 @@ describe("the dry run rehearses the build and ships nothing", () => {
   const REHEARSED = [
     "Install dependencies",
     "Install Vercel CLI",
+    "Build the API image",
     "Build the Vercel production bundles (web + landing)",
   ];
 
@@ -594,7 +597,7 @@ describe("the dry run rehearses the build and ships nothing", () => {
   const SHIPPING = [
     "Run migrations (apply)",
     "Assert supabase config was not rewritten by link",
-    "Deploy the commit to Render (production)",
+    "Deploy the API to Cloud Run",
     "Verify production serves the commit",
     "Check the API answers its clients (production)",
     "Deploy the commit to Vercel production (web + landing)",
@@ -874,10 +877,8 @@ describe("installs run before any secret, and the trust split holds", () => {
 // outputs (#2806), and this keeps them the same outputs.
 describe("the preflight asserts against the services production ships to", () => {
   const byName = () => new Map(sharedSteps().map((step) => [step.name, step]));
-  it("uses the production Render service and Vercel projects the deploy steps use", () => {
+  it("uses the Vercel projects the deploy steps use", () => {
     const preflight = byName().get("Provider guardrail preflight");
-    const render = byName().get("Deploy the commit to Render (production)");
-    assert.equal(preflight.env.get("RENDER_SERVICE_ID"), render.env.get("RENDER_SERVICE_ID"));
     for (const name of ["Build the Vercel production bundles (web + landing)", "Deploy the commit to Vercel production (web + landing)"]) {
       for (const key of ["VERCEL_WEB_PROJECT_ID", "VERCEL_LANDING_PROJECT_ID", "VERCEL_TEAM_ID"]) {
         assert.equal(preflight.env.get(key), byName().get(name).env.get(key), `${key} differs from "${name}"'s`);
@@ -1215,12 +1216,12 @@ describe("deploy-outcome alerts on a failed production deploy", () => {
 // workflow that migrated production or shipped its API or frontends would skip
 // the confirmation, the validation, the approval, the rehearsal and the fence.
 describe("the shared job is the only thing that migrates or ships production", () => {
-  it("no other workflow runs the migration, the Render deploy or a production upload", () => {
+  it("no other workflow runs the migration, the API deploy or a production upload", () => {
     const dir = join(REPO_ROOT, ".github", "workflows");
     for (const file of workflowFiles().filter((f) => f !== "_deploy.yml")) {
       const other = withoutComments(readFileSync(join(dir, file), "utf8"));
       assert.doesNotMatch(other, /node scripts\/run-migration\.mjs/, `${file} applies migrations`);
-      assert.doesNotMatch(other, /deploy-render-production\.mjs/, `${file} deploys to Render`);
+      assert.doesNotMatch(other, /deploy-cloud-run\.mjs/, `${file} deploys the API`);
       assert.doesNotMatch(other, /DEPLOY_TARGET: production/, `${file} ships the production frontends`);
     }
   });

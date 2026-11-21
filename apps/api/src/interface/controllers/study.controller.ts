@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -59,6 +60,7 @@ export class StudyGeofenceController {
     return this.studyService.createGeofence(chapterId, {
       name: dto.name,
       coordinates: dto.coordinates,
+      circle: dto.circle,
       is_active: dto.is_active,
       minutes_per_point: dto.minutes_per_point,
       points_per_interval: dto.points_per_interval,
@@ -72,7 +74,7 @@ export class StudyGeofenceController {
   @ApiOperation({ summary: 'Update geofence (admin)' })
   async update(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateGeofenceDto,
   ) {
     return this.studyService.updateGeofence(id, chapterId, dto);
@@ -81,7 +83,10 @@ export class StudyGeofenceController {
   @Delete(':id')
   @RequirePermissions(SystemPermissions.GEOFENCES_MANAGE)
   @ApiOperation({ summary: 'Delete geofence (admin)' })
-  async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
+  async delete(
+    @CurrentChapterId() chapterId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     await this.studyService.deleteGeofence(id, chapterId);
     return { success: true };
   }

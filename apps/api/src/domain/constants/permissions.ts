@@ -1,6 +1,8 @@
 import {
   ALUMNI_CHANNEL_PERMISSION,
   roleColor,
+  ACTIVE_ROLE_NAME,
+  EVERYONE_ROLE_NAME,
   RUSH_MEMBER_PERMISSIONS,
   type PermissionDefinition,
 } from '@repo/validation';
@@ -28,6 +30,13 @@ export const SystemPermissions = {
   POINTS_VIEW_ALL: 'points:view_all',
 
   ROLES_MANAGE: 'roles:manage',
+  // With `roles:manage`, reach your own rank as well as below it when giving
+  // and taking roles (Paul, 2026-11-20, #5725): `canAssignAt` in role-rank.ts.
+  ROLES_ASSIGN_OWN_LEVEL: 'roles:assign_own_level',
+
+  // Groups (#4076): named sets of members with no permissions. Lighter than
+  // `roles:manage`, so a chair can keep a group current without granting.
+  GROUPS_MANAGE: 'groups:manage',
 
   CHANNELS_CREATE: 'channels:create',
   CHANNELS_MANAGE: 'channels:manage',
@@ -48,7 +57,21 @@ export const SystemPermissions = {
   POLLS_CREATE: 'polls:create',
   POLLS_VIEW_ALL: 'polls:view_all',
 
+  // Predictions (#5133, `spec/behavior/predictions.md` § Module and
+  // permissions): any member asks; the exec board confirms, re-settles and
+  // voids. Migration `20261116135639_predictions.sql` gives existing
+  // chapters the same.
+  PREDICTIONS_CREATE: 'predictions:create',
+  PREDICTIONS_MANAGE: 'predictions:manage',
+
   TASKS_MANAGE: 'tasks:manage',
+
+  // Meeting minutes (#4312, `spec/behavior/meetings.md` § Permissions).
+  // Whoever started a meeting's minutes may edit and post them without
+  // `meetings:edit`; the service checks that.
+  MEETINGS_RECORD: 'meetings:record',
+  MEETINGS_EDIT: 'meetings:edit',
+  MEETINGS_DELETE: 'meetings:delete',
 
   // Recruitment (#4070). `RUSH_NOTES`, `RUSH_VIEW_RESULTS` and `RUSH_MANAGE`
   // gate no route yet: notes, delete and export are not built, and the vote
@@ -69,6 +92,16 @@ export const SystemPermissions = {
 
   SEMESTER_ROLLOVER: 'semester:rollover',
 
+  // AI (ADR-28). `AI_USE` is in every starting tier (#4308), so a chapter
+  // created today lets every active member use the AI features the president
+  // turns on, once that member says yes on the AI sheet; Alumni, outside the
+  // tiers, do not hold it. `AI_ACT` is held by no seeded role. `AI_USE` gates
+  // Ask, channel summaries and Report this; `AI_ACT` gates nothing until the acting agent
+  // (#718). Left out of the permissions catalog while
+  // the server switch is off (`RbacService.getPermissionsCatalog`).
+  AI_USE: 'ai:use',
+  AI_ACT: 'ai:act',
+
   REPORTS_EXPORT: 'reports:export',
 
   CHAPTER_CONFIG_VIEW: 'chapter-config:view',
@@ -79,6 +112,12 @@ export const SystemPermissions = {
   // `ALUMNI_CHANNEL_PERMISSION` in `@repo/validation` owns the value.
   ALUMNI_POST: ALUMNI_CHANNEL_PERMISSION,
 } as const;
+
+/** Shown in the catalog only on a server with `AI_ENABLED` on. */
+export const AI_PERMISSIONS: ReadonlySet<string> = new Set([
+  SystemPermissions.AI_USE,
+  SystemPermissions.AI_ACT,
+]);
 
 /** One row of `GET /v1/roles/permissions-catalog`. */
 export interface PermissionCatalogEntry extends PermissionDefinition {
@@ -105,7 +144,14 @@ export const SystemRoleKeys = {
   TREASURER: 'TREASURER',
   VICE_PRESIDENT: 'VICE_PRESIDENT',
   SECRETARY: 'SECRETARY',
+  /**
+   * The Actives base role (Paul, 2026-11-21). The seeded Member role, then
+   * from #4191 to 2026-11-21 the hidden Everyone role; the key stayed, so
+   * every stored reference to the row now means the actives.
+   */
   MEMBER: 'MEMBER',
+  /** The Everyone role every member holds, the floor (2026-11-21). */
+  EVERYONE: 'EVERYONE',
   NEW_MEMBER: 'NEW_MEMBER',
   ALUMNI: 'ALUMNI',
 } as const;
@@ -125,6 +171,46 @@ export const SystemRoleKeys = {
 export const ALUMNI_ROLE_NAME = 'Alumni';
 
 /**
+ * What the top two starting tiers give their roles in a new chapter (#4068
+ * decision 9). `announcements:post` decides no channel's posters since #3722,
+ * but the Discord importer still starts a read-only channel's posters from
+ * its holders (#4286), so it keeps officers posting there too.
+ */
+const OFFICER_DEFAULT_PERMISSIONS = [
+  SystemPermissions.SERVICE_APPROVE,
+  SystemPermissions.ANNOUNCEMENTS_POST,
+  SystemPermissions.TASKS_MANAGE,
+  SystemPermissions.CHANNELS_CREATE,
+  SystemPermissions.CHANNELS_MANAGE,
+  // Groups (#4076); migration `20261113040007_chapter_groups.sql` gives it
+  // to every existing tier and role that manages roles or channels.
+  SystemPermissions.GROUPS_MANAGE,
+] as const;
+
+/**
+ * What every member of a new chapter can do, whatever their tier (#3709,
+ * Paul 2026-11-07: start from social trust and let chapters tighten it).
+ * Each of the top three starting tiers carries it, so an officer invited
+ * straight into their own role can do what the members they lead can: before
+ * this, a Vice President could not create an event or upload backwork. New
+ * members get less ({@link STARTING_ROLE_TIERS}).
+ *
+ * `events:create` makes an event, not a requirement: making anyone required
+ * and attaching points take `events:update` (`EventService.create`).
+ */
+const MEMBER_DEFAULT_PERMISSIONS = [
+  SystemPermissions.MEMBERS_VIEW,
+  SystemPermissions.EVENTS_CREATE,
+  SystemPermissions.BACKWORK_UPLOAD,
+  SystemPermissions.SERVICE_LOG,
+  SystemPermissions.POLLS_CREATE,
+  SystemPermissions.PREDICTIONS_CREATE,
+  // What any member could do in recruitment before it had permissions
+  // (#4070); a chapter tightens it from here.
+  ...RUSH_MEMBER_PERMISSIONS,
+] as const;
+
+/**
  * The tiers a new chapter starts with, highest first (#4068 decision 10), and
  * what each gives its roles. **Seed data only.** From the moment a chapter
  * exists its tiers are its own rows in `role_tiers`: it can rename, reorder,
@@ -132,45 +218,64 @@ export const ALUMNI_ROLE_NAME = 'Alumni';
  * there are four. Alumni, and advisors when a chapter adds them, sit outside
  * the tiers.
  *
- * Each tier starts with what its seeded roles held before tiers existed, so a
- * new chapter's roles can do exactly what they could before. The officer
- * defaults Paul decided on 2026-11-10 (#4068 decision 9) land with the rank
- * rules, in the next slice of #4071: `roles:manage` on a tier is only safe
- * once a holder cannot edit their own tier.
+ * The top two carry the officer defaults Paul decided on 2026-11-10 (#4068
+ * decision 9): both approve service hours, post announcements, and manage
+ * tasks, channels and groups (#4076); the top one also manages roles and chapter settings.
+ * `roles:manage` on a tier is safe because of the rank rules (#4071): nobody
+ * edits a role or tier ranked at or above their own, so the Vice President
+ * cannot edit the President's role or the Exec board itself.
+ *
+ * The top three also carry {@link MEMBER_DEFAULT_PERMISSIONS}, what every
+ * member can do (#3709); New members get `members:view` and
+ * `backwork:upload` only. The top one also edits and deletes any event,
+ * which is what makes an event required or worth points (#3709), so the
+ * Vice President and Secretary can and a member can't.
  *
  * Chapters that existed before tiers were placed into the same four names by
  * migration `20261111140000_role_tiers.sql`. Changing this list changes new
- * chapters and nothing else.
+ * chapters and nothing else; migration
+ * `20261112152000_member_social_trust_defaults.sql` carried #3709's two
+ * member keys to existing chapters.
  */
 export const STARTING_ROLE_TIERS = [
   {
     name: 'Exec board',
     permissions: [
-      SystemPermissions.MEMBERS_VIEW,
+      ...MEMBER_DEFAULT_PERMISSIONS,
+      // Edit and delete any event: what makes an event required or worth
+      // points (#3709), so required attendance stays with the officers.
+      SystemPermissions.EVENTS_UPDATE,
+      SystemPermissions.EVENTS_DELETE,
       SystemPermissions.POLLS_VIEW_ALL,
+      ...OFFICER_DEFAULT_PERMISSIONS,
+      SystemPermissions.ROLES_MANAGE,
+      SystemPermissions.CHAPTER_CONFIG_VIEW,
+      SystemPermissions.CHAPTER_CONFIG_MANAGE,
+      SystemPermissions.PREDICTIONS_MANAGE,
+      SystemPermissions.AI_USE,
+      // The exec board writes minutes (`meetings.md` § Permissions); migration
+      // `20261112165010_meetings.sql` gives existing chapters' top tier the same.
+      SystemPermissions.MEETINGS_RECORD,
     ],
   },
   {
     name: 'Officers and chairs',
-    permissions: [SystemPermissions.MEMBERS_VIEW],
+    permissions: [
+      ...MEMBER_DEFAULT_PERMISSIONS,
+      ...OFFICER_DEFAULT_PERMISSIONS,
+      SystemPermissions.AI_USE,
+    ],
   },
   {
     name: 'Members',
-    permissions: [
-      SystemPermissions.MEMBERS_VIEW,
-      SystemPermissions.BACKWORK_UPLOAD,
-      SystemPermissions.SERVICE_LOG,
-      SystemPermissions.POLLS_CREATE,
-      // What any member could do in recruitment before it had permissions
-      // (#4070); a chapter tightens it from here.
-      ...RUSH_MEMBER_PERMISSIONS,
-    ],
+    permissions: [...MEMBER_DEFAULT_PERMISSIONS, SystemPermissions.AI_USE],
   },
   {
     name: 'New members',
     permissions: [
       SystemPermissions.MEMBERS_VIEW,
       SystemPermissions.BACKWORK_UPLOAD,
+      SystemPermissions.AI_USE,
     ],
   },
 ] as const satisfies readonly {
@@ -230,13 +335,21 @@ const SEEDED_ROLES = [
     color: roleColor('rose'),
   },
   {
-    name: 'Member',
+    // The Actives base role (Paul, 2026-11-21): a chapter's full members.
+    // It keeps the `MEMBER` key, so every lookup of "the Member role" (the
+    // semester rollover's promotion, presidency's floor, the tier reorder's
+    // floor) finds it, and its starting tier, so actives rank where members
+    // did. A chapter renames it ("Brothers"). `@Actives` reaches nearly the
+    // whole chapter, so it starts officers-only, as `@everyone` does, and the
+    // Members tier follows its switch.
+    name: ACTIVE_ROLE_NAME,
     system_key: SystemRoleKeys.MEMBER,
     starting_tier: 2,
     extra_permissions: [],
     is_system: true,
     display_order: 5,
     color: null,
+    mentionable: false,
   },
   {
     name: 'New Member',
@@ -263,6 +376,20 @@ const SEEDED_ROLES = [
     display_order: 7,
     color: roleColor('slate'),
   },
+  {
+    // The Everyone role (2026-11-21): every member holds it, whatever else
+    // they hold, and it gives only what anyone in the chapter may do. Outside
+    // the tiers, so it ranks below all of them and no tier lends it more.
+    // Not mentionable: `@everyone` is officers-only until a chapter opens it.
+    name: EVERYONE_ROLE_NAME,
+    system_key: SystemRoleKeys.EVERYONE,
+    starting_tier: null,
+    extra_permissions: [SystemPermissions.MEMBERS_VIEW],
+    is_system: true,
+    display_order: 8,
+    color: null,
+    mentionable: false,
+  },
 ] as const satisfies readonly {
   starting_tier: number | null;
   extra_permissions: readonly string[];
@@ -276,7 +403,7 @@ const SEEDED_ROLES = [
  * database applies on every later save (`role_effective_permissions`).
  *
  * Colors come from the role palette in `@repo/validation` (#3485): the five
- * officer and Alumni roles get one, while Member and New Member stay uncolored
+ * officer and Alumni roles get one, while Actives, New Member and Everyone stay uncolored
  * so most of a chapter's chat reads in the plain foreground and the officers
  * stand out. Migration `20261105200000_role_color_palette_defaults.sql` moves
  * existing chapters' untouched seeds onto the same values.
@@ -315,15 +442,16 @@ export type SeededChannelAccess = {
  * - `#announcements`: officers post (the top two starting tiers), everyone
  *   reads. Before #3722 it took `announcements:post`, which no seeded role
  *   held, so only the President could post in a new chapter.
- * - `#chapter-audit`: everyone reads, nobody posts. The audit flag (#3909)
- *   refuses every member's write anyway; the empty list says so in the data.
+ *
+ * No `#chapter-audit` since 2026-11-21: the record of officer changes is the
+ * Logs page in Chapter settings, which reads `chapter_audit_log` itself.
  * - `#alumni`: every starting tier and the Alumni role read and post, which
  *   is what lets alumni post there (`spec/behavior/alumni.md`).
  *
  * `description` is the line the channel header shows beside the name and the
  * channel start repeats ("Welcome to #general"). Officers edit it in Chat
  * admin. Migration `20261105210000_default_channel_descriptions.sql` wrote the
- * same four lines into chapters created before they were seeded. Changing one
+ * same lines into chapters created before they were seeded. Changing one
  * here only reaches new chapters: to change existing ones, add a new forward
  * migration (never edit the shipped one), and update the Channel header row in
  * `spec/ui/design-system/writing.md`.
@@ -340,18 +468,6 @@ export const DEFAULT_CHANNELS = [
     description: 'News from officers. Everyone gets notified.',
     who_can_see: null,
     who_can_post: { tiers: [0, 1] },
-  },
-  // System-write, member-read audit feed. The Chunk 02 audit bridge and the
-  // onboarding welcome message post system_audit messages here / to #general.
-  {
-    name: 'chapter-audit',
-    description:
-      'Officer changes to dues, roles and settings, posted automatically.',
-    // System-write only (#3909): no member posts here, whatever their
-    // roles, and the audit mirror finds the channel by this flag.
-    is_audit_log: true,
-    who_can_see: null,
-    who_can_post: { tiers: [] },
   },
   {
     name: 'alumni',

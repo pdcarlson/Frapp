@@ -34,6 +34,7 @@ import {
   clientVersionForLog,
 } from '#domain/constants/client-version';
 import { authFailureDetail } from '../guards/auth-rejected.exception';
+import { clientAddress } from '../guards/custom-throttler.guard';
 import { requestApp } from '../http/request-app';
 import { AuthFailureSpikeDetector } from '../../infrastructure/observability/auth-failure-spike';
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
@@ -234,7 +235,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (!kind) return;
 
     try {
-      const originHash = pseudonymizeIp(clientIp(request));
+      // The address the throttler counts the caller under (an IPv6 one by its
+      // /64), hashed before it goes anywhere.
+      const originHash = pseudonymizeIp(clientAddress(request));
       // Which app, from what the clients already send (#3907): enough to tell
       // a stale mobile build from a dashboard tab. Never the raw header.
       const context: AuthFailureContext = {
@@ -275,14 +278,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
       // Key the window the same way the throttler keys its buckets
       // (`custom-throttler.guard.ts`): authenticated subject when there is one,
-      // origin otherwise. Sharing the notion of "who" means this degrades
+      // otherwise the address `clientAddress` gives, the one the throttler
+      // counts under. Sharing the notion of "who" means this degrades
       // exactly as the rate limiter does behind a proxy rather than inventing a
       // second, differently-wrong one. `trust proxy` is set to the measured
-      // hop count in `configureApp` (#864), so behind Render's edge this
-      // resolves to the real caller rather than collapsing every
+      // hop count in `configureApp` (#864, #5269), so behind the deployed
+      // proxies this resolves to the real caller rather than collapsing every
       // unauthenticated request into one bucket.
       const originKey =
-        request.appUser?.id ?? originHash ?? clientIp(request) ?? 'unknown';
+        request.appUser?.id ??
+        originHash ??
+        clientAddress(request) ??
+        'unknown';
       // An absent reason counts under the detector's `other`.
       const trip = this.spikeDetector.record(
         originKey,
@@ -506,8 +513,8 @@ function spikeTags(context: AuthFailureContext): Record<string, string> {
  * A spike's reason mix as Sentry tags (#3907). `reason` is the one reason when
  * every failure in the window shared it, else `mixed`; `summary` lists each
  * with its count, largest first (`token_rejected:18,no_bearer:2`). The labels
- * are the guard's two reasons plus the detector's `other`, so the summary stays
- * short.
+ * are the guard's reasons (`AuthFailureReason`) plus the detector's `other`, so
+ * the summary stays short.
  */
 function describeReasons(labels: Readonly<Record<string, number>>): {
   reason: string;
@@ -520,12 +527,6 @@ function describeReasons(labels: Readonly<Record<string, number>>): {
     reason: entries.length === 1 ? entries[0][0] : 'mixed',
     summary: entries.map(([label, count]) => `${label}:${count}`).join(','),
   };
-}
-
-/** Client address as Express resolved it — hashed before it goes anywhere. */
-function clientIp(request: RequestContext): string | undefined {
-  const forwarded = Array.isArray(request.ips) ? request.ips[0] : undefined;
-  return forwarded ?? request.ip;
 }
 
 function sentryTraceId(): string | undefined {

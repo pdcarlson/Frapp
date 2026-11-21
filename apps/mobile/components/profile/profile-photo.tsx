@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   Image,
@@ -10,6 +9,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type GestureResponderEvent,
 } from "react-native";
 import {
   useActiveChapterId,
@@ -22,7 +22,11 @@ import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { usePressFeedback } from "@/components/list-section";
 import { CameraGlyph } from "@/components/service-hours/camera-glyph";
-import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
+import {
+  useChapterBranding,
+  type ChapterBranding,
+} from "@/lib/chapter-branding";
 import { pickAndSetProfilePhoto } from "@/lib/more/profile-photo";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -32,20 +36,19 @@ const AVATAR_SIZE = PROFILE_PHOTO_SIZE;
 const BADGE_SIZE = 28;
 const BADGE_GLYPH_SIZE = 16;
 
-export const CHOOSE_PHOTO = "Choose photo";
-export const REMOVE_PHOTO = "Remove photo";
-export const REMOVE_PHOTO_CONFIRM_TITLE = "Remove your profile photo?";
-export const NO_CHAPTER_PHOTO_NOTE =
-  "Choose a chapter from More → Switch chapter to add a photo.";
+const CHOOSE_PHOTO = "Choose photo";
+const REMOVE_PHOTO = "Remove photo";
+const REMOVE_PHOTO_CONFIRM_TITLE = "Remove your profile photo?";
+const NO_CHAPTER_PHOTO_NOTE =
+  "Tap the chapter menu at the top of Chat, then Switch chapter, to add a photo.";
 
 /**
  * s15's identity avatar, with the photo in it, and the control that changes
  * it (#732).
  *
  * Canvas draws the avatar and no control for it. The avatar is the control:
- * tapping it picks a photo, or, once there is one, offers the platform's own
- * choice of Choose photo or Remove photo (iOS's action sheet, an alert on
- * Android). A small camera badge in the accent marks it as tappable. It used
+ * tapping it picks a photo, or, once there is one, offers Choose photo or
+ * Remove photo in the glass menu (`openItemMenu`). A small camera badge in the accent marks it as tappable. It used
  * to be a line of text buttons ("Change photo", "Remove") between the avatar
  * and the name, which split the identity block the board draws as one, and
  * Remove deleted the photo on the spot.
@@ -151,7 +154,7 @@ export function ProfilePhoto({
     ]);
   }
 
-  function openChoices() {
+  function openChoices(event?: GestureResponderEvent) {
     if (busy) return;
     // With nothing to remove there is nothing to choose between.
     if (!photoUrl) {
@@ -161,36 +164,24 @@ export function ProfilePhoto({
     // Without a chapter there is only Remove, and the choice says why.
     const canChoose = !!chapterId;
     const message = canChoose ? undefined : NO_CHAPTER_PHOTO_NOTE;
-    if (Platform.OS === "ios") {
-      const options = canChoose
-        ? [CHOOSE_PHOTO, REMOVE_PHOTO, "Cancel"]
-        : [REMOVE_PHOTO, "Cancel"];
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          message,
-          destructiveButtonIndex: options.indexOf(REMOVE_PHOTO),
-          cancelButtonIndex: options.indexOf("Cancel"),
-          userInterfaceStyle: "dark",
-        },
-        (index) => {
-          if (options[index] === CHOOSE_PHOTO) void change();
-          if (options[index] === REMOVE_PHOTO) confirmRemove();
-        },
-      );
-      return;
-    }
-    Alert.alert(
-      "Profile photo",
-      message,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: REMOVE_PHOTO, style: "destructive", onPress: confirmRemove },
-        ...(canChoose
-          ? [{ text: CHOOSE_PHOTO, onPress: () => void change() }]
-          : []),
-      ],
-      { cancelable: true },
+    const choose = {
+      key: "choose",
+      label: CHOOSE_PHOTO,
+      run: () => void change(),
+    };
+    const remove = {
+      key: "remove",
+      label: REMOVE_PHOTO,
+      destructive: true,
+      run: confirmRemove,
+    };
+    openItemMenu(
+      {
+        title: "Profile photo",
+        message,
+        actions: canChoose ? [choose, remove] : [remove],
+      },
+      pressAt(event),
     );
   }
 

@@ -1,0 +1,236 @@
+import type { LanguageModelRequest } from '#domain/adapters/language-model.interface';
+import {
+  scriptedAskAgent,
+  scriptedAskAnswer,
+  scriptedAskPlan,
+} from './scripted-ask';
+import type { ScriptedReply } from './scripted-language-model';
+
+type Said = Extract<ScriptedReply, { text: string }>;
+
+/**
+ * The planning message as `ask-prompt.ts` writes it. Written out here, not
+ * imported: infrastructure may not reach into the application layer, and
+ * `ask.service.spec.ts` runs the real prompt through this scripted model.
+ */
+const askPlanMessage = (
+  question: string,
+  offered: ReadonlyArray<{ name: string; description: string }>,
+  earlier: readonly string[] = [],
+): string =>
+  [
+    ...(earlier.length === 0
+      ? []
+      : [
+          'Earlier in the conversation the member asked:',
+          ...earlier.map((asked) => `- ${asked}`),
+          '',
+        ]),
+    `Question: ${question}`,
+    '',
+    'Tools:',
+    ...offered.map((tool) => `- ${tool.name}: ${tool.description}`),
+  ].join('\n');
+
+const tools = [
+  'roster',
+  'events',
+  'my_points',
+  'points_leaderboard',
+  'my_dues',
+  'my_tasks',
+].map((name) => ({ name, description: `About ${name}.` }));
+
+const plan = (question: string) =>
+  (
+    scriptedAskPlan({
+      kind: 'structured',
+      messages: [{ role: 'user', content: askPlanMessage(question, tools) }],
+    } as unknown as LanguageModelRequest) as Said
+  ).object as { tools: string[] };
+
+const answer = (
+  question: string,
+  sources: Array<{ id: string; text: string }>,
+) =>
+  scriptedAskAnswer({
+    kind: 'cited',
+    messages: [{ role: 'user', content: question }],
+    sources: sources.map((source) => ({ ...source, title: 'Source' })),
+  } as unknown as LanguageModelRequest) as Said;
+
+describe('the scripted Ask replies', () => {
+  it('plans from the words of the question, reading the tool list the product sends', () => {
+    expect(plan('Who is the treasurer?').tools).toEqual(['roster']);
+    expect(plan('When is the next chapter meeting?').tools).toEqual(['events']);
+    expect(plan('How many points do I have?').tools).toEqual(['my_points']);
+    expect(plan('What do the bylaws say about quorum?').tools).toEqual([]);
+    expect(plan('Which of my 3 open tasks is due first?').tools).toEqual([
+      'my_tasks',
+    ]);
+    expect(plan('How much do I owe for Fall dues?').tools).toEqual(['my_dues']);
+  });
+
+  it('picks tools for the question, not for what was asked before it', () => {
+    const planned = (
+      scriptedAskPlan({
+        kind: 'structured',
+        messages: [
+          {
+            role: 'user',
+            content: askPlanMessage('What do the bylaws say?', tools, [
+              'Who is the treasurer?',
+              'How many points do I have?',
+            ]),
+          },
+        ],
+      } as unknown as LanguageModelRequest) as Said
+    ).object as { tools: string[] };
+    expect(planned.tools).toEqual([]);
+  });
+
+  it('gives a follow-up that leans on the question before it that question’s tools', () => {
+    const follow = (question: string, earlier: string[]) =>
+      (
+        scriptedAskPlan({
+          kind: 'structured',
+          messages: [
+            {
+              role: 'user',
+              content: askPlanMessage(question, tools, earlier),
+            },
+          ],
+        } as unknown as LanguageModelRequest) as Said
+      ).object as { tools: string[] };
+    // Only the one before it, never the ones before that.
+    expect(
+      follow('And where is it?', ['Who is the treasurer?', 'When is formal?'])
+        .tools,
+    ).toEqual(['events']);
+    expect(follow('And where is it?', []).tools).toEqual([]);
+  });
+
+  it('never plans a tool that was not offered', () => {
+    const only = (
+      scriptedAskPlan({
+        kind: 'structured',
+        messages: [
+          {
+            role: 'user',
+            content: askPlanMessage(
+              'Who is the treasurer and when is formal?',
+              [tools[1]],
+            ),
+          },
+        ],
+      } as unknown as LanguageModelRequest) as Said
+    ).object as { tools: string[] };
+    expect(only.tools).toEqual(['events']);
+  });
+
+  it('answers with sentences copied from the sources, each cited word for word', () => {
+    const reply = answer('What do the bylaws say about quorum?', [
+      {
+        id: 'p1',
+        text: 'Article IV.\nQuorum under the bylaws is two thirds of active members. Meetings are weekly.',
+      },
+    ]);
+    expect(reply.text).toBe(
+      'Quorum under the bylaws is two thirds of active members.',
+    );
+    expect(reply.citations).toEqual([
+      {
+        sourceId: 'p1',
+        quote: 'Quorum under the bylaws is two thirds of active members.',
+      },
+    ]);
+  });
+
+  it('cites nothing when no source shares the question’s words', () => {
+    const reply = answer('Where is the spring retreat held?', [
+      { id: 'p1', text: 'Quorum is two thirds of active members.' },
+    ]);
+    expect(reply.citations ?? []).toEqual([]);
+  });
+
+  it('reads a follow-up beside the question before it, and a question that stands alone by itself', () => {
+    const sources = [
+      { id: 'p1', text: 'Quorum for elections is three quarters.' },
+      { id: 'p2', text: 'Devin Okafor is the treasurer.' },
+    ].map((source) => ({ ...source, title: 'Source' }));
+    const after = (question: string) =>
+      scriptedAskAnswer({
+        kind: 'cited',
+        messages: [
+          { role: 'user', content: 'What is quorum for elections?' },
+          { role: 'assistant', content: 'Three quarters.' },
+          { role: 'user', content: question },
+        ],
+        sources,
+      } as unknown as LanguageModelRequest) as Said;
+    expect(after('And who decides it?').citations).toEqual([
+      { sourceId: 'p1', quote: 'Quorum for elections is three quarters.' },
+    ]);
+    expect(after('Who is the treasurer?').citations).toEqual([
+      { sourceId: 'p2', quote: 'Devin Okafor is the treasurer.' },
+    ]);
+  });
+});
+
+describe('scriptedAskAgent', () => {
+  const request = (rounds: unknown[], mustAnswer = false) =>
+    ({
+      kind: 'agent',
+      messages: [{ role: 'user', content: 'Who is the treasurer?' }],
+      tools: ['search_records', 'roster', 'my_dues', 'pay_dues'].map(
+        (name) => ({ name, description: '', inputSchema: {} }),
+      ),
+      context: [],
+      rounds,
+      ...(mustAnswer ? { mustAnswer: true } : {}),
+    }) as unknown as LanguageModelRequest;
+
+  it('first searches for the question and asks for the live reads its words name', () => {
+    expect((scriptedAskAgent(request([])) as Said).toolCalls).toEqual([
+      {
+        id: 'scripted-call-1',
+        name: 'search_records',
+        input: { query: 'Who is the treasurer?' },
+      },
+      { id: 'scripted-call-2', name: 'roster', input: {} },
+    ]);
+  });
+
+  it('then quotes what the reads returned, and calls nothing more', () => {
+    const reply = scriptedAskAgent(
+      request([
+        {
+          replay: null,
+          results: [
+            {
+              callId: 'scripted-call-2',
+              note: null,
+              sources: [
+                {
+                  id: 'tool:roster',
+                  title: 'Roster',
+                  text: 'Devin Okafor is the treasurer.',
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+    ) as Said;
+    expect(reply.toolCalls ?? []).toEqual([]);
+    expect(reply.citations).toEqual([
+      { sourceId: 'tool:roster', quote: 'Devin Okafor is the treasurer.' },
+    ]);
+  });
+
+  it('answers without reading when it is told to', () => {
+    expect(
+      (scriptedAskAgent(request([], true)) as Said).toolCalls ?? [],
+    ).toEqual([]);
+  });
+});

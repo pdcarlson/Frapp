@@ -10,48 +10,59 @@ import {
 import { Alert, Keyboard } from "react-native";
 import { useFocusEffect } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { useCurrentChapter, useMyPermissions } from "@repo/hooks";
-import { can, isModuleEnabled } from "@repo/validation";
+import {
+  useCurrentChapter,
+  gifToSend,
+  useGifAvailability,
+  useMyPermissions,
+  type GifResult,
+} from "@repo/hooks";
+import { can, canAll, isModuleEnabled } from "@repo/validation";
 import {
   plusMenuForms,
   plusMenuModel,
+  TASK_CREATE_PERMISSIONS,
   type PlusMenuCommand,
   type PlusMenuModuleStatus,
 } from "@repo/chat-core/plus-menu";
 import {
   eventCardOutcomeCopy,
+  TASK_LINK_UNCONFIRMED_WARNING,
   type DispatchResult,
 } from "@repo/chat-core/dispatch";
 import { ComposerPlusSheet } from "@/components/chat/composer-plus-sheet";
 import { NewPollSheet } from "@/components/chat/new-poll-sheet";
+import { GifPickerSheet } from "@/components/chat/gif-picker-sheet";
+import { TaskLinkSheet } from "@/components/chat/task-link-sheet";
 import {
   NewEventSheet,
   type EventCreatedOutcome,
 } from "@/components/events/new-event-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
-import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { SheetBoundary } from "@/components/quick-actions/quick-actions-host";
 import { CHAT_PHOTO_LIMIT } from "@/lib/chat/attachment-upload";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 
 /**
- * The forms the phone's + offers, in the menu's order. Points waits for a
- * phone form (#3865).
+ * The forms the phone's + offers, in the menu's order (#5772): Poll, Event
+ * and Task, as on web. The phone has no typed shortcuts, so Service hours
+ * and Points, which web keeps for a bare `/hours` or `/points`, aren't here.
  */
-export const PHONE_PLUS_COMMANDS = ["poll", "event", "task", "hours"] as const;
+const PHONE_PLUS_COMMANDS = ["poll", "event", "task"] as const;
 
-type ChannelForm = "event" | "task" | "hours";
+/** The forms mounted on first use, since each reads its own data. */
+type ChannelForm = "event" | "task";
 
 const NO_FORMS: ReadonlySet<ChannelForm> = new Set();
 
 /** What each form's posted-but-not-quite outcome is called in its alert. */
 const OUTCOME_TITLES: Record<
-  "poll" | "task" | "hours",
+  "poll" | "task" | "link",
   { posted: string; unconfirmed: string }
 > = {
   poll: { posted: "Poll posted", unconfirmed: "Couldn't confirm the poll" },
   task: { posted: "Task created", unconfirmed: "Couldn't confirm the task" },
-  hours: { posted: "Hours logged", unconfirmed: "Couldn't confirm the hours" },
+  link: { posted: "Task linked", unconfirmed: "Couldn't confirm the link" },
 };
 
 /**
@@ -62,7 +73,7 @@ const OUTCOME_TITLES: Record<
  * read this before trying again.
  */
 export function presentPostOutcome(
-  form: "poll" | "task" | "hours",
+  form: "poll" | "task" | "link",
   result: { warning?: string; unconfirmed?: boolean },
   alert: typeof Alert.alert = Alert.alert,
 ): void {
@@ -104,7 +115,7 @@ export function plusModuleStatus(read: {
  *
  * Every form is keyed per channel, so a draft kept by a swipe never posts
  * into another channel, and all of them close on blur like the member list.
- * Event, Task and Service hours mount on first use, as the quick actions'
+ * Event and Task mount on first use, as the quick actions'
  * do, since each reads its own data.
  */
 export function useComposerPlus({
@@ -117,7 +128,12 @@ export function useComposerPlus({
   channelId: string | null | undefined;
   channel: Pick<
     UseChatChannelResult,
-    "sendPoll" | "postTask" | "postHours" | "trackEventCard" | "photos"
+    | "sendPoll"
+    | "postTask"
+    | "linkTask"
+    | "trackEventCard"
+    | "photos"
+    | "sendGif"
   >;
   /** A reply is staged (the + isn't offered while editing at all). */
   replying: boolean;
@@ -169,14 +185,23 @@ export function useComposerPlus({
   );
 
   const plusRef = useRef<BottomSheetModal>(null);
+  const gifRef = useRef<BottomSheetModal>(null);
+  // GIFs (#4631): the row shows only once the server says search is set up.
+  const gifs = useGifAvailability();
   const pollRef = useRef<BottomSheetModal>(null);
+  const taskLinkRef = useRef<BottomSheetModal>(null);
   const eventRef = useRef<BottomSheetModal>(null);
   const taskRef = useRef<BottomSheetModal>(null);
-  const hoursRef = useRef<BottomSheetModal>(null);
   const formRefs: Record<
     ChannelForm,
     RefObject<BottomSheetModal | null>
-  > = useMemo(() => ({ event: eventRef, task: taskRef, hours: hoursRef }), []);
+  > = useMemo(
+    () => ({
+      event: eventRef,
+      task: taskRef,
+    }),
+    [],
+  );
 
   const [mounted, setMounted] = useState<{
     channelId: string | null | undefined;
@@ -205,14 +230,9 @@ export function useComposerPlus({
     [],
   );
 
-  const openForm = useCallback(
-    (command: PlusMenuCommand) => {
-      Keyboard.dismiss();
-      if (command === "poll") {
-        pollRef.current?.present();
-        return;
-      }
-      if (command === "points") return;
+  // Mounts a form on first use, then presents it.
+  const presentForm = useCallback(
+    (command: ChannelForm) => {
       setNow(new Date());
       if (mountedForms.has(command)) {
         formRefs[command].current?.present();
@@ -229,6 +249,24 @@ export function useComposerPlus({
     [channelId, mountedForms, formRefs],
   );
 
+  const openForm = useCallback(
+    (command: PlusMenuCommand) => {
+      Keyboard.dismiss();
+      if (command === "poll") {
+        pollRef.current?.present();
+        return;
+      }
+      // The Task row opens the picker (#5772); its New task opens the form.
+      if (command === "task") {
+        taskLinkRef.current?.present();
+        return;
+      }
+      if (command === "event") presentForm("event");
+      // Hours and points aren't offered on the phone (`PHONE_PLUS_COMMANDS`).
+    },
+    [presentForm],
+  );
+
   const openPlus = useCallback(() => {
     Keyboard.dismiss();
     plusRef.current?.present();
@@ -238,14 +276,33 @@ export function useComposerPlus({
     useCallback(() => {
       if (!channelId) return;
       return () => {
-        for (const ref of [plusRef, pollRef, eventRef, taskRef, hoursRef]) {
+        for (const ref of [
+          plusRef,
+          gifRef,
+          pollRef,
+          taskLinkRef,
+          eventRef,
+          taskRef,
+        ]) {
           ref.current?.dismiss();
         }
       };
     }, [channelId]),
   );
 
-  const { sendPoll, postTask, postHours, trackEventCard } = channel;
+  const { sendPoll, postTask, linkTask, trackEventCard, sendGif } = channel;
+  const openGif = useCallback(() => {
+    Keyboard.dismiss();
+    gifRef.current?.present();
+  }, []);
+  const pickGif = useCallback(
+    (gif: GifResult) => {
+      void sendGif(gifToSend(gif, gifs.provider)).then((result) => {
+        if (!result.ok) Alert.alert("Couldn't send the GIF", result.error);
+      });
+    },
+    [sendGif, gifs.provider],
+  );
   const postPollHere = useCallback(
     async (poll: Parameters<typeof sendPoll>[0]) => {
       const result = await sendPoll(poll);
@@ -258,10 +315,28 @@ export function useComposerPlus({
     (result: DispatchResult) => presentPostOutcome("task", result),
     [],
   );
-  const onHoursPosted = useCallback(
-    (result: DispatchResult) => presentPostOutcome("hours", result),
-    [],
+  const linkTaskHere = useCallback(
+    async (task: { id: string; title: string }) => {
+      let result: DispatchResult;
+      try {
+        result = await linkTask(task);
+      } catch {
+        // A throw is chat-core's cache bookkeeping, after the request went
+        // out: the card may be posted, so it reads as unconfirmed, as web's.
+        result = {
+          ok: true,
+          unconfirmed: true,
+          warning: TASK_LINK_UNCONFIRMED_WARNING,
+        };
+      }
+      if (result.ok) presentPostOutcome("link", result);
+      return result;
+    },
+    [linkTask],
   );
+  const canCreateTask = Array.isArray(granted)
+    ? canAll([...TASK_CREATE_PERMISSIONS], granted)
+    : false;
   const eventChat = useMemo(
     () =>
       channelId && trackEventCard
@@ -280,13 +355,34 @@ export function useComposerPlus({
         // connection; the connection pill says so.
         photoDisabledReason={offline ? "Reconnect first" : null}
         onPhoto={onPhoto}
+        // Search needs the network; a reply goes with typed text, as the
+        // forms' rows say.
+        onGif={gifs.available ? openGif : undefined}
+        gifDisabledReason={
+          offline ? "Reconnect first" : replying ? "Not while replying" : null
+        }
         onOpenForm={openForm}
       />
+      {gifs.available ? (
+        <GifPickerSheet
+          key={`gif-${key}`}
+          ref={gifRef}
+          provider={gifs.provider}
+          onPick={pickGif}
+        />
+      ) : null}
       <NewPollSheet
         key={`poll-${key}`}
         ref={pollRef}
         onPost={postPollHere}
         canCloseEarly={can("polls:create", granted)}
+      />
+      <TaskLinkSheet
+        key={`task-link-${key}`}
+        ref={taskLinkRef}
+        canCreate={canCreateTask}
+        onLink={linkTaskHere}
+        onNew={() => presentForm("task")}
       />
       {mountedForms.has("event") && eventChat ? (
         <SheetBoundary key={`event-${key}`} onError={() => dropForm("event")}>
@@ -305,16 +401,6 @@ export function useComposerPlus({
             now={now}
             postToChannel={postTask}
             onPosted={onTaskPosted}
-          />
-        </SheetBoundary>
-      ) : null}
-      {mountedForms.has("hours") ? (
-        <SheetBoundary key={`hours-${key}`} onError={() => dropForm("hours")}>
-          <LogHoursSheet
-            ref={hoursRef}
-            now={now}
-            postToChannel={postHours}
-            onPosted={onHoursPosted}
           />
         </SheetBoundary>
       ) : null}

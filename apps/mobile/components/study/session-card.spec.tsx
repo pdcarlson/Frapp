@@ -162,7 +162,7 @@ describe("SessionRow", () => {
       ),
     );
     expect(rendered).toContain("Folsom Library");
-    expect(rendered).toContain("2.1 hrs");
+    expect(rendered).toContain("2h 6m");
   });
 
   it("says a zero-award close earned nothing, instead of implying credit", () => {

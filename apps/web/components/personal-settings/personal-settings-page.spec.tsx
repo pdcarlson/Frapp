@@ -4,6 +4,11 @@ import { render, screen, within } from "@testing-library/react";
 const mocks = vi.hoisted(() => ({
   section: null as string | null,
   chapter: undefined as { name?: string } | undefined,
+  // `null` is a server with AI off (`useAiConsent`), the default.
+  aiConsent: null as Record<string, unknown> | null | undefined,
+  aiFetching: false,
+  // Failed attempts so far on the AI read, which the default retry repeats.
+  aiFailures: 0,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -11,8 +16,18 @@ vi.mock("next/navigation", () => ({
     get: (key: string) => (key === "section" ? mocks.section : null),
   }),
 }));
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  isFirstAiReadInFlight: (await importOriginal<typeof import("@repo/hooks")>())
+    .isFirstAiReadInFlight,
   useCurrentChapter: () => ({ data: mocks.chapter }),
+  useAiConsent: () => ({
+    data: mocks.aiConsent,
+    isPending: mocks.aiConsent === undefined,
+    fetchStatus: mocks.aiFetching ? "fetching" : "idle",
+    failureCount: mocks.aiFailures,
+  }),
+  aiAvailableFrom: (query: { data: unknown }) =>
+    query.data === undefined ? undefined : query.data !== null,
 }));
 // Each section has its own spec; here they are named stand-ins, so this file
 // is about which one the page mounts.
@@ -28,8 +43,17 @@ vi.mock("@/components/personal-settings/account-section", () => ({
 vi.mock("@/components/profile/blocked-members-card", () => ({
   BlockedMembersCard: () => <p>blocked members section</p>,
 }));
-vi.mock("@/components/profile/discord-history-card", () => ({
-  DiscordHistoryCard: () => <p>discord history section</p>,
+vi.mock("@/components/personal-settings/ai-section", () => ({
+  AiSection: () => <p>ai section</p>,
+}));
+vi.mock("@/components/personal-settings/read-receipts-section", () => ({
+  ReadReceiptsSection: () => <p>read receipts section</p>,
+}));
+vi.mock("@/components/linked-apps/linked-apps-section", () => ({
+  LinkedAppsSection: () => <p>linked apps section</p>,
+}));
+vi.mock("@/components/personal-settings/calendar-section", () => ({
+  CalendarSection: () => <p>calendar section</p>,
 }));
 
 import { PersonalSettingsPage } from "./personal-settings-page";
@@ -45,6 +69,25 @@ describe("PersonalSettingsPage (#3856)", () => {
   beforeEach(() => {
     mocks.section = null;
     mocks.chapter = { name: "Beta Theta Omega" };
+    mocks.aiConsent = null;
+    mocks.aiFetching = false;
+    mocks.aiFailures = 0;
+  });
+
+  it("holds the rail until the AI read answers, so no row is inserted after it draws", () => {
+    mocks.aiConsent = undefined;
+    mocks.aiFetching = true;
+    render(<PersonalSettingsPage />);
+    expect(screen.queryByRole("navigation", { name: "Settings" })).toBeNull();
+  });
+
+  it("stops holding once the AI read has failed once, rather than wait out its retries (#4504)", () => {
+    mocks.aiConsent = undefined;
+    mocks.aiFetching = true;
+    mocks.aiFailures = 1;
+    render(<PersonalSettingsPage />);
+    expect(rail()).toBeInTheDocument();
+    expect(within(rail()).queryByText("AI")).toBeNull();
   });
 
   it("groups the rail by what a setting belongs to, the chapter group by name", () => {
@@ -59,10 +102,11 @@ describe("PersonalSettingsPage (#3856)", () => {
     ).toEqual([
       "Notifications",
       "Appearance and chat",
+      "Linked apps",
+      "Calendar",
       "Account",
       "Chapter alerts",
       "Blocked members",
-      "Discord history",
     ]);
   });
 
@@ -85,7 +129,8 @@ describe("PersonalSettingsPage (#3856)", () => {
     ["account", "account section"],
     ["alerts", "chapter alerts section"],
     ["blocked", "blocked members section"],
-    ["discord", "discord history section"],
+    ["apps", "linked apps section"],
+    ["calendar", "calendar section"],
   ])("mounts only the section `?section=%s` names", (section, text) => {
     mocks.section = section;
     render(<PersonalSettingsPage />);
@@ -106,7 +151,44 @@ describe("PersonalSettingsPage (#3856)", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /cozy/i })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /compact/i })).toBeInTheDocument();
+    // The Read receipts switch sits under density (#5519).
+    expect(screen.getByText("read receipts section")).toBeInTheDocument();
   });
+
+  it("adds AI to My account only while the server has AI (#4308)", () => {
+    mocks.aiConsent = { answer: null };
+    mocks.section = "ai";
+    render(<PersonalSettingsPage />);
+    expect(screen.getByText("ai section")).toBeInTheDocument();
+    expect(
+      within(rail())
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual([
+      "Notifications",
+      "Appearance and chat",
+      "Linked apps",
+      "Calendar",
+      "Account",
+      "AI",
+      "Chapter alerts",
+      "Blocked members",
+    ]);
+  });
+
+  it.each([
+    ["off", null],
+    ["not known yet", undefined],
+  ])(
+    "has no AI row while AI is %s, and opens the default for it",
+    (_, data) => {
+      mocks.aiConsent = data;
+      mocks.section = "ai";
+      render(<PersonalSettingsPage />);
+      expect(screen.getByText("quiet hours section")).toBeInTheDocument();
+      expect(within(rail()).queryByRole("link", { name: "AI" })).toBeNull();
+    },
+  );
 
   it("falls back to Notifications for a section it does not have", () => {
     mocks.section = "constructor";
@@ -122,18 +204,25 @@ describe("personal settings sections", () => {
     ).toEqual([
       "/preferences",
       "/preferences?section=appearance",
+      "/preferences?section=apps",
+      "/preferences?section=calendar",
       "/preferences?section=account",
+      "/preferences?section=ai",
       "/preferences?section=alerts",
       "/preferences?section=blocked",
       "/preferences?section=invoices",
-      "/preferences?section=discord",
     ]);
   });
 
   it("resolves an unknown or missing section to the default", () => {
     expect(resolvePersonalSettingsSection(null)).toBe("notifications");
     expect(resolvePersonalSettingsSection("nope")).toBe("notifications");
-    expect(resolvePersonalSettingsSection("discord")).toBe("discord");
+  });
+
+  it("opens Linked apps for the retired Discord history address (#5407)", () => {
+    // A Discord sign-in started before the move still comes back to it.
+    expect(resolvePersonalSettingsSection("discord")).toBe("apps");
+    expect(resolvePersonalSettingsSection("constructor")).toBe("notifications");
   });
 
   it("hides My invoices while dues is off for the beta, and opens the default for it", () => {

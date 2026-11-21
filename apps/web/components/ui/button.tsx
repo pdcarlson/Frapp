@@ -12,7 +12,7 @@ import { FOCUS_RING } from "@/components/ui/focus";
  * shadcn scaffold it replaced:
  *
  * 1. **There is no `outline` variant.** Under Signet the outlined button IS
- *    Secondary — card fill with the stronger `--input` hairline. The scaffold's
+ *    Secondary — card fill with the `--control-edge` edge (3:1, #4389). The scaffold's
  *    `outline` (transparent fill over `bg-background`) painted a button DARKER
  *    than the card it sat on, inverting the elevation rule that carries depth
  *    on this surface (foundations.md §10). Keeping both names would have left
@@ -70,7 +70,7 @@ const buttonVariants = cva(
         // `components/shared/elevation-contrast.spec.ts`, and
         // `app/global-error.tsx` hand-copies this string class for class.
         secondary:
-          "border-input bg-card font-semibold text-foreground hover:bg-card-hover",
+          "border-control-edge bg-card font-semibold text-foreground hover:bg-card-hover",
         tinted:
           "border-accent-border bg-accent-subtle font-bold text-accent-text hover:bg-accent-subtle-hover",
         // The text's own tone, lit only on hover (2026-11-05). Ghost used to
@@ -81,9 +81,18 @@ const buttonVariants = cva(
         // variant, which was this recipe under a second name.
         ghost:
           "font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground",
+        // A page's one main action (Paul, 2026-11-19, picked on a decision
+        // card over a filled pill): accent outline and accent text, so it sits
+        // level with the search and filter buttons beside it in the page
+        // header and the page's content is what the eye lands on. Every "New
+        // ..." button (`new-button.tsx`) and the main actions that keep their
+        // own verb (Log service, Upload, Adjust points) draw it. It was Events'
+        // New event's look first (#5560).
+        action:
+          "border-primary/35 font-semibold text-primary hover:bg-primary/10",
         // Tint, never a solid red fill (§3): `--destructive-tint` (13%) at
         // rest, `--destructive-tint-hover` (20%) on hover. The label is the
-        // AA-lifted tone: `--destructive` on its own tint measures 3.82:1 over
+        // AA-lifted tone: `--destructive` on its own tint measures 3.79:1 over
         // `--popover`, which is what a destructive button in a sheet or dialog
         // actually sits on.
         destructive:

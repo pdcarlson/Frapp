@@ -11,7 +11,7 @@ import { afterScrubber, sentryMarkerFrom } from "../src/sentry-event";
  * any distinct-id tag before calling this.
  */
 
-export interface AnonymousSentryEvent {
+interface AnonymousSentryEvent {
   event_id?: unknown;
   release?: unknown;
   transaction?: unknown;

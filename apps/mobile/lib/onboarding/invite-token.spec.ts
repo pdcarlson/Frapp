@@ -1,14 +1,24 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  clearRememberedInviteThen,
   consumeRememberedInviteToken,
   extractInviteToken,
   extractInviteTokenFromQuery,
+  hydrateRememberedInvite,
+  JOIN_THEN_MS,
+  peekRememberedInviteThen,
+  peekRememberedInviteToken,
+  REMEMBER_INVITE_MS,
   rememberInviteToken,
+  resetRememberedInviteForTests,
   takeInviteTokenFromLink,
 } from "./invite-token";
 
 afterEach(() => {
   consumeRememberedInviteToken();
+  resetRememberedInviteForTests();
+  vi.mocked(AsyncStorage.getItem).mockResolvedValue(null);
 });
 
 describe("extractInviteToken", () => {
@@ -37,6 +47,64 @@ describe("rememberInviteToken", () => {
     rememberInviteToken(null);
     expect(consumeRememberedInviteToken()).toBe("first");
     expect(consumeRememberedInviteToken()).toBeNull();
+  });
+});
+
+describe("the remembered invite, across a sign-in and a relaunch (#5625)", () => {
+  const KEY = "frapp.mobile.pending-invite";
+
+  it("keeps it on the phone, and forgets it there once taken", async () => {
+    rememberInviteToken("tok-1", "join");
+    await Promise.resolve();
+    expect(AsyncStorage.setItem).toHaveBeenLastCalledWith(
+      KEY,
+      expect.stringContaining('"token":"tok-1"'),
+    );
+    consumeRememberedInviteToken();
+    await Promise.resolve();
+    expect(AsyncStorage.removeItem).toHaveBeenLastCalledWith(KEY);
+  });
+
+  it("reads one a past run left, with its mark", async () => {
+    const now = Date.now();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce(
+      JSON.stringify({ token: "tok-2", then: "join", at: now - 60_000 }),
+    );
+    await hydrateRememberedInvite(now);
+    expect(peekRememberedInviteToken()).toBe("tok-2");
+    expect(peekRememberedInviteThen(now)).toBe("join");
+  });
+
+  it("drops one older than an invite lives", async () => {
+    const now = Date.now();
+    vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce(
+      JSON.stringify({
+        token: "tok-3",
+        then: null,
+        at: now - REMEMBER_INVITE_MS - 1,
+      }),
+    );
+    await hydrateRememberedInvite(now);
+    expect(peekRememberedInviteToken()).toBeNull();
+  });
+
+  it("lets an invite remembered in this run win over the stored one", async () => {
+    vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce(
+      JSON.stringify({ token: "stale", then: null, at: Date.now() }),
+    );
+    rememberInviteToken("fresh");
+    await hydrateRememberedInvite();
+    expect(peekRememberedInviteToken()).toBe("fresh");
+  });
+
+  it("lets the card's mark lapse, and clears it once acted on", () => {
+    rememberInviteToken("tok-4", "join");
+    expect(peekRememberedInviteThen()).toBe("join");
+    expect(peekRememberedInviteThen(Date.now() + JOIN_THEN_MS + 1)).toBeNull();
+    clearRememberedInviteThen();
+    expect(peekRememberedInviteThen()).toBeNull();
+    // The invite itself stays until it is joined or declined.
+    expect(peekRememberedInviteToken()).toBe("tok-4");
   });
 });
 

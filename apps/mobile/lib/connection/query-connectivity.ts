@@ -11,7 +11,7 @@
  * - `components/state-block.tsx` — "`ErrorState` takes an explicit `onRetry`
  *   because … nothing wires `onlineManager`. Without a retry control a blip at
  *   launch leaves a screen dead until a force-quit."
- * - `app/(app)/(tabs)/index.tsx` and `app/(app)/(tabs)/events.tsx` — the same reasoning, in
+ * - `app/(app)/(tabs)/index.tsx` and `app/(app)/events.tsx` — the same reasoning, in
  *   full, above their retry buttons.
  *
  * With both managers wired, `refetchOnReconnect` (a TanStack default) starts

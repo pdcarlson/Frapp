@@ -1,4 +1,5 @@
 import { SupabaseMemberRepository } from './supabase-member.repository';
+import { runWithRequestReads } from '../request-reads';
 import {
   CHAPTER_A,
   CHAPTER_B,
@@ -136,6 +137,33 @@ describe('SupabaseMemberRepository — tenant scope', () => {
     });
   });
 
+  it('setRoleIds passes the chapter and the read value to the RPC, and answers null when it wrote nothing', async () => {
+    harness = createTenantHarness({
+      tables: {
+        members: [
+          inA({ id: MEMBER_A, user_id: USER_SHARED, role_ids: [] }),
+          inB({ id: MEMBER_B, user_id: USER_SHARED, role_ids: [] }),
+        ],
+      },
+      rpc: { set_member_role_ids: { data: [] } },
+    });
+    repo = new SupabaseMemberRepository(harness.client);
+
+    // #4830: the compare-and-set runs inside SQL, so `p_chapter_id` and
+    // `p_expected` are all a reviewer sees of its scope and its condition.
+    const written = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.setRoleIds(CHAPTER_B, MEMBER_B, ['held'], ['held', 'given']),
+    );
+
+    expect(written).toBeNull();
+    expect(harness.rpcCalls[0].args).toEqual({
+      p_chapter_id: CHAPTER_B,
+      p_member_id: MEMBER_B,
+      p_expected: ['held'],
+      p_role_ids: ['held', 'given'],
+    });
+  });
+
   describe('deliberately unscoped surfaces', () => {
     it('findByUser spans chapters, because multi-chapter membership is the feature', async () => {
       const memberships = await repo.findByUser(USER_SHARED);
@@ -157,6 +185,45 @@ describe('SupabaseMemberRepository — tenant scope', () => {
       expect(foreign?.chapter_id).toBe(CHAPTER_A);
     });
   });
+
+  // #5627: the join is announced on the request that turned the flag on, so
+  // only that one may answer `changed`.
+  it('completeOnboarding answers changed once, then reads the finished row', async () => {
+    const first = await repo.completeOnboarding(MEMBER_A);
+    const second = await repo.completeOnboarding(MEMBER_A);
+
+    expect(first.changed).toBe(true);
+    expect(first.member.has_completed_onboarding).toBe(true);
+    expect(second.changed).toBe(false);
+    expect(second.member.has_completed_onboarding).toBe(true);
+    // The other chapter's membership of the same user is untouched.
+    expect((await repo.findById(MEMBER_B))?.has_completed_onboarding).toBe(
+      false,
+    );
+  });
+
+  // An app open's GET requests join one membership read (#3752); a request
+  // that may write reads its own.
+  it.each([
+    ['GET', 1],
+    ['POST', 2],
+  ])(
+    'findByUserAndChapter in two %s requests at once makes %i read(s)',
+    async (method, reads) => {
+      const from = jest.spyOn(harness.client, 'from');
+      const member = (chapter: string) =>
+        runWithRequestReads(String(method), () =>
+          repo.findByUserAndChapter(USER_SHARED, chapter),
+        );
+
+      const [a, b] = await Promise.all([member(CHAPTER_B), member(CHAPTER_B)]);
+
+      expect(from).toHaveBeenCalledTimes(Number(reads));
+      expect(a?.id).toBe(MEMBER_B);
+      expect(b?.id).toBe(MEMBER_B);
+      expect(a).not.toBe(b);
+    },
+  );
 });
 
 /**

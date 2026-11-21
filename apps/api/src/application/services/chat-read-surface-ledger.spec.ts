@@ -114,6 +114,10 @@ const CHANNEL_METADATA: Entry = {
   status: 'no-foreign-content',
   why: 'Channel or category metadata; no message content. Membership is not hidden by a block (the Directory row), and refusing a DM because of one would be an oracle.',
 };
+const OWN_FORM_ANSWERS: Entry = {
+  status: 'no-foreign-content',
+  why: "The caller's own answers to a form card (#3926 step 3); nobody else's are reachable.",
+};
 const OFFICER_MODERATION: Entry = {
   status: 'not-hidden',
   why: '`channels:manage` moderation. "A personal block must not blind an officer acting in their role."',
@@ -125,6 +129,7 @@ const OFFICER_MODERATION: Entry = {
  */
 const CHAT_CONTROLLERS = [
   'ChatController',
+  'ChatFormController',
   'ChatBookmarkController',
   'ChatReportController',
   'ChatBlockController',
@@ -189,6 +194,10 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: "Stamps the caller's own read cursor.",
   },
+  ChatController_markMessageUnread_v1: {
+    status: 'no-foreign-content',
+    why: "Moves the caller's own read cursor back (#3723); answers with that receipt only.",
+  },
 
   // ── Preferences ────────────────────────────────────────────────────
   ChatController_getChannelNotificationPreferences_v1: OWN_PREFERENCES,
@@ -241,6 +250,14 @@ const HTTP_LEDGER: Record<string, Entry> = {
       test: 'refuses to hand out URLs for a message whose sender the caller has blocked',
     },
   },
+  // #5667: the batch form of the route above, one request per message list.
+  ChatController_listMessagesAttachments_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_ATTACHMENT_SERVICE_SPEC,
+      test: 'withholds the files of a sender the caller has blocked, and signs nothing for them',
+    },
+  },
   ChatController_resolveAuthorAvatars_v1: {
     status: 'not-hidden',
     why: 'Imported archive authors only (`sender_id: null`). Blocks are keyed on `users.id`, so there is nobody to have blocked.',
@@ -249,9 +266,29 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: "Returns the caller's own message.",
   },
+  // #4864: the caller's own forward, carrying a copy of someone else's
+  // message, which is withheld when the caller blocked its author.
+  ChatController_forwardMessage_v1: {
+    status: 'masked',
+    proof: {
+      spec: CHAT_SERVICE_SPEC,
+      test: 'withholds the copy in its answer when the caller blocked the author',
+    },
+  },
   ChatController_editMessage_v1: {
     status: 'no-foreign-content',
     why: "Sender-only; returns the edited message, which is the caller's own.",
+  },
+  // #3926: its creator's own sign-up card, or a `channels:manage` holder
+  // closing anyone's, as Close poll is.
+  ChatController_closeCard_v1: OFFICER_MODERATION,
+  ChatFormController_getOwnResponse_v1: OWN_FORM_ANSWERS,
+  ChatFormController_saveResponse_v1: OWN_FORM_ANSWERS,
+  // #3926 step 4: every member's answers, for the form's creator only. A
+  // responder the creator blocked stays listed, as a vote stays counted.
+  ChatFormController_getResponses_v1: {
+    status: 'not-hidden',
+    why: "A form's answers are written to its creator; leaving out a blocked responder would misreport who answered. Spec: README § Report and block, the form answers row.",
   },
   ChatController_deleteMessage_v1: {
     status: 'no-foreign-content',
@@ -361,10 +398,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
     status: 'no-foreign-content',
     why: 'Returns nothing.',
   },
-  PollController_close_v1: {
-    status: 'no-foreign-content',
-    why: "Creator-only; returns the caller's own poll.",
-  },
+  // Its creator's own poll, or (#4046) a `channels:manage` holder closing
+  // anyone's, which is moderation as pinning is.
+  PollController_close_v1: OFFICER_MODERATION,
   PollController_listPolls_v1: {
     status: 'masked',
     proof: {
@@ -403,7 +439,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
   },
   ActivityController_getActivity_v1: {
     // Its poll rows are chat (a card's question, from a channel the caller
-    // can read), and masked: a blocked author's poll is left out. Its other
+    // can read), and masked: a blocked author's poll is left out. Its
+    // reminder rows (#4957) quote a chat message and are masked to the
+    // timeline's tombstone (`chat-reminder.service.spec.ts`). Its other
     // rows are chapter records carrying text a member wrote (a task title, a
     // service entry's description, an event name), which a block does not
     // hide (#2498), as on the activity feed above.
@@ -485,13 +523,13 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
     {
       creates: 1,
       status: 'no-foreign-content',
-      why: "Select-own only: the caller's own preferences.",
+      why: "Dropped by 20261117174649 (#4839): its `users` subselect never matched, and no client reads the table, so it is default-deny and only the API reads it, as service_role. When it existed it was select-own only: the caller's own preferences.",
     },
   'realtime.messages realtime_messages_scoped_select': {
     creates: 2,
     status: 'open',
     issues: [2725],
-    why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Neither carries message content, and no client renders chat-topic presence (the push worker reads it). The one thing drawn is the anonymous typing indicator, and both clients drop a blocked member's `typing` from it (`visibleTypingUsers`, #2496). Open because that rule trusts the payload's client-written `userId`, which the insert policy does not check: a modified client can put another id in it (#2725).",
+    why: "Authorizes Broadcast and Presence on `chat:channel:<id>`. Neither carries message content, and no client renders chat-topic presence (the push worker reads it). The one thing drawn is the typing indicator, which names the typist from that `userId` (#4325), and both clients drop a blocked member's `typing` from it (`visibleTypingUsers`, #2496). Open because that rule trusts the payload's client-written `userId`, which the insert policy does not check: a modified client can put another id in it, and so another member's name on the line (#2725).",
     proof: {
       clientSpec: 'packages/chat-core/src/realtime-manager.spec.ts',
       test: "a blocked member's typing broadcast leaves the indicator empty",
@@ -566,6 +604,43 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 1,
     entries: [PUSH_LEDGER['chat-push-worker (chat_messages INSERT)']],
   },
+  // A reminder the member set on a chat message (#4957): its push quotes the
+  // message, unless the member has since blocked its author.
+  'application/workers/chat-reminder-sweep.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'masked',
+        proof: {
+          spec: 'application/workers/chat-reminder-sweep.service.spec.ts',
+          test: 'does not quote a blocked author, nor tie the row to the message an edit would rewrite it from',
+        },
+      },
+    ],
+  },
+  // A reminder the member set on a Coming up date in minutes (#5672): its
+  // push quotes the date's words, which an officer wrote in the minutes.
+  'application/workers/meeting-date-reminder-sweep.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
+  // The weekly recap push (#4985): the member's own figures from last week,
+  // under the chapter's name.
+  'application/workers/activity-recap-push.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: "The member's own counts from last week, titled with the chapter name. No member-written text.",
+      },
+    ],
+  },
+  // One push per batch of AI suggestions (#4309): `notifyBatch` and its
+  // `notifyMembers`. Titled with the meeting or event name an officer wrote.
+  'application/services/ai-suggestion.service.ts': {
+    calls: 2,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/billing.service.ts': {
     calls: 4,
     entries: [
@@ -588,11 +663,11 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     ],
   },
   'application/services/invite.service.ts': {
-    calls: 2,
+    calls: 3,
     entries: [
       {
         status: 'not-hidden',
-        why: 'A push naming the member who joined, and a system DM naming the member who accepted. A system message that merely names a member is not hidden.',
+        why: 'Notifications naming the member who joined (to the inviter and the officer roster) and the member who asked for a new invite (to its sender) (#5625). A notice that merely names a member is not hidden.',
       },
     ],
   },
@@ -613,8 +688,30 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
       },
     ],
   },
+  // Scheduled messages (#4956): tells the author their own message did not
+  // post. It names the channel only when the failure isn't lost access, so
+  // never one the author can no longer see; nothing another member wrote.
+  'application/services/chat-scheduled-message.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: "Tells the author their own scheduled message didn't post. A lost-access failure names no channel; any other names the channel the author can still post in. It quotes nothing another member wrote.",
+      },
+    ],
+  },
+  // Absence excuses (#3735): the receiver's push quotes the reason the
+  // member wrote for them, and the decision and reminder name the event.
+  // A declined excuse sent again (#5115) pushes the same reason again.
+  'application/services/event-excuse.service.ts': {
+    calls: 6,
+    entries: [MEMBER_TEXT],
+  },
+  // Two hand a written row to the announcement emitters; the third (#4620)
+  // asks members whose excuse a series edit dropped to send it again, naming
+  // the event.
   'application/services/event-series.service.ts': {
-    calls: 2,
+    calls: 3,
     entries: [MEMBER_TEXT],
   },
   'application/services/event.service.ts': {
@@ -625,6 +722,52 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 3,
     entries: [MEMBER_TEXT],
   },
+  // "Minutes posted" names the meeting's event (#4312): the event's name an
+  // officer wrote. The minutes' own text is never in the notification.
+  // And "Meeting recording uploaded" (#712), which names the same event and
+  // nothing of the recording.
+  'application/services/meeting.service.ts': {
+    calls: 3,
+    entries: [MEMBER_TEXT],
+  },
+  // The week's one "this time last year" push to the president (#3930).
+  // Names last year's event or task as an officer titled it.
+  'application/services/last-year-suggestions.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
+  // "Minutes drafted" / "Minutes not drafted" to the officer who asked for
+  // the draft (#5562): names the meeting's event, never the notes or the
+  // draft.
+  'application/services/meeting-draft.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
+  // "Take notes" to a member added as a note-taker (#4935): names the
+  // meeting's event, never anyone's notes.
+  'application/services/meeting-notes.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
+  // "Minutes requested" to whoever is writing them (#5471): names the
+  // meeting's event and the members who asked, never the minutes.
+  'application/services/meeting-minutes-request.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
+  // The hand-off to `MeetingService.notifyRecordingUploaded` (#712).
+  'application/services/meeting-recording.service.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
+  // Tasks up for grabs (2026-11-18): "Up for grabs" to everyone it is open
+  // to, "<name> claimed" to whoever posted it, and an officer's hand-off
+  // through TaskService's assignment push. Each names the task as an officer
+  // titled it, and the claimer's name.
+  'application/services/open-task.service.ts': {
+    calls: 5,
+    entries: [MEMBER_TEXT],
+  },
   'application/services/points.service.ts': {
     calls: 1,
     entries: [MEMBER_TEXT],
@@ -633,9 +776,26 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 2,
     entries: [MEMBER_TEXT],
   },
-  'application/services/task.service.ts': { calls: 8, entries: [MEMBER_TEXT] },
+  // The one `notifyUser` behind TaskService's and OpenTaskService's pushes
+  // (`notifyQuietly`, 2026-11-18); its callers above say what each push
+  // names: the task as an officer titled it, and a member's name.
+  'application/services/task-push.ts': {
+    calls: 1,
+    entries: [MEMBER_TEXT],
+  },
+  'application/services/task.service.ts': {
+    // +1 for a task for everyone (#4295 step 3): each copy's assignment push.
+    // +3 for a following group (#5473): "finished" to its members, the
+    // review push to one who can confirm, as the creator's names the task.
+    calls: 12,
+    entries: [MEMBER_TEXT],
+  },
   'application/workers/scheduled-jobs.service.ts': {
-    calls: 15,
+    // +3 for repeating tasks (#5119): each new copy's assignment push and the
+    // "stopped repeating" notice, both titled with the task as task pushes are.
+    // +1 for a group task's following group (#5473): its overdue line, once
+    // for the group, titled with the task.
+    calls: 19,
     entries: [MEMBER_TEXT],
   },
   'application/workers/discord-import-worker.service.ts': {
@@ -658,8 +818,6 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
 const API_SUBSCRIPTIONS: Record<string, string> = {
   chat_messages:
     'chat-push-worker. Its audience drops blockers (PUSH_LEDGER above).',
-  chapter_audit_log:
-    'chat-bridge-worker. Posts into #chapter-audit as the system actor, which cannot be blocked.',
 };
 
 /**
@@ -677,6 +835,10 @@ const BUCKET_WRITERS = new Set([
   '20261105230000_backwork_bucket_50mb.sql',
   // Same: only `backwork`'s `file_size_limit`, raised to 100 MB.
   '20261106153000_backwork_bucket_100mb.sql',
+  // Creates the private `meeting-audio` bucket (#712); never `chat`.
+  '20261112210000_meeting_recordings.sql',
+  // Creates the private `tasks` bucket for task photos (#4565); never `chat`.
+  '20261113040005_task_photos.sql',
 ]);
 
 // ── Readers ──────────────────────────────────────────────────────────────

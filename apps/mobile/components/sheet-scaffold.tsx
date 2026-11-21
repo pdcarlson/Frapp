@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useImperativeHandle,
   useRef,
   type ForwardedRef,
   type ReactNode,
@@ -22,7 +23,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { useBackToClose } from "@/lib/overlay";
 import { fieldTypeRole, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { CloseGlyph } from "@/components/control-glyphs";
-import { IconButton } from "@/components/icon-button";
+import { ICON_BUTTON_HIT_SLOP, IconButton } from "@/components/icon-button";
 
 /**
  * The chrome every Signet bottom sheet draws: the grabber, the title row (with
@@ -119,12 +120,40 @@ export function SheetBackToClose({ onClose }: { onClose: () => void }) {
  * `rgba(0,0,0,.55)`, and now passes this one too.
  */
 export function SheetScrim(props: BottomSheetBackdropProps) {
+  return <Scrim {...props} opacity={SCRIM_OPACITY} />;
+}
+
+/**
+ * How dark the long-press message menu's scrim is: a light veil, not the
+ * drawn .55. The menu takes the keyboard's place under the message it acts on
+ * (#5479), so the message has to read through it. It isn't 0: iOS hit-tests
+ * past a view whose alpha is under 0.01 (`RCTViewComponentView`), and a tap
+ * above the menu has to land on the scrim and close it, as a tap away from
+ * the keyboard does, rather than on the thread underneath.
+ */
+const LIGHT_SCRIM_OPACITY = 0.15;
+
+/**
+ * The long-press message menu's scrim (`message-actions-sheet.tsx`), the
+ * one sheet that must leave the screen behind it readable. Every other sheet
+ * passes `SheetScrim`, and `lib/sheet-scrim.spec.ts` holds this one to that
+ * file.
+ */
+export function SheetLightScrim(props: BottomSheetBackdropProps) {
+  return <Scrim {...props} opacity={LIGHT_SCRIM_OPACITY} />;
+}
+
+/** The scrim both of the above draw, at the darkness each passes. */
+function Scrim({
+  opacity,
+  ...props
+}: BottomSheetBackdropProps & { opacity: number }) {
   return (
     <BottomSheetBackdrop
       {...props}
       appearsOnIndex={0}
       disappearsOnIndex={-1}
-      opacity={SCRIM_OPACITY}
+      opacity={opacity}
       // Named for what a tap on it does, rather than gorhom's default
       // "Bottom sheet backdrop". A screen reader's sure way out of a sheet
       // with no Cancel is Android back or VoiceOver's escape
@@ -158,12 +187,19 @@ export function SheetGrabber() {
  * so a Cancel or Done there is a second close button
  * (`spec/ui/design-system/components.md` § Chrome weight). An action menu
  * (the message long-press) draws no SheetHeader at all.
+ *
+ * `action` puts the form's commit in the row, opposite the title, as Apple
+ * Calendar's new event sheet puts Add (#5561): a small accent button rather
+ * than a full-width one at the foot, so it stays in reach however short or
+ * long the form runs. The New event sheet uses it; web's event form puts
+ * Create in its header the same way.
  */
 export function SheetHeader({
   title,
   onCancel,
   cancelLabel = "Cancel",
   cancelDisabled = false,
+  action,
 }: {
   title: string;
   onCancel?: () => void;
@@ -175,13 +211,24 @@ export function SheetHeader({
    * failed. A swipe still closes such a sheet, keeping the draft.
    */
   cancelDisabled?: boolean;
+  action?: {
+    label: string;
+    onPress: () => void;
+    disabled?: boolean;
+    accent: string;
+    onAccent: string;
+    accessibilityLabel?: string;
+    accessibilityHint?: string;
+  };
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
   return (
     <View style={styles.headerRow}>
-      <Text style={styles.title}>{title}</Text>
+      <Text style={[styles.title, action ? styles.titleFill : null]}>
+        {title}
+      </Text>
       {/* `hitSlop` meets the 44pt floor while keeping components.md §9's compact
           visual — the #939 ruling. */}
       {onCancel ? (
@@ -199,6 +246,27 @@ export function SheetHeader({
             ]}
           >
             {cancelLabel}
+          </Text>
+        </Pressable>
+      ) : null}
+      {action ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={action.accessibilityLabel}
+          accessibilityHint={action.accessibilityHint}
+          accessibilityState={{ disabled: !!action.disabled }}
+          disabled={action.disabled}
+          onPress={action.onPress}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          style={({ pressed }) => [
+            styles.headerAction,
+            { backgroundColor: action.accent },
+            action.disabled ? styles.primaryButtonDisabled : null,
+            pressed && !action.disabled ? styles.primaryButtonPressed : null,
+          ]}
+        >
+          <Text style={[styles.primaryLabel, { color: action.onAccent }]}>
+            {action.label}
           </Text>
         </Pressable>
       ) : null}
@@ -240,7 +308,9 @@ export function useTallSheetProps() {
  * The close control a tall sheet's header carries: the app-wide `CloseGlyph`
  * in the shared `IconButton` (`components.md` § Icon-only actions), muted,
  * whose slop reaches the 44pt touch floor (`foundations.md` § 9). A word
- * ("Done", "Cancel") would repeat what the X already says (`components.md`
+ * ("Done", "Cancel") would repeat what the X already says, except on a tall
+ * step over a form, which closes with Done (`TallSheetHeader`'s `doneAccent`;
+ * `components.md`
  * § Surface size: a big surface closes with an X).
  */
 export function SheetCloseButton({
@@ -260,15 +330,23 @@ export function SheetCloseButton({
 
 /**
  * A tall sheet's header row: an optional title and the close X. A record
- * sheet passes no title, because the record's own name heads the body (the
- * member sheet used to say "Member" above "Marcus Ellison").
+ * sheet passes no title, because the record's own name heads the body.
  */
 export function TallSheetHeader({
   title,
   onClose,
+  doneAccent,
 }: {
   title?: string;
   onClose: () => void;
+  /**
+   * When set, closes with a "Done" word in this accent instead of the X, for a tall
+   * sheet stacked over a form to set one of its fields (Who's coming over New
+   * event): closing it returns to the form with the field filled in, so it
+   * reads as finishing a step, not leaving (`components.md` § Surface size,
+   * owner 2026-11-07, #3706).
+   */
+  doneAccent?: string;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -279,7 +357,19 @@ export function TallSheetHeader({
           {title}
         </Text>
       ) : null}
-      <SheetCloseButton onPress={onClose} />
+      <View style={styles.headerActions}>
+        {doneAccent ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={onClose}
+            hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
+          >
+            <Text style={[styles.done, { color: doneAccent }]}>Done</Text>
+          </Pressable>
+        ) : (
+          <SheetCloseButton onPress={onClose} />
+        )}
+      </View>
     </View>
   );
 }
@@ -351,8 +441,13 @@ export function SheetPrimaryButton({
  * Which visit of a sheet is on screen. Any sheet whose save can settle after
  * the member closed it uses it, and so does one that something outside it can
  * dismiss whether or not it is up (the message menu, when its message is
- * deleted: #3795); search for the hook to find them. Sheets that still dismiss
- * unguarded after a write are tracked in #3405.
+ * deleted: #3795); search for the hook to find them, rather than a list here
+ * that would drift. A sheet that closes only on the member's own press
+ * (Settings → Blocked members, whose unblock leaves it open) needs only
+ * `useSheetClose`. #3405 moved the ones it found closing unguarded after a
+ * write onto it (Chapter accent, Chat background, Schedule message, the member
+ * sheet's Remove and Message); #5059 found no others. A sheet its host
+ * dismisses from outside takes {@link useGuardedSheetRef}, which wraps this.
  *
  * Wire `onAnimate` and call `markClosed` first thing in the modal's
  * `onDismiss`. Then:
@@ -377,7 +472,7 @@ export function SheetPrimaryButton({
  *   can be deleted as it opens: #3795); a Cancel inside a sheet can't be
  *   pressed before the sheet is drawn.
  */
-export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
+export function useSheetVisit(ref: SheetRef) {
   const presented = useRef(false);
   const closes = useRef(0);
   const opening = useRef(false);
@@ -438,6 +533,85 @@ export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
 }
 
 /**
+ * {@link useSheetVisit} for a sheet its host closes from outside: a blur, a
+ * channel switch, a record that went away. The host keeps calling
+ * `ref.current?.dismiss()` whether or not the sheet is up, and that call is
+ * what wedges gorhom 5.2 (#4229, #5059), so the guard sits on the ref the host
+ * holds instead of at each of its call sites, where the next one would forget
+ * it.
+ *
+ * Give gorhom's modal `modalRef`, wire `onAnimate`, and call `markClosed`
+ * first thing in its `onDismiss`. The host's ref then gets a handle whose
+ * `present()` calls `willPresent()` first and whose `dismiss()` is the visit's
+ * guarded one; the rest go to the modal unchanged. Inside the sheet, use the
+ * returned visit (or `useSheetClose(ref)`, which now lands on the guard too).
+ */
+export function useGuardedSheetRef(ref: SheetRef) {
+  const modalRef = useRef<BottomSheetModal>(null);
+  const visit = useSheetVisit(modalRef);
+  const { willPresent, dismiss } = visit;
+  useImperativeHandle(
+    ref,
+    (): BottomSheetModal => ({
+      present: (data) => {
+        willPresent();
+        modalRef.current?.present(data);
+      },
+      dismiss: () => dismiss(),
+      snapToIndex: (index, config) =>
+        modalRef.current?.snapToIndex(index, config),
+      snapToPosition: (position, config) =>
+        modalRef.current?.snapToPosition(position, config),
+      expand: (config) => modalRef.current?.expand(config),
+      collapse: (config) => modalRef.current?.collapse(config),
+      close: (config) => modalRef.current?.close(config),
+      forceClose: (config) => modalRef.current?.forceClose(config),
+    }),
+    [willPresent, dismiss],
+  );
+  return { modalRef, ...visit };
+}
+
+/** The handle {@link useGuardedSheetHandle} gives a sheet's host. */
+export interface GuardedSheetHandle {
+  present: () => void;
+  /** Closes the sheet, only while it is up (`useSheetVisit`, #3795). */
+  dismiss: () => void;
+}
+
+/**
+ * {@link useGuardedSheetRef} for a sheet whose host holds a plain
+ * `{ present, dismiss }` handle rather than gorhom's modal (the message menu's
+ * Forward and Remind sheets, #5173): `present()` runs `onPresent` (a sheet's
+ * reset for a fresh visit), then `willPresent()`, then the modal's own
+ * `present()`; `dismiss()` is the visit's guarded one. Wire the returned
+ * `modalRef`, `onAnimate` and `markClosed` as {@link useGuardedSheetRef} says.
+ * Keep `onPresent` stable (a `useCallback`), or the host's handle is rebuilt
+ * on every render.
+ */
+export function useGuardedSheetHandle(
+  ref: ForwardedRef<GuardedSheetHandle>,
+  { onPresent }: { onPresent?: () => void } = {},
+) {
+  const modalRef = useRef<BottomSheetModal>(null);
+  const visit = useSheetVisit(modalRef);
+  const { willPresent, dismiss } = visit;
+  useImperativeHandle(
+    ref,
+    (): GuardedSheetHandle => ({
+      present: () => {
+        onPresent?.();
+        willPresent();
+        modalRef.current?.present();
+      },
+      dismiss,
+    }),
+    [onPresent, willPresent, dismiss],
+  );
+  return { modalRef, ...visit };
+}
+
+/**
  * The text field a sheet form draws (s15's profile edit, s19's new task, s20's
  * log, s21's upload), as plain style objects for the caller's own
  * `StyleSheet.create`, so a sheet can add its own layout to `field`. Focus
@@ -457,7 +631,7 @@ export function sheetFieldStyles(tokens: SignetTokens, accent: string) {
     field: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.input,
+      borderColor: tokens.color.border.control,
       backgroundColor: tokens.color.surface.surface1,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
@@ -519,10 +693,21 @@ function createStyles(tokens: SignetTokens) {
     headerRowEnd: {
       justifyContent: "flex-end",
     },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      // Each icon button's slop reaches 12pt past its box; this keeps an
+      // action's slop clear of the close's, so a tap on the ⋯ never lands on
+      // the X (`icon-button.tsx`).
+      gap: ICON_BUTTON_HIT_SLOP * 2,
+    },
     title: {
       // TODO-DESIGN: Canvas draws the sheet title at 19px/700; `title` is 18/600.
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
+    },
+    done: {
+      ...typeRole(tokens.typography.role.label),
     },
     cancel: {
       ...typeRole(tokens.typography.role.label),
@@ -530,6 +715,21 @@ function createStyles(tokens: SignetTokens) {
     },
     cancelDisabled: {
       opacity: 0.5,
+    },
+    titleFill: {
+      flex: 1,
+    },
+    // A header's commit, not the full-width Primary at a form's foot: drawn
+    // at 32, the height mobile's filter chips draw at the Chip step
+    // (foundations.md §9), and `hitSlop` reaches the 44pt floor.
+    headerAction: {
+      minHeight: 32,
+      minWidth: 72,
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.control,
+      alignItems: "center",
+      justifyContent: "center",
+      marginLeft: tokens.spacing.md,
     },
     primaryButton: {
       marginTop: tokens.spacing.sm,

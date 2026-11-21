@@ -5,13 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  isAllowedUploadExtension,
-  isAllowedUploadMime,
-  isWithinUploadSizeLimit,
-  MAX_UPLOAD_LABEL,
-  isDecodableThumbhash,
-} from '@repo/validation';
+import { isAllowedUploadMime, isDecodableThumbhash } from '@repo/validation';
 import {
   CHAT_MESSAGE_ATTACHMENT_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
@@ -33,13 +27,16 @@ import type {
   ChatMessageAttachment,
   ChatMessageAttachmentWithUrl,
 } from '#domain/entities/chat.entity';
+import {
+  CHAT_SCHEDULED_MESSAGE_REPOSITORY,
+  type IChatScheduledMessageRepository,
+} from '#domain/repositories/chat-scheduled-message.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import {
   CHAT_ARCHIVE_BUCKET,
   CHAT_PREVIEW_CONTENT_TYPE,
   chatPreviewPathFor,
-  safeObjectFilename,
 } from '#domain/constants/storage';
 import { isUnsafeStoragePath } from '#domain/utils/storage-path';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
@@ -48,6 +45,10 @@ import { ChatBlockService } from './chat-block.service';
 import { isFromBlockedSender } from './chat-block-mask';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import {
+  assertUploadRequestAllowed,
+  mintChapterUpload,
+} from './chapter-upload';
 
 const CHAT_BUCKET = 'chat';
 
@@ -175,6 +176,10 @@ export class ChatAttachmentService {
     private readonly reportRepo: IChatMessageReportRepository,
     private readonly channelAccess: ChannelAccessService,
     private readonly chatBlocks: ChatBlockService,
+    // A scheduled message holds its uploads until it posts (#4971): every
+    // delete here asks which of them a message not yet posted still needs.
+    @Inject(CHAT_SCHEDULED_MESSAGE_REPOSITORY)
+    private readonly scheduledRepo: IChatScheduledMessageRepository,
   ) {}
 
   // ── Upload and send ──────────────────────────────────────────────────
@@ -212,33 +217,20 @@ export class ChatAttachmentService {
       throw new BadRequestException('This channel does not take threads');
     }
 
-    const ext = filename.includes('.')
-      ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
-      : '';
-
-    if (!isAllowedUploadExtension('document', ext)) {
-      throw new BadRequestException('File extension is not allowed');
-    }
-
-    if (!isAllowedUploadMime('document', contentType)) {
-      throw new BadRequestException(
-        `Content type "${contentType}" is not allowed`,
-      );
-    }
-
-    if (sizeBytes !== undefined && !isWithinUploadSizeLimit(sizeBytes)) {
-      throw new BadRequestException(
-        `File exceeds the ${MAX_UPLOAD_LABEL} upload limit`,
-      );
-    }
-
-    const messageId = crypto.randomUUID();
-    const storagePath = `chapters/${chapterId}/chat/${channelId}/${messageId}/${safeObjectFilename(filename)}`;
-
-    const signedUrl = await this.storageProvider.getSignedUploadUrl(
-      CHAT_BUCKET,
-      storagePath,
+    assertUploadRequestAllowed('document', {
+      filename,
       contentType,
+      sizeBytes,
+    });
+    const {
+      signedUrl,
+      storagePath,
+      uploadId: messageId,
+    } = await mintChapterUpload(
+      this.storageProvider,
+      CHAT_BUCKET,
+      `chapters/${chapterId}/chat/${channelId}/`,
+      { filename, contentType },
     );
 
     // A photo's smaller copy, for the timeline (2026-11-07). Minted here, with
@@ -470,8 +462,8 @@ export class ChatAttachmentService {
    * Access is the ordinary channel check, so a message in a channel the caller
    * cannot read answers 403/404 exactly as its own read does.
    *
-   * **This route is the only way to a chat file**, and the block mask depends on
-   * that. The `chat` bucket is private with no `storage.objects` policy, and
+   * **This route and its batch form, `listAttachmentsForMessages`, are the only
+   * way to a chat file**, and the block mask depends on that. The `chat` bucket is private with no `storage.objects` policy, and
    * `chat_message_attachments` has RLS on with no policy, so a client cannot list
    * or fetch an attachment except through a URL minted here.
    * `chat-read-surface-ledger.spec.ts` fails on any migration that would open
@@ -514,16 +506,79 @@ export class ChatAttachmentService {
     }
 
     const rows = await this.attachmentRepo.findByMessage(messageId, chapterId);
-    if (rows.length === 0) return [];
+    return this.withSignedUrls(rows, { messageId, channelId });
+  }
 
-    // Previews sign in the same batch as the originals: one provider round
-    // trip either way. A preview that is missing (its upload failed, or it was
-    // never sent) simply fails to sign, and the reader draws the original.
-    const previews = previewObjects(rows);
-    const urls = await this.signChatObjects([...rows, ...previews], {
-      messageId,
+  /**
+   * The batch form of {@link listMessageAttachments} (#5667): every listed
+   * message's attachments, keyed by message id, with one access check, one
+   * block-list read, one attachment read and one signing call for all of them.
+   *
+   * Chat rendered one `listMessageAttachments` request per message with files,
+   * and each request cost about seven database and provider calls, so a channel
+   * of photos queued its own burst on the database. The rules are the single
+   * route's, applied per message: a deleted message, a message outside this
+   * channel or chapter, and a message whose sender the caller has blocked get
+   * no files. Each answers with an empty list rather than the single route's
+   * 404, which tells the caller nothing more than the 404 would, and lets the
+   * client fill every message it asked about.
+   *
+   * Every requested id is a key of the answer, so a client can tell "no files"
+   * from "not asked".
+   */
+  async listAttachmentsForMessages(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+    messageIds: readonly string[],
+  ): Promise<Record<string, ChatMessageAttachmentWithUrl[]>> {
+    await this.channelAccess.assertChannelAccess(channelId, chapterId, userId);
+
+    const ids = [...new Set(messageIds)];
+    const result: Record<string, ChatMessageAttachmentWithUrl[]> =
+      Object.fromEntries(ids.map((id) => [id, []]));
+    if (ids.length === 0) return result;
+
+    // A block list that cannot be read throws here, as on the single route:
+    // files are withheld rather than served unchecked.
+    const [rows, blockedUserIds] = await Promise.all([
+      this.attachmentRepo.findByMessages(channelId, ids, chapterId),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
+    ]);
+    const blocked = new Set(blockedUserIds);
+    const visible = rows
+      .filter((row) => !isFromBlockedSender(row.sender_id, blocked))
+      // The sender only decides the mask; it is not part of the answer.
+      .map((row) => {
+        const { sender_id, ...attachment } = row;
+        void sender_id;
+        return attachment;
+      });
+
+    const signed = await this.withSignedUrls(visible, {
       channelId,
+      messages: ids.length,
     });
+    for (const row of signed) {
+      result[row.message_id]?.push(row);
+    }
+    return result;
+  }
+
+  /**
+   * Signs `rows` and their photo previews in one batch and returns each row
+   * with its URLs, leaving out a row whose original could not be signed.
+   * Previews sign in the same batch as the originals: one provider round trip
+   * either way. A preview that is missing (its upload failed, or it was never
+   * sent) simply fails to sign, and the reader draws the original.
+   */
+  private async withSignedUrls(
+    rows: readonly ChatMessageAttachment[],
+    context: Record<string, unknown>,
+  ): Promise<ChatMessageAttachmentWithUrl[]> {
+    if (rows.length === 0) return [];
+    const previews = previewObjects(rows);
+    const urls = await this.signChatObjects([...rows, ...previews], context);
     return rows.flatMap((row) => {
       const downloadUrl = urls.get(objectKey(row));
       if (!downloadUrl) return [];
@@ -844,9 +899,29 @@ export class ChatAttachmentService {
       }
     }
 
-    await this.deleteChatObjects([...doomed, ...doomedPreviews], {
-      messageId,
-    });
+    // A scheduled message that names one of these (the same files sent now
+    // and scheduled, #4971) still needs it. Fail closed, as above.
+    let scheduledKeys: Set<string>;
+    try {
+      scheduledKeys = await this.namedByScheduled(chapterId, [
+        ...doomed,
+        ...doomedPreviews,
+      ]);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not check scheduled messages for the attachments of message ${messageId}; keeping objects`,
+        error,
+      );
+      return;
+    }
+    await this.deleteChatObjects(
+      [...doomed, ...doomedPreviews].filter(
+        (object) => !scheduledKeys.has(objectKey(object)),
+      ),
+      { messageId },
+    );
 
     const keptCount = sharedKeys.size + (unshared.length - doomed.length);
     if (keptCount > 0) {
@@ -856,6 +931,96 @@ export class ChatAttachmentService {
         heldByReports: unshared.length - doomed.length,
       });
     }
+  }
+
+  /**
+   * Deletes the uploads of a message that will never post: a scheduled
+   * message deleted before its time (#4971). Its files were uploaded when it
+   * was scheduled and no message row names them, so nothing else will.
+   *
+   * Best effort, as the purge above: failures are logged, never thrown, and
+   * every unanswerable read keeps the objects. A claim's path is checked only
+   * against the channel prefix (#1622), so a scheduled message can name a
+   * file someone else's message uses. Kept, then: what a live message or
+   * another scheduled message names (a send of this one that posted and died
+   * before deleting the row included), and what a report holds as evidence
+   * (#2481), whose own message may already be deleted. Each photo's preview
+   * goes with it, under the same checks.
+   */
+  async discardUnsentAttachments(
+    chapterId: string,
+    scheduledMessageId: string,
+    attachments: readonly { storage_path: string; content_type: string }[],
+  ): Promise<void> {
+    const context = { chapterId, scheduledMessageId };
+    const candidates = uniqueObjects(
+      attachments.flatMap((attachment) => {
+        const original = {
+          bucket: CHAT_BUCKET,
+          storage_path: attachment.storage_path,
+        };
+        return attachment.content_type.startsWith('image/')
+          ? [
+              original,
+              {
+                bucket: CHAT_BUCKET,
+                storage_path: chatPreviewPathFor(attachment.storage_path),
+              },
+            ]
+          : [original];
+      }),
+    );
+    if (candidates.length === 0) return;
+    let kept: Set<string>;
+    try {
+      kept = new Set([
+        ...objectKeys(
+          await this.attachmentRepo.findSharedObjects(candidates, null),
+        ),
+        ...objectKeys(await this.reportRepo.findHeldObjects(chapterId)),
+        ...(await this.namedByScheduled(
+          chapterId,
+          candidates,
+          scheduledMessageId,
+        )),
+      ]);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not check whether unsent uploads are in use ${JSON.stringify(context)}; keeping them`,
+        error,
+      );
+      return;
+    }
+    await this.deleteChatObjects(
+      candidates.filter((object) => !kept.has(objectKey(object))),
+      context,
+    );
+  }
+
+  /**
+   * The keys of these objects that a scheduled message in the chapter still
+   * names (#4971), leaving out `excludingId`. Only `chat` holds uploads, so
+   * only its objects are asked. Throws when it can't tell: callers keep.
+   */
+  private async namedByScheduled(
+    chapterId: string,
+    objects: readonly StoredObjectRef[],
+    excludingId: string | null = null,
+  ): Promise<Set<string>> {
+    const paths = objects
+      .filter((object) => object.bucket === CHAT_BUCKET)
+      .map((object) => object.storage_path);
+    if (paths.length === 0) return new Set();
+    const inUse = await this.scheduledRepo.findPathsInUse(
+      chapterId,
+      paths,
+      excludingId,
+    );
+    return objectKeys(
+      inUse.map((storage_path) => ({ bucket: CHAT_BUCKET, storage_path })),
+    );
   }
 
   /**
@@ -963,9 +1128,13 @@ export class ChatAttachmentService {
     let heldBy = new Map<string, HeldObject>();
     if (objects.length > 0) {
       try {
-        live = objectKeys(
-          await this.attachmentRepo.findSharedObjects(objects, null),
-        );
+        // A message still to post counts as live (#4971).
+        live = new Set([
+          ...objectKeys(
+            await this.attachmentRepo.findSharedObjects(objects, null),
+          ),
+          ...(await this.namedByScheduled(chapterId, objects)),
+        ]);
         const held = await this.reportRepo.findHeldObjects(
           chapterId,
           reports.map(({ id }) => id),

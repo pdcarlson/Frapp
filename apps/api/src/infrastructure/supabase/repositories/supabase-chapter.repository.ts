@@ -6,12 +6,21 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import {
+  type ChapterBirthdayChannel,
+  type ChapterRecapPushTarget,
   IChapterRepository,
   type AppliedSubscriptionWebhook,
   type SubscriptionWebhookPatch,
 } from '#domain/repositories/chapter.repository.interface';
 import { Chapter } from '#domain/entities/chapter.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { fetchAllPages } from '../supabase.utils';
+
+/**
+ * Rows per page of the birthday sweep's chapter list (#4959), and of the
+ * weekly recap push's (#4985).
+ */
+const BIRTHDAY_CHANNEL_PAGE = 500;
 
 @Injectable()
 export class SupabaseChapterRepository implements IChapterRepository {
@@ -48,6 +57,64 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .in('id', ids);
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
+  }
+
+  async findStartedAtByUserSince(
+    userId: string,
+    since: Date,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase
+      .from('chapters')
+      .select('created_at')
+      .eq('legal_accepted_by', userId)
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: true });
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).map((row) => row.created_at);
+  }
+
+  async findForRecapPush(): Promise<ChapterRecapPushTarget[]> {
+    const rows = await fetchAllPages(
+      (from, to) =>
+        this.supabase
+          .from('chapters')
+          .select('id, name, enabled_modules')
+          .neq('subscription_status', 'canceled')
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: BIRTHDAY_CHANNEL_PAGE },
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      enabled_modules: row.enabled_modules ?? null,
+    }));
+  }
+
+  async findWithBirthdayChannel(): Promise<ChapterBirthdayChannel[]> {
+    const rows = await fetchAllPages(
+      (from, to) =>
+        this.supabase
+          .from('chapters')
+          .select(
+            'id, birthday_channel_id, subscription_status, past_due_since',
+          )
+          .not('birthday_channel_id', 'is', null)
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: BIRTHDAY_CHANNEL_PAGE },
+    );
+    const chapters: ChapterBirthdayChannel[] = [];
+    for (const row of rows) {
+      if (!row.birthday_channel_id) continue;
+      chapters.push({
+        id: row.id,
+        birthday_channel_id: row.birthday_channel_id,
+        subscription_status: row.subscription_status,
+        past_due_since: row.past_due_since,
+      });
+    }
+    return chapters;
   }
 
   async findBySubscriptionId(subscriptionId: string): Promise<Chapter | null> {

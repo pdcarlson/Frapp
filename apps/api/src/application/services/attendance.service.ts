@@ -4,27 +4,48 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { enqueueSanitizedLog } from '../../infrastructure/analytics/posthog-runtime';
+import { pseudonymizeUserId } from '../../infrastructure/observability/pseudonyms';
+import { getRequestId } from '../../infrastructure/observability/request-als';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import { EVENT_EXCUSE_REPOSITORY } from '#domain/repositories/event-excuse.repository.interface';
+import type { IEventExcuseRepository } from '#domain/repositories/event-excuse.repository.interface';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
+import type { Event } from '#domain/entities/event.entity';
+import type { EventExcuseStatus } from '#domain/entities/event-excuse.entity';
+import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
+import type { IEventCheckInScreenRepository } from '#domain/repositories/event-check-in-screen.repository.interface';
 import { RbacService } from './rbac.service';
-import { attendanceFor, isEventVisibleTo } from './event-role-targeting';
+import { attendanceFor, visibleEventOrNotFound } from './event-role-targeting';
 import {
   checkInWindowBounds,
   eventRequiresAnyone,
   eventSetsRolesApart,
   type EventAttendanceFields,
+  PRODUCTION_APP_ORIGIN,
 } from '@repo/validation';
 import { isValidZone, pointInPolygon } from '#domain/utils/geofence';
 import {
+  type CheckInScreenCheck,
+  canAnchorCheckIn,
+  isLocatedScreen,
+  isNearCheckInScreen,
+  screensRequireCode,
+} from '#domain/utils/check-in-screen';
+import {
   mintCheckInToken,
+  LOCATED_TOKEN_PREVIOUS_WINDOWS,
+  PREVIOUS_WINDOWS,
   verifyCheckInToken,
   verifyManualCode,
   type MintedCheckInToken,
@@ -44,10 +65,128 @@ export interface CheckInOptions {
   manualCode?: string;
   lat?: number;
   lng?: number;
+  /** The phone's reported accuracy, in meters. Widens the screen check. */
+  accuracyMeters?: number;
+}
+
+/**
+ * How an event requires a member, by `attendanceFor`: through a role it names
+ * (`'role'`), through its default (`'default'`), or not at all (`null`).
+ */
+function requiredBy(
+  event: EventAttendanceFields,
+  roleIds: string[],
+): 'role' | 'default' | null {
+  const attendance = attendanceFor(event, roleIds);
+  if (attendance.status !== 'required') return null;
+  return attendance.byRole ? 'role' : 'default';
+}
+
+/**
+ * Whether a member the event requires is held to it. Alumni cannot check in
+ * to an event that doesn't name a role of theirs, so one required only by the
+ * default is not; a role that names an alumnus is an explicit decision.
+ */
+function holdsTo(
+  by: 'role' | 'default' | null,
+  roleIds: string[],
+  alumniRoleId: string | null,
+): boolean {
+  if (by === 'role') return true;
+  if (by !== 'default') return false;
+  return !alumniRoleId || !roleIds.includes(alumniRoleId);
+}
+/** Where the host screen (s22) says it is, when it can tell. */
+export interface CheckInScreenFix {
+  lat?: number;
+  lng?: number;
+  accuracyMeters?: number;
+}
+
+export type { CheckInScreenCheck } from '#domain/utils/check-in-screen';
+
+/**
+ * Member-facing refusals for the screen check. The shared error map
+ * (`SERVER_MESSAGE_COPY` in `@repo/validation`) is keyed by these exact
+ * sentences, and `attendance.service.spec.ts` checks it still has each one,
+ * so rewording one here without the map fails a test.
+ */
+export const CHECK_IN_NEEDS_CODE =
+  'Scan the code on the check-in screen with the Frapp app to check in';
+export const CHECK_IN_NEEDS_LOCATION =
+  'This check-in needs your location. Allow location for Frapp and scan again.';
+export const CHECK_IN_TOO_FAR =
+  'You need to be near the check-in screen to check in';
+
+/**
+ * The dashboard origin the QR's check-in link names: `APP_URL`, as the invite
+ * email reads it (`infrastructure/email/invite-link.util.ts`), else production.
+ * The web serves the same path as the fallback for a phone without the app,
+ * so a staging host screen links to staging. Read from the environment, as
+ * this service reads its signing key (`requireTokenSecret`); `checkInLinkUrl`
+ * trims a trailing slash.
+ */
+function checkInLinkOrigin(): string {
+  return process.env.APP_URL?.trim() || PRODUCTION_APP_ORIGIN;
+}
+
+/**
+ * Why a check-in was turned away, for the operational log.
+ *
+ * The request log carries only the status, and several refusals share one (a
+ * 400 is the window, bad event times, a missing location, or a zone without
+ * one; a 403 is who may check in, a bad code, the wrong place, or too far from
+ * the screen). On 2026-11-13 two members' scans failed with 400s and nothing
+ * recorded which, so every refusal but "already checked in" (409, the clients'
+ * "you're in") names its branch here, with whether a location came and how
+ * sure the phone was of it.
+ * No ids, coordinates or message text: the user is a pseudonym, as on the
+ * request log, and the request id joins the two.
+ */
+type CheckInRefusal =
+  | 'no_event'
+  | 'bad_times'
+  | 'window'
+  | 'not_member'
+  | 'not_invited'
+  | 'alumni'
+  | 'needs_code'
+  | 'bad_code'
+  | 'zone_invalid'
+  | 'zone_needs_location'
+  | 'outside_zone'
+  | 'needs_location'
+  | 'too_far';
+
+function logCheckInRefusal(
+  reason: CheckInRefusal,
+  userId: string,
+  options: CheckInOptions,
+): void {
+  const hasLocation =
+    typeof options.lat === 'number' && typeof options.lng === 'number';
+  const userHash = pseudonymizeUserId(userId);
+  const requestId = getRequestId();
+  enqueueSanitizedLog({
+    body: 'check_in_refused',
+    severity: 'INFO',
+    attributes: {
+      reason,
+      has_code: options.token !== undefined || options.manualCode !== undefined,
+      has_location: hasLocation,
+      ...(typeof options.accuracyMeters === 'number'
+        ? { accuracy_m: Math.round(options.accuracyMeters) }
+        : {}),
+      ...(requestId ? { request_id: requestId } : {}),
+      ...(userHash ? { user_hash: userHash } : {}),
+    },
+  });
 }
 
 @Injectable()
 export class AttendanceService {
+  private readonly logger = new Logger(AttendanceService.name);
+
   constructor(
     @Inject(ATTENDANCE_REPOSITORY)
     private readonly attendanceRepo: IAttendanceRepository,
@@ -55,6 +194,10 @@ export class AttendanceService {
     private readonly eventRepo: IEventRepository,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
+    @Inject(EVENT_EXCUSE_REPOSITORY)
+    private readonly excuseRepo: IEventExcuseRepository,
+    @Inject(EVENT_CHECK_IN_SCREEN_REPOSITORY)
+    private readonly screenRepo: IEventCheckInScreenRepository,
     private readonly rbac: RbacService,
   ) {}
 
@@ -74,7 +217,12 @@ export class AttendanceService {
       throw new NotFoundException('Event not found');
     }
 
-    return mintCheckInToken(eventId, this.requireTokenSecret(), Date.now());
+    return mintCheckInToken(
+      eventId,
+      this.requireTokenSecret(),
+      Date.now(),
+      checkInLinkOrigin(),
+    );
   }
 
   /**
@@ -92,6 +240,80 @@ export class AttendanceService {
     return secret;
   }
 
+  /**
+   * Record that an officer's host screen (s22) is showing the code, and where
+   * it is (#4532). Called about once a minute while the screen is up, by an
+   * officer with `events:update` (the mint's gate). Each officer has their own
+   * row, and each report replaces it, location included.
+   *
+   * Stored only inside the check-in window, and only until it closes: a
+   * screen opened early stores nothing until the window opens, and the row's
+   * `expires_at` is the window's close (read from the event on every report,
+   * so an edited end time is followed from the next one), after which nothing
+   * reads it and the sweep deletes it. A drawn zone wins over the screen, so
+   * with one the screen's location isn't stored at all; the row still marks
+   * the code as in use, which makes it required.
+   */
+  async reportCheckInScreen(
+    eventId: string,
+    chapterId: string,
+    userId: string,
+    fix: CheckInScreenFix,
+  ): Promise<{ check: CheckInScreenCheck }> {
+    const event = await this.eventRepo.findById(eventId, chapterId);
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    const now = new Date();
+    const { opensAt, closesAt } = checkInWindowBounds(
+      new Date(event.start_time),
+      new Date(event.end_time),
+      event.check_in_opens_minutes,
+    );
+    if (Number.isNaN(opensAt.getTime()) || Number.isNaN(closesAt.getTime())) {
+      throw new BadRequestException('Event times are invalid');
+    }
+    if (now < opensAt) return { check: 'not_open' };
+    if (now > closesAt) return { check: 'closed' };
+
+    const hasZone =
+      event.check_in_zone !== null && event.check_in_zone !== undefined;
+    const { lat, lng, accuracyMeters } = fix;
+    const location =
+      !hasZone &&
+      typeof lat === 'number' &&
+      typeof lng === 'number' &&
+      typeof accuracyMeters === 'number' &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      canAnchorCheckIn(accuracyMeters)
+        ? { lat, lng, accuracy_m: accuracyMeters }
+        : null;
+
+    const nowIso = now.toISOString();
+    await this.screenRepo.recordShown({
+      eventId,
+      reportedBy: userId,
+      chapterId,
+      nowIso,
+      expiresAt: closesAt.toISOString(),
+      location,
+    });
+
+    if (hasZone) return { check: 'zone' };
+    if (location) return { check: 'screen' };
+    const screens = await this.screenRepo.findLive(eventId, chapterId, nowIso);
+    return {
+      check: screens.some(isLocatedScreen) ? 'other_screen' : 'no_location',
+    };
+  }
+
+  /** The sweep's half of the retention rule above. */
+  async deleteExpiredCheckInScreens(): Promise<number> {
+    return this.screenRepo.deleteExpired(new Date().toISOString());
+  }
+
   async checkIn(
     eventId: string,
     userId: string,
@@ -100,6 +322,9 @@ export class AttendanceService {
   ): Promise<EventAttendance> {
     const event = await this.eventRepo.findById(eventId, chapterId);
     if (!event) {
+      // Also a link scanned from another of the member's chapters, which the
+      // request carries the active chapter for.
+      logCheckInRefusal('no_event', userId, options);
       throw new NotFoundException('Event not found');
     }
 
@@ -108,6 +333,7 @@ export class AttendanceService {
     const end = new Date(event.end_time);
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      logCheckInRefusal('bad_times', userId, options);
       throw new BadRequestException('Event times are invalid');
     }
 
@@ -119,9 +345,13 @@ export class AttendanceService {
       event.check_in_opens_minutes,
     );
     if (now < opensAt || now > closesAt) {
-      throw new BadRequestException(
-        'Check-in is only allowed during the event time window',
-      );
+      logCheckInRefusal('window', userId, options);
+      // Scanning before the doors open or after they close is normal use;
+      // the code keeps it out of the clients' Sentry reports.
+      throw new BadRequestException({
+        code: 'attendance.check_in.window_closed',
+        message: 'Check-in is only allowed during the event time window',
+      });
     }
 
     // Window first, deliberately. Ordering only changes *which* error a caller
@@ -130,29 +360,125 @@ export class AttendanceService {
     // period). Nothing writes before `checkInAtomic` below, so no ordering here
     // risks partial work. The window is not secret either — every member can
     // read event times from `GET /v1/events` — so leading with it leaks nothing.
+    // Who may check in, and whether they already have, come next, before the
+    // code and the location: a member already checked in who taps the chat
+    // card again should hear "already checked in", not "scan the code".
+
+    // Attendance by role (`spec/behavior/events.md`): a member the event
+    // doesn't invite can't check in. Read only when some role is listed or
+    // the default leaves anyone out; an untargeted event invites everyone.
+    let invitedByRole = false;
+    if (eventSetsRolesApart(event)) {
+      const member = await this.memberRepo.findByUserAndChapter(
+        userId,
+        chapterId,
+      );
+      if (!member) {
+        logCheckInRefusal('not_member', userId, options);
+        throw new ForbiddenException('You are not a member of this chapter');
+      }
+
+      const attendance = attendanceFor(event, member.role_ids);
+      if (attendance.status === 'not_invited') {
+        logCheckInRefusal('not_invited', userId, options);
+        throw new ForbiddenException(
+          'You are not eligible to check in for this event',
+        );
+      }
+      invitedByRole = attendance.byRole;
+    }
+
+    // Alumni do not check in to events or accrue attendance points
+    // (`spec/behavior/alumni.md`), and the route carries no permission
+    // requirement, so the lifecycle rule is enforced here. An event that
+    // names a role of theirs as required or optional is an explicit chapter
+    // decision about who attends (an alumni homecoming lists the Alumni role),
+    // so the lifecycle rule does not override it.
+    if (!invitedByRole && (await this.rbac.isAlumni(chapterId, userId))) {
+      logCheckInRefusal('alumni', userId, options);
+      throw new ForbiddenException(
+        'Alumni members cannot check in to chapter events',
+      );
+    }
+
+    const existing = await this.attendanceRepo.findByEventAndUser(
+      eventId,
+      userId,
+    );
+    if (existing) {
+      throw new ConflictException({
+        code: 'attendance.already_checked_in',
+        message: 'Already checked in for this event',
+      });
+    }
 
     // ── Rotating token ──────────────────────────────────────────────────
     //
-    // Verified when supplied; never required. That is the spec's design, not an
-    // oversight: `spec/ui/mobile/patterns.md` is explicit that "the rotating
-    // code raises effort; the geofence enforces presence", and
-    // `spec/behavior/events.md` keeps the chat event card as an additional
-    // self-service check-in surface, which posts no token at all.
+    // Verified when supplied. Required once an officer's screen has shown the
+    // code for this event (#4532): from then until check-in closes, a
+    // check-in without it (the chat event card, or a client that just leaves
+    // it out) is refused and told to scan. Before that, the event card's plain
+    // self check-in works as it always has, so an event nobody hosts a QR for
+    // keeps its one-tap check-in.
     //
-    // The consequence is worth stating plainly: a caller who simply omits
-    // `token` skips this check, so the token is an assurance signal (it catches
-    // a forwarded screenshot or a stale code), not an access control. The
-    // geofence below is the control. Making the token mandatory needs a
-    // per-event opt-in flag — filed as follow-up work rather than invented here.
-    if (options.token !== undefined || options.manualCode !== undefined) {
+    // A code alone is still not proof of presence: any displayed code can be
+    // screenshotted and forwarded inside its window. What makes it one is the
+    // location check below, against the drawn zone or the screen.
+    const screens = await this.screenRepo.findLive(
+      eventId,
+      chapterId,
+      now.toISOString(),
+    );
+    const zoned =
+      event.check_in_zone !== null && event.check_in_zone !== undefined;
+
+    // ── The host checks themselves in with one tap (2026-11-17) ─────────
+    //
+    // The officer whose own screen is showing the code for this event skips
+    // the code and the location checks for their own check-in. The phone
+    // showing the QR is theirs, so they cannot scan it, and typing the code
+    // off their own screen was the flow Paul rejected. Scoped to a live
+    // screen of their own, not to `events:update`: an officer who isn't
+    // hosting checks in like any member, so the permission alone never
+    // turns into a remote check-in. Their screen reported where it is within
+    // the last minute or so (`reportCheckInScreen`, gated on
+    // `events:update`), which is the same presence a member proves by being
+    // near it. Unlike `markByHand`, this is a check-in and earns the event's
+    // points, as it does for every member in the room.
+    if (screens.some((screen) => screen.reported_by === userId)) {
+      return this.recordCheckIn(event, userId, now);
+    }
+
+    const hasCode =
+      options.token !== undefined || options.manualCode !== undefined;
+    if (screensRequireCode(screens) && !hasCode) {
+      logCheckInRefusal('needs_code', userId, options);
+      throw new ForbiddenException(CHECK_IN_NEEDS_CODE);
+    }
+
+    // Whether the checks below will test where the member is: a drawn zone, or
+    // a screen that stored its location. Only then may a scanned link last
+    // past one spare window (`check-in-token.ts`), because only then does a
+    // forwarded link still fail.
+    const anchors = screens.filter(isLocatedScreen);
+    const located = zoned || anchors.length > 0;
+
+    if (hasCode) {
       const secret = this.requireTokenSecret();
       const accepted =
         (options.token !== undefined &&
-          verifyCheckInToken(options.token, eventId, secret, now.getTime())) ||
+          verifyCheckInToken(
+            options.token,
+            eventId,
+            secret,
+            now.getTime(),
+            located ? LOCATED_TOKEN_PREVIOUS_WINDOWS : PREVIOUS_WINDOWS,
+          )) ||
         (options.manualCode !== undefined &&
           verifyManualCode(options.manualCode, eventId, secret, now.getTime()));
 
       if (!accepted) {
+        logCheckInRefusal('bad_code', userId, options);
         throw new ForbiddenException(
           'That check-in code is not valid for this event, or it has expired',
         );
@@ -170,6 +496,7 @@ export class AttendanceService {
       // would silently disable the check the row exists to encode — the exact
       // failure mode a geofence must not have.
       if (!isValidZone(event.check_in_zone)) {
+        logCheckInRefusal('zone_invalid', userId, options);
         throw new BadRequestException(
           'This event has an invalid check-in area; an officer needs to redraw it',
         );
@@ -193,58 +520,56 @@ export class AttendanceService {
         // `@repo/validation`, keyed by this exact sentence), so putting the
         // guidance here is what makes that path honest — and it costs no
         // per-card fetch of the event just to learn it has a zone.
+        logCheckInRefusal('zone_needs_location', userId, options);
         throw new BadRequestException(
           'This event checks you in by location — use the Frapp mobile app to check in.',
         );
       }
 
       if (!pointInPolygon(lat, lng, event.check_in_zone)) {
+        logCheckInRefusal('outside_zone', userId, options);
         throw new ForbiddenException('You need to be at the event to check in');
       }
     }
-
-    // Attendance by role (`spec/behavior/events.md`): a member the event
-    // doesn't invite can't check in. Read only when some role is listed or
-    // the default leaves anyone out; an untargeted event invites everyone.
-    let invitedByRole = false;
-    if (eventSetsRolesApart(event)) {
-      const member = await this.memberRepo.findByUserAndChapter(
-        userId,
-        chapterId,
-      );
-      if (!member) {
-        throw new ForbiddenException('You are not a member of this chapter');
+    // ── Near the screen ─────────────────────────────────────────────────
+    //
+    // With no drawn zone, the screens showing the code are the zone (#4532):
+    // a member must be within 100 yards of one of them, plus both phones'
+    // accuracy, capped (`isNearCheckInScreen`). A screen that couldn't tell
+    // where it is stored no location and anchors nothing; with no located
+    // screen at all, nothing here runs.
+    if (!zoned && anchors.length > 0) {
+      const { lat, lng } = options;
+      if (
+        typeof lat !== 'number' ||
+        typeof lng !== 'number' ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng)
+      ) {
+        logCheckInRefusal('needs_location', userId, options);
+        throw new BadRequestException(CHECK_IN_NEEDS_LOCATION);
       }
 
-      const attendance = attendanceFor(event, member.role_ids);
-      if (attendance.status === 'not_invited') {
-        throw new ForbiddenException(
-          'You are not eligible to check in for this event',
-        );
-      }
-      invitedByRole = attendance.byRole;
-    }
-
-    // Alumni do not check in to events or accrue attendance points
-    // (`spec/behavior/alumni.md`), and the route carries no permission
-    // requirement, so the lifecycle rule is enforced here. An event that
-    // names a role of theirs as required or optional is an explicit chapter
-    // decision about who attends (an alumni homecoming lists the Alumni role),
-    // so the lifecycle rule does not override it.
-    if (!invitedByRole && (await this.rbac.isAlumni(chapterId, userId))) {
-      throw new ForbiddenException(
-        'Alumni members cannot check in to chapter events',
+      const member = { lat, lng, accuracy_m: options.accuracyMeters ?? null };
+      const near = anchors.some((anchor) =>
+        isNearCheckInScreen(anchor, member),
       );
+      if (!near) {
+        logCheckInRefusal('too_far', userId, options);
+        throw new ForbiddenException(CHECK_IN_TOO_FAR);
+      }
     }
 
-    const existing = await this.attendanceRepo.findByEventAndUser(
-      eventId,
-      userId,
-    );
-    if (existing) {
-      throw new ConflictException('Already checked in for this event');
-    }
+    return this.recordCheckIn(event, userId, now);
+  }
 
+  /** The write every accepted check-in ends in. */
+  private async recordCheckIn(
+    event: Event,
+    userId: string,
+    now: Date,
+  ): Promise<EventAttendance> {
+    const eventId = event.id;
     const checkInTime = now.toISOString();
 
     // Insert the attendance row and award the event's ATTENDANCE points
@@ -264,7 +589,26 @@ export class AttendanceService {
       event.name,
     );
     if (!attendance) {
-      throw new ConflictException('Already checked in for this event');
+      throw new ConflictException({
+        code: 'attendance.already_checked_in',
+        message: 'Already checked in for this event',
+      });
+    }
+
+    // They came after all: a pending excuse no longer asks anything of its
+    // receiver (#3735), and approving it would tell them they were excused
+    // while the roster says present. An approved one can't be here, since its
+    // EXCUSED row refuses the check-in above. Best-effort: the check-in has
+    // landed, and a leftover excuse only reaches the receiver's list.
+    try {
+      await this.excuseRepo.withdrawAtomic(event.chapter_id, eventId, userId);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'check-in-drop-pending-excuse',
+        message: `Could not drop the pending excuse of ${userId} for event ${eventId} after check-in`,
+        error,
+      });
     }
 
     return attendance;
@@ -286,18 +630,34 @@ export class AttendanceService {
     userId: string,
     chapterId: string,
   ): Promise<EventAttendance | null> {
-    const event = await this.eventRepo.findById(eventId, chapterId);
-    if (
-      !event ||
-      !(await isEventVisibleTo(event, chapterId, userId, {
-        rbac: this.rbac,
-        memberRepo: this.memberRepo,
-      }))
-    ) {
-      throw new NotFoundException('Event not found');
-    }
-
+    await visibleEventOrNotFound(
+      await this.eventRepo.findById(eventId, chapterId),
+      chapterId,
+      userId,
+      { rbac: this.rbac, memberRepo: this.memberRepo },
+    );
     return this.attendanceRepo.findByEventAndUser(eventId, userId);
+  }
+
+  /**
+   * The member's own attendance rows across `events` (#4901): what
+   * {@link getMyAttendance} answers for one event, in one read for many.
+   *
+   * `events` must already be the caller's own visible list
+   * (`EventService.findByChapter` with the viewer), which is where the
+   * visibility rule is applied; an event of another chapter is dropped here
+   * rather than trusted.
+   */
+  async getMyAttendanceForEvents(
+    userId: string,
+    chapterId: string,
+    events: readonly Pick<Event, 'id' | 'chapter_id'>[],
+  ): Promise<EventAttendance[]> {
+    const ids = events
+      .filter((event) => event.chapter_id === chapterId)
+      .map((event) => event.id);
+    if (ids.length === 0) return [];
+    return this.attendanceRepo.findByUserForEvents(userId, ids);
   }
 
   async getAttendance(
@@ -310,6 +670,125 @@ export class AttendanceService {
     }
 
     return this.attendanceRepo.findByEvent(eventId);
+  }
+
+  /**
+   * Marks members who were at an event by hand, after the fact (Paul,
+   * 2026-11-16: minutes for a meeting nobody checked in to;
+   * `spec/behavior/events.md` § Marking attendance by hand). It only fills
+   * in: a member who already has a row (checked in, marked absent, excused)
+   * keeps it, so a hand mark never overwrites a check-in. Each member is held
+   * to the rules a check-in is: in this chapter, invited by the event's
+   * roles, and not an alumnus the event doesn't name. Like every officer
+   * mark, it moves no points (§ Attendance by role). A member's pending
+   * excuse is withdrawn, as a check-in withdraws it, so it never strands on
+   * the receiver's list beside a row that settles it.
+   */
+  async markByHand(
+    eventId: string,
+    chapterId: string,
+    userIds: readonly string[],
+    status: Exclude<EventAttendance['status'], 'ABSENT'>,
+    markedBy: string,
+  ): Promise<{
+    marked: string[];
+    already_marked: number;
+    not_invited: number;
+  }> {
+    const event = await this.eventRepo.findById(eventId, chapterId);
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+    const wanted = [...new Set(userIds)];
+    const [members, existing] = await Promise.all([
+      this.memberRepo.findByChapter(chapterId),
+      this.attendanceRepo.findByEvent(eventId),
+    ]);
+    const byUser = new Map(members.map((m) => [m.user_id, m]));
+    const recorded = new Set(existing.map((row) => row.user_id));
+    // Read once, only when someone could be left out by it.
+    let alumniRoleId: string | null | undefined;
+
+    const toMark: string[] = [];
+    let alreadyMarked = 0;
+    let notInvited = 0;
+    for (const userId of wanted) {
+      const member = byUser.get(userId);
+      if (!member) {
+        notInvited += 1;
+        continue;
+      }
+      if (recorded.has(userId)) {
+        alreadyMarked += 1;
+        continue;
+      }
+      const attendance = attendanceFor(event, member.role_ids);
+      if (attendance.status === 'not_invited') {
+        notInvited += 1;
+        continue;
+      }
+      if (!attendance.byRole) {
+        if (alumniRoleId === undefined) {
+          alumniRoleId = await this.rbac.getAlumniRoleId(chapterId);
+        }
+        if (alumniRoleId && member.role_ids.includes(alumniRoleId)) {
+          notInvited += 1;
+          continue;
+        }
+      }
+      toMark.push(userId);
+    }
+
+    const rows = () =>
+      toMark.map((userId) => ({
+        event_id: eventId,
+        user_id: userId,
+        status,
+        check_in_time: null,
+        excuse_reason: null,
+        marked_by: markedBy,
+      }));
+    let marked = toMark;
+    if (toMark.length > 0) {
+      try {
+        await this.attendanceRepo.createMany(rows());
+      } catch {
+        // Someone checked in, or another officer marked, between the read
+        // and the write (the unique event and member pair refused the whole
+        // insert). Read again and write only who still has no row.
+        const now = new Set(
+          (await this.attendanceRepo.findByEvent(eventId)).map(
+            (row) => row.user_id,
+          ),
+        );
+        marked = toMark.filter((userId) => !now.has(userId));
+        alreadyMarked += toMark.length - marked.length;
+        if (marked.length > 0) {
+          await this.attendanceRepo.createMany(
+            rows().filter((row) => marked.includes(row.user_id)),
+          );
+        }
+      }
+    }
+
+    for (const userId of marked) {
+      try {
+        await this.excuseRepo.withdrawAtomic(chapterId, eventId, userId);
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'mark-by-hand-drop-pending-excuse',
+          message: `Could not drop the pending excuse of ${userId} for event ${eventId} after a hand mark`,
+          error,
+        });
+      }
+    }
+
+    return {
+      marked,
+      already_marked: alreadyMarked,
+      not_invited: notInvited,
+    };
   }
 
   async updateStatus(
@@ -370,22 +849,55 @@ export class AttendanceService {
     // the visibility rule is a disclosure, not a mismatch. A required member
     // is always an invited one.
     const required = allMembers
-      .map((m) => ({ m, attendance: attendanceFor(event, m.role_ids) }))
-      .filter(({ attendance }) => attendance.status === 'required');
-    // Only members required by the default can be alumni to drop: a role that
-    // names an alumnus is an explicit decision to hold them to it.
-    if (!required.some(({ attendance }) => !attendance.byRole)) {
-      return required.map(({ m }) => m);
-    }
-    const alumniRoleId = await this.rbac.getAlumniRoleId(chapterId);
+      .map((m) => ({ m, by: requiredBy(event, m.role_ids) }))
+      .filter(({ by }) => by !== null);
+    // The Alumni role is read only when someone is required by the default,
+    // the one case it can drop.
+    const alumniRoleId = required.some(({ by }) => by === 'default')
+      ? await this.rbac.getAlumniRoleId(chapterId)
+      : null;
     return required
-      .filter(
-        ({ m, attendance }) =>
-          attendance.byRole ||
-          !alumniRoleId ||
-          !m.role_ids.includes(alumniRoleId),
-      )
+      .filter(({ m, by }) => holdsTo(by, m.role_ids, alumniRoleId))
       .map(({ m }) => m);
+  }
+
+  /**
+   * Whether `event` requires the member holding `roleIds`: the single-member
+   * form of {@link resolveRequiredMembers}, through the same two helpers, so
+   * the member who may send an excuse (#3735) is exactly one the sweep would
+   * mark absent.
+   */
+  async requiresMember(
+    chapterId: string,
+    event: EventAttendanceFields,
+    roleIds: string[],
+  ): Promise<boolean> {
+    if (!eventRequiresAnyone(event)) return false;
+    const by = requiredBy(event, roleIds);
+    if (by === null) return false;
+    const alumniRoleId =
+      by === 'default' ? await this.rbac.getAlumniRoleId(chapterId) : null;
+    return holdsTo(by, roleIds, alumniRoleId);
+  }
+
+  /**
+   * The members of `userIds` with an excuse of one of `statuses` for the
+   * event (#3735). The sweep skips pending and approved; the pre-event
+   * reminder skips approved, since a member with a pending excuse may still
+   * be declined and expected.
+   */
+  async excusedUserIds(
+    chapterId: string,
+    eventId: string,
+    statuses: readonly EventExcuseStatus[],
+  ): Promise<Set<string>> {
+    return new Set(
+      await this.excuseRepo.findUserIdsByEventAndStatus(
+        chapterId,
+        eventId,
+        statuses,
+      ),
+    );
   }
 
   async markAutoAbsent(
@@ -428,11 +940,25 @@ export class AttendanceService {
     const usersWithAttendanceRecords = new Set(
       existingRecords.map((r) => r.user_id),
     );
+    // A member whose excuse is waiting on the receiver, or was approved, is
+    // not marked (#3735). Pending stays pending past the grace period: the
+    // receiver decides, and a decline then marks them absent itself
+    // (`decide_event_excuse`), since this sweep runs once per event. An
+    // approved excuse already wrote EXCUSED, so it is skipped above as well;
+    // reading it here too keeps the rule from depending on that write.
+    const excused = await this.excusedUserIds(chapterId, eventId, [
+      'PENDING',
+      'APPROVED',
+    ]);
 
     const membersToMark = requiredMembers.filter((member) => {
       const isCheckedInOrExcused = checkedInOrExcused.has(member.user_id);
       const hasExistingRecord = usersWithAttendanceRecords.has(member.user_id);
-      return !isCheckedInOrExcused && !hasExistingRecord;
+      return (
+        !isCheckedInOrExcused &&
+        !hasExistingRecord &&
+        !excused.has(member.user_id)
+      );
     });
 
     if (membersToMark.length === 0) {

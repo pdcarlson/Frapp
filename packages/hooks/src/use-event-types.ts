@@ -19,7 +19,7 @@ const eventTypesKey = (chapterId: string | null | undefined) =>
 
 /**
  * The chapter's event types, in its own order (`spec/behavior/events.md`
- * § Event types). The New event form shows them as chips; picking one fills
+ * § Event types). The New event form's Type menu lists them; picking one fills
  * in points and attendance. Needs `members:view`.
  */
 export function useEventTypes(options?: { enabled?: boolean }) {
@@ -27,8 +27,8 @@ export function useEventTypes(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: eventTypesKey(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/event-types");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/event-types", { signal });
       if (error) throw error;
       return data;
     },

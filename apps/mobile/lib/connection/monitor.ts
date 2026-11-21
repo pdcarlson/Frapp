@@ -90,8 +90,8 @@ import { normalizeApiBaseUrl, withRequestIdInit } from "@repo/api-sdk";
 import { CONFIRM_RETRY_MS, healthProbeIsReachable } from "@repo/validation";
 import { deriveConnectionState, type ConnectionState } from "./state";
 
-export const HEALTH_POLL_INTERVAL_MS = 30_000;
-export const HEALTH_TIMEOUT_MS = 5_000;
+const HEALTH_POLL_INTERVAL_MS = 30_000;
+const HEALTH_TIMEOUT_MS = 5_000;
 /**
  * How long `isConnected: false` must stand before the monitor calls it
  * OFFLINE. Long enough to cover a Wi-Fi network re-associating after the

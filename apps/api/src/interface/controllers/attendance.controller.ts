@@ -2,9 +2,12 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -32,6 +35,10 @@ import {
 import {
   AutoAbsentResultDto,
   CheckInDto,
+  CheckInScreenDto,
+  CheckInScreenResultDto,
+  MarkAttendanceByHandDto,
+  MarkAttendanceByHandResultDto,
   MyAttendanceDto,
   UpdateAttendanceDto,
 } from '../dtos/attendance.dto';
@@ -67,7 +74,7 @@ export class AttendanceController {
   @ApiOperation({
     summary: 'Self check-in to an event',
     description:
-      'Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.',
+      "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. Once an officer's screen has shown the code for the event, a code is required. `lat`/`lng` are required when the event defines a check-in geofence, or when a screen showing the code reported where it is; then the member must be within 100 yards of one such screen, plus both phones' reported accuracy (up to 50 m each).",
   })
   // The body is optional (a bare plain check-in), so it may be absent.
   @FeatureEvent(
@@ -78,7 +85,7 @@ export class AttendanceController {
     }),
   )
   async checkIn(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: CheckInDto,
@@ -88,7 +95,38 @@ export class AttendanceController {
       manualCode: dto.manualCode,
       lat: dto.lat,
       lng: dto.lng,
+      accuracyMeters: dto.accuracy_meters,
     });
+  }
+
+  // PUT: it replaces this officer's screen record for the event, and
+  // repeating it changes nothing more. About once a minute while the host screen is up, so it sits
+  // well inside the write throttle an officer also needs for everything else.
+  @Put('check-in-screen')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
+  @ApiOperation({
+    summary: 'Report where the host check-in screen (s22) is',
+    description:
+      "Sent while an officer's screen shows the rotating code. Marks the code as in use, which makes it required for the rest of the check-in window, and replaces this officer's stored location (kept when precise to 100 m and the event has no drawn zone, cleared otherwise) so members must check in within 100 yards of a located screen, plus both phones' reported accuracy. Stored only inside the check-in window and deleted after it closes. Officer-only, like the mint.",
+  })
+  @ApiOkResponse({ type: CheckInScreenResultDto })
+  async reportCheckInScreen(
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: CheckInScreenDto,
+  ): Promise<CheckInScreenResultDto> {
+    return this.attendanceService.reportCheckInScreen(
+      eventId,
+      chapterId,
+      userId,
+      {
+        lat: dto.lat,
+        lng: dto.lng,
+        accuracyMeters: dto.accuracy_meters,
+      },
+    );
   }
 
   // GET, not POST: minting writes nothing — the code is derived from the event
@@ -108,7 +146,7 @@ export class AttendanceController {
       'Returns the current 30-second token, its QR payload, and the short manual code. Officer-only: the code is what admits members to the attendance record. Returns 503 when the environment has no signing secret configured.',
   })
   async mintCheckInToken(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentChapterId() chapterId: string,
   ) {
     return this.attendanceService.mintCheckInToken(eventId, chapterId);
@@ -130,7 +168,7 @@ export class AttendanceController {
   })
   @ApiOkResponse({ type: MyAttendanceDto })
   async mine(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
   ): Promise<MyAttendanceDto> {
@@ -148,7 +186,7 @@ export class AttendanceController {
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'List attendance for an event' })
   async list(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentChapterId() chapterId: string,
   ) {
     return this.attendanceService.getAttendance(eventId, chapterId);
@@ -166,8 +204,8 @@ export class AttendanceController {
     }),
   )
   async updateStatus(
-    @Param('eventId') eventId: string,
-    @Param('userId') userId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') adminId: string,
     @Body() dto: UpdateAttendanceDto,
@@ -182,13 +220,45 @@ export class AttendanceController {
     );
   }
 
+  @Post('by-hand')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Mark members who were there, after the fact',
+    description:
+      'Fills in attendance for members with no row yet, in one request (the minutes page, for a meeting nobody checked in to). A member who already has a row keeps it; members the event does not invite are left out. Moves no points, like every officer mark.',
+  })
+  @ApiOkResponse({ type: MarkAttendanceByHandResultDto })
+  @FeatureEvent(
+    'attendance-marked-by-hand',
+    ({ body }: FeatureEventInput<MarkAttendanceByHandDto>) => ({
+      status: body.status,
+      count: body.user_ids.length,
+    }),
+  )
+  async markByHand(
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') adminId: string,
+    @Body() dto: MarkAttendanceByHandDto,
+  ): Promise<MarkAttendanceByHandResultDto> {
+    return this.attendanceService.markByHand(
+      eventId,
+      chapterId,
+      dto.user_ids,
+      dto.status,
+      adminId,
+    );
+  }
+
   @Post('auto-absent')
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'Trigger auto-absent marking for an event' })
   @ApiCreatedResponse({ type: AutoAbsentResultDto })
   async markAutoAbsent(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentChapterId() chapterId: string,
   ): Promise<AutoAbsentResultDto> {
     return this.attendanceService.markAutoAbsent(eventId, chapterId);

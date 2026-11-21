@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
 const { mockCurrentChapter } = vi.hoisted(() => ({
@@ -24,61 +25,24 @@ const ATTENDANCE = [
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from the
 // wire format to the disabled control.
-vi.mock("@repo/hooks", () => ({
-  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
-  useChapterRoster: () => ({ data: [] }),
-  useCurrentChapter: () => mockCurrentChapter(),
-  useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useEventTypes: () => ({
-    data: [
-      {
-        id: "type-meeting",
-        chapter_id: "chap-1",
-        name: "Chapter meeting",
-        point_value: 10,
-        is_mandatory: true,
-        position: 1,
-        created_at: "2026-11-11T00:00:00.000Z",
-        updated_at: "2026-11-11T00:00:00.000Z",
-      },
-      {
-        id: "type-social",
-        chapter_id: "chap-1",
-        name: "Social",
-        point_value: 0,
-        is_mandatory: false,
-        position: 2,
-        created_at: "2026-11-11T00:00:00.000Z",
-        updated_at: "2026-11-11T00:00:00.000Z",
-      },
-    ],
-    isLoading: false,
-  }),
-  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
-  useActiveChapterId: () => "chap-1",
-  useAttendance: () => ({
-    data: ATTENDANCE,
-    isPending: false,
-    isError: false,
-  }),
-  useMembers: () => ({ data: MEMBERS, isPending: false, isError: false }),
-  useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useMyPermissions: () => ({
-    data: { permissions: ["events:update", "events:create", "members:view"] },
-  }),
-  useEvents: () => ({
-    data: [],
-    isLoading: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  useNow: () => Date.now(),
+// "This time last year" (#3930) has its own spec.
+vi.mock("@/components/ai/suggested-events", () => ({
+  SuggestedEvents: () => null,
+  useRecordPlannedEvent: () => async () => undefined,
 }));
+
+vi.mock("@repo/hooks", async () => {
+  const { eventsPageHooks } = await import("@/tests/events-page");
+  return eventsPageHooks({
+    useCurrentChapter: () => mockCurrentChapter(),
+    useAttendance: () => ({
+      data: ATTENDANCE,
+      isPending: false,
+      isError: false,
+    }),
+    useMembers: () => ({ data: MEMBERS, isPending: false, isError: false }),
+  });
+});
 
 // The viewer whose last view (List or Calendar) the page reads; no stored
 // choice unless a test writes one.
@@ -133,13 +97,16 @@ function renderEditor() {
 }
 
 const saveButton = () => screen.getByRole("button", { name: /create event/i });
-const cancelButton = () => screen.getByRole("button", { name: /cancel/i });
+// The form closes from its header (#5561): the sheet's Close, or Back when
+// docked beside the page.
+const closeButton = () =>
+  screen.getByRole("button", { name: /^(close|back to events)$/i });
 const autoAbsentButton = () =>
-  screen.getByRole("button", { name: /run auto-absent/i });
+  screen.getByRole("button", { name: /mark no-shows absent/i });
 const rowStatusSelect = () =>
-  screen.getByRole("combobox", { name: /update attendance for alice adams/i });
+  screen.getByRole("radiogroup", { name: /attendance for alice adams/i });
 const statusFilter = () =>
-  screen.getByRole("combobox", { name: /filter attendance by status/i });
+  screen.getByRole("radiogroup", { name: /filter attendance by status/i });
 
 describe("EventEditorDialog subscription gating", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -174,11 +141,11 @@ describe("EventEditorDialog subscription gating", () => {
     );
   });
 
-  it("leaves Cancel live so the blocked dialog is not a trap", () => {
+  it("leaves the way out live so the blocked dialog is not a trap", () => {
     chapter.incomplete();
     renderEditor();
 
-    expect(cancelButton()).toBeEnabled();
+    expect(closeButton()).toBeEnabled();
   });
 
   it("keeps the save button disabled while editing too", () => {
@@ -221,7 +188,7 @@ describe("AttendancePanel subscription gating", () => {
     render(<AttendancePanel eventId="evt-1" />);
 
     expect(autoAbsentButton()).toBeEnabled();
-    expect(rowStatusSelect()).toBeEnabled();
+    expect(rowStatusSelect()).not.toHaveAttribute("aria-disabled");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
@@ -241,7 +208,10 @@ describe("AttendancePanel subscription gating", () => {
     render(<AttendancePanel eventId="evt-1" />);
 
     const describedBy = autoAbsentButton().getAttribute("aria-describedby");
-    expect(rowStatusSelect()).toBeDisabled();
+    // Every answer on the row is off, and the row says why.
+    for (const answer of within(rowStatusSelect()).getAllByRole("radio")) {
+      expect(answer).toBeDisabled();
+    }
     expect(rowStatusSelect()).toHaveAttribute("aria-describedby", describedBy);
   });
 
@@ -249,7 +219,7 @@ describe("AttendancePanel subscription gating", () => {
     chapter.incomplete();
     render(<AttendancePanel eventId="evt-1" />);
 
-    expect(statusFilter()).toBeEnabled();
+    expect(statusFilter()).not.toHaveAttribute("aria-disabled");
   });
 
   it("fails open when the chapter record cannot be read", () => {
@@ -257,13 +227,21 @@ describe("AttendancePanel subscription gating", () => {
     render(<AttendancePanel eventId="evt-1" />);
 
     expect(autoAbsentButton()).toBeEnabled();
-    expect(rowStatusSelect()).toBeEnabled();
+    expect(rowStatusSelect()).not.toHaveAttribute("aria-disabled");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
 
 describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Local noon, so check-in's close (15 minutes after an end five minutes
+    // ago) is "Today" whenever the suite runs; at 23:50 it read "Tomorrow".
+    // Only `Date` is faked, so the query and render timers still run.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 13, 12, 0, 0));
+  });
+  afterEach(() => vi.useRealTimers());
 
   it("waits for check-in to close, which is when the API accepts it", () => {
     chapter.active();
@@ -273,11 +251,13 @@ describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () 
 
     expect(autoAbsentButton()).toBeDisabled();
     // Said in visible text, since a disabled button shows no tooltip.
-    const notice = screen.getByText(/auto-absent can run once check-in closes/i);
+    const notice = screen.getByText(
+      /available when check-in closes/i,
+    );
     expect(notice).toHaveTextContent(/\(Today · /);
     expect(autoAbsentButton()).toHaveAttribute("aria-describedby", notice.id);
     // The row write is not held: officers correct statuses during check-in.
-    expect(rowStatusSelect()).toBeEnabled();
+    expect(rowStatusSelect()).not.toHaveAttribute("aria-disabled");
   });
 
   it("makes no promise about the close when the subscription blocks it", () => {
@@ -287,7 +267,7 @@ describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () 
 
     expect(autoAbsentButton()).toBeDisabled();
     expect(
-      screen.queryByText(/auto-absent can run once check-in closes/i),
+      screen.queryByText(/available when check-in closes/i),
     ).not.toBeInTheDocument();
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
   });
@@ -299,7 +279,7 @@ describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () 
 
     expect(autoAbsentButton()).toBeEnabled();
     expect(
-      screen.queryByText(/auto-absent can run once check-in closes/i),
+      screen.queryByText(/available when check-in closes/i),
     ).not.toBeInTheDocument();
   });
 });
@@ -307,27 +287,26 @@ describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () 
 describe("EventsPage subscription gating", () => {
   // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops. The page owns the
   // editor dialog's `open`, so §5 rule 1 lands here: the New event button and
-  // the calendar's day controls are the triggers that must refuse to open it
-  // (#841). With no events the page opens on the calendar, so both are on
-  // screen together.
+  // the hour grid's hours are the triggers that must refuse to open it (#841).
   beforeEach(() => vi.clearAllMocks());
 
   const newEvent = () => screen.getByRole("button", { name: /new event/i });
 
-  it("disables every create entry point and names the blocker when incomplete", () => {
+  it("disables every create entry point and names the blocker when incomplete", async () => {
     chapter.incomplete();
     render(<EventsPage />);
 
     expect(newEvent()).toBeDisabled();
-    // The calendar's days are more ways into the same dialog; gating only the
-    // header button would leave a live path to a doomed form. The dashed +
-    // on today isn't drawn at all while the days are off.
-    for (const day of screen.getAllByRole("button", {
+    // The hour grid's hours are more ways into the same dialog; gating only
+    // the header button would leave a live path to a doomed form.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Hours for Today" }),
+    );
+    for (const hour of screen.getAllByRole("button", {
       name: /^create event on/i,
     })) {
-      expect(day).toBeDisabled();
+      expect(hour).toBeDisabled();
     }
-    expect(screen.queryByTestId("calendar-first-event-slot")).toBeNull();
     expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
   });
 

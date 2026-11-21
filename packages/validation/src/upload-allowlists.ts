@@ -10,6 +10,9 @@
  * Kinds:
  * - `image` — avatars and chapter logos (jpeg / png / gif / webp)
  * - `proof` — service-hour receipts (images + PDF)
+ * - `task_photo` — a task's reference photo and its proof of completion
+ *   (#4565): photos only, the same four types as `image`, kept as its own kind
+ *   because the `tasks` bucket mirrors it and must not move when avatars do
  * - `document` — chapter files, backwork, and chat attachments (images + PDF +
  *   Office + text/csv)
  *
@@ -87,6 +90,15 @@ export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 export const MAX_UPLOAD_LABEL = "25 MB";
 
 /**
+ * The longest edge, in pixels, a profile photo or chapter logo is downscaled
+ * to (#2912). Every client shrinks to it before the PUT, because the stored
+ * object is what every 24-112px avatar and crest downloads: the largest render
+ * site is web's 112px chapter-home crest, which needs 336px at 3x, so 512 is
+ * sharp with room to spare, at tens of KB instead of a phone photo's megabytes.
+ */
+export const AVATAR_MAX_EDGE = 512;
+
+/**
  * Backwork's own ceiling, the one member-upload surface above
  * `MAX_UPLOAD_BYTES`. Scanned exams run large, and the owner set 100 MB per
  * file, the hosted projects' global storage limit (#3487; 50 MB until
@@ -111,6 +123,15 @@ export const MAX_BACKWORK_ZIP_BYTES = 250 * 1024 * 1024;
 export const MAX_BACKWORK_ZIP_LABEL = "250 MB";
 
 /**
+ * Most backwork drafts one edit or publish call takes (#5208). A bulk upload
+ * batch can run to hundreds of exams; the review table sends a bigger
+ * selection in chunks of this size. The API works through a call one draft
+ * at a time (a few queries each), so 50 keeps a call well inside the SDK's
+ * 20-second write timeout.
+ */
+export const MAX_BACKWORK_DRAFT_BATCH = 50;
+
+/**
  * The `archive` kind is NOT a member-upload surface.
  *
  * It exists for one flow: a chapter admin uploading a DiscordChatExporter
@@ -129,7 +150,8 @@ export const MAX_BACKWORK_ZIP_LABEL = "250 MB";
  * client checks an archive's size.
  */
 
-export type UploadKind = "image" | "proof" | "document" | "archive";
+export type UploadKind =
+  "image" | "proof" | "task_photo" | "document" | "archive";
 
 /**
  * Surfaces that must share the `document` kind. Adding a fourth member-upload
@@ -246,6 +268,8 @@ function freezeKind(bindings: readonly MimeBinding[]): KindTable {
 const KINDS: Record<UploadKind, KindTable> = {
   image: freezeKind(IMAGE_BINDINGS),
   proof: freezeKind([...IMAGE_BINDINGS, PDF_BINDING]),
+  // Mirrored by the `tasks` bucket (20261113040005_task_photos.sql).
+  task_photo: freezeKind(IMAGE_BINDINGS),
   document: freezeKind([
     ...IMAGE_BINDINGS,
     PDF_BINDING,

@@ -1,0 +1,611 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import type { RbacService } from './rbac.service';
+import type { Role } from '#domain/entities/role.entity';
+import {
+  createTieredRbacHarness,
+  type TieredMemberRepoMock,
+  type TieredRoleRepoMock,
+} from '#test/helpers/rbac-service.harness';
+import type { AuditLogServiceMock } from '#test/helpers/audit-log.mock';
+import {
+  CHAPTER_ID,
+  ROLE,
+  TIER,
+  USER,
+  tieredChapterRoles,
+} from '#test/helpers/tiered-chapter.fixture';
+
+const INTRAMURALS = 'role-intramurals';
+const BRAND_NEW = 'role-brand-new';
+
+/**
+ * Self-assignable roles (#4958): an officer marks a role members join and
+ * leave themselves, and nobody may pick their way into power. Walked on the
+ * tiered fixture chapter (President, exec, chairs, brothers, associates) with
+ * one interest role outside the tiers.
+ */
+describe('RbacService self-assignable roles (#4958)', () => {
+  let service: RbacService;
+  let roles: Role[];
+  let audit: AuditLogServiceMock;
+  let roleRepo: TieredRoleRepoMock;
+  let memberRepo: TieredMemberRepoMock;
+  let members: { id: string; role_ids: string[] }[];
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const base = tieredChapterRoles();
+    const interest = (id: string, name: string, marked: boolean): Role => ({
+      ...base.find((r) => r.id === ROLE.brother)!,
+      id,
+      name,
+      tier_id: null,
+      permissions: [],
+      permission_overrides: {},
+      self_assignable: marked,
+    });
+    const harness = await createTieredRbacHarness([
+      ...base,
+      interest(INTRAMURALS, 'Intramurals', true),
+      interest(BRAND_NEW, 'Study group', false),
+    ]);
+    ({ service, roles, audit, roleRepo, memberRepo } = harness);
+    ({ members } = harness);
+    memberRepo.setSelfAssignedRole.mockImplementation(
+      async (_c: string, memberId: string, roleId: string, join: boolean) => {
+        const held = members.find((m) => m.id === memberId)!.role_ids;
+        return {
+          outcome: 'ok',
+          role_ids: join
+            ? [...held.filter((id) => id !== roleId), roleId]
+            : held.filter((id) => id !== roleId),
+        };
+      },
+    );
+  });
+
+  const roleById = (id: string) => roles.find((r) => r.id === id)!;
+  const brother = () => members.find((m) => m.id === 'member-brother')!;
+  const codeOf = async (promise: Promise<unknown>) => {
+    try {
+      await promise;
+    } catch (error) {
+      const response = (
+        error as { getResponse?: () => unknown }
+      ).getResponse?.() as { code?: string } | undefined;
+      return { type: error?.constructor, code: response?.code };
+    }
+    return { type: undefined, code: undefined };
+  };
+
+  describe('marking a role (PATCH /v1/roles/:id self_assignable)', () => {
+    it('marks a role outside the tiers that holds nothing', async () => {
+      const saved = await service.updateAsMember(
+        BRAND_NEW,
+        CHAPTER_ID,
+        USER.riskChair,
+        { self_assignable: true },
+      );
+      expect(roleRepo.update).toHaveBeenCalledWith(BRAND_NEW, {
+        self_assignable: true,
+      });
+      expect(saved.self_assignable).toBe(true);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'role_updated',
+          diff: { self_assignable: { from: false, to: true } },
+        }),
+      );
+    });
+
+    it('refuses a keyed role (President, Everyone, New Member, Alumni)', async () => {
+      for (const key of ['PRESIDENT', 'MEMBER', 'NEW_MEMBER', 'ALUMNI']) {
+        roleById(BRAND_NEW).system_key = key;
+        expect(
+          await codeOf(
+            service.updateAsMember(BRAND_NEW, CHAPTER_ID, USER.president, {
+              self_assignable: true,
+            }),
+          ),
+        ).toEqual({
+          type: BadRequestException,
+          code: 'role.self_assignable_keyed',
+        });
+      }
+      expect(roleRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a role in a tier, even the lowest, since a tier is rank', async () => {
+      expect(
+        await codeOf(
+          service.updateAsMember(ROLE.pledge, CHAPTER_ID, USER.president, {
+            self_assignable: true,
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_tiered',
+      });
+      expect(roleRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a role holding a permission beyond channels:read', async () => {
+      // Alumni sits outside the tiers in the fixture but holds members:view.
+      expect(
+        await codeOf(
+          service.updateAsMember(ROLE.alumni, CHAPTER_ID, USER.president, {
+            self_assignable: true,
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_permissions',
+      });
+    });
+
+    it('refuses marking and granting in one save', async () => {
+      expect(
+        await codeOf(
+          service.updateAsMember(BRAND_NEW, CHAPTER_ID, USER.president, {
+            self_assignable: true,
+            permissions: ['events:create'],
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_permissions',
+      });
+    });
+
+    it('refuses marking and moving into a tier in one save', async () => {
+      expect(
+        await codeOf(
+          service.updateAsMember(BRAND_NEW, CHAPTER_ID, USER.president, {
+            self_assignable: true,
+            tier_id: TIER.pledges,
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_tiered',
+      });
+    });
+
+    it('allows channels:read keys, but only to a caller who holds them', async () => {
+      roleById(BRAND_NEW).permissions = ['channels:read:study'];
+      await expect(
+        service.updateAsMember(BRAND_NEW, CHAPTER_ID, USER.riskChair, {
+          self_assignable: true,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(roleRepo.update).not.toHaveBeenCalled();
+
+      await service.updateAsMember(BRAND_NEW, CHAPTER_ID, USER.president, {
+        self_assignable: true,
+      });
+      expect(roleRepo.update).toHaveBeenCalledWith(BRAND_NEW, {
+        self_assignable: true,
+      });
+    });
+  });
+
+  // #5736: the Roles overview's Non-chapter business section creates a role
+  // already marked, in one request, under the same rule as marking it after.
+  describe('creating a role already marked (POST /v1/roles self_assignable)', () => {
+    it('creates it outside the tiers, holding nothing, marked', async () => {
+      const created = await service.createAsMember(CHAPTER_ID, USER.riskChair, {
+        name: 'Intramural soccer',
+        permissions: [],
+        tier_id: null,
+        self_assignable: true,
+      });
+      expect(roleRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Intramural soccer',
+          tier_id: null,
+          self_assignable: true,
+          system_key: null,
+        }),
+      );
+      expect(created.self_assignable).toBe(true);
+    });
+
+    it('refuses one in a tier', async () => {
+      expect(
+        await codeOf(
+          service.createAsMember(CHAPTER_ID, USER.president, {
+            name: 'Intramural soccer',
+            permissions: [],
+            tier_id: TIER.pledges,
+            self_assignable: true,
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_tiered',
+      });
+      expect(roleRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses one holding a permission beyond channels:read', async () => {
+      expect(
+        await codeOf(
+          service.createAsMember(CHAPTER_ID, USER.president, {
+            name: 'Intramural soccer',
+            permissions: ['members:view'],
+            tier_id: null,
+            self_assignable: true,
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_permissions',
+      });
+      expect(roleRepo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('editing a role members already pick', () => {
+    it('refuses granting it a permission unless the save also unmarks it', async () => {
+      expect(
+        await codeOf(
+          service.updateAsMember(INTRAMURALS, CHAPTER_ID, USER.president, {
+            permissions: ['events:create'],
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_permissions',
+      });
+      expect(roleRepo.update).not.toHaveBeenCalled();
+
+      await service.updateAsMember(INTRAMURALS, CHAPTER_ID, USER.president, {
+        permissions: ['events:create'],
+        self_assignable: false,
+      });
+      expect(roleRepo.update).toHaveBeenCalledWith(INTRAMURALS, {
+        permissions: ['events:create'],
+        self_assignable: false,
+      });
+    });
+
+    it('refuses switching an override on', async () => {
+      expect(
+        await codeOf(
+          service.updateAsMember(INTRAMURALS, CHAPTER_ID, USER.president, {
+            permission_overrides: { 'events:create': true },
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_permissions',
+      });
+    });
+
+    it('refuses moving it into a tier', async () => {
+      expect(
+        await codeOf(
+          service.updateAsMember(INTRAMURALS, CHAPTER_ID, USER.president, {
+            tier_id: TIER.pledges,
+          }),
+        ),
+      ).toEqual({
+        type: BadRequestException,
+        code: 'role.self_assignable_tiered',
+      });
+    });
+
+    it('answers 409 when an officer marked the role after this save read it', async () => {
+      // The save read BRAND_NEW unmarked; meanwhile it was marked and members
+      // joined, so the database's constraint refuses the new permission.
+      roleRepo.update.mockRejectedValueOnce(
+        Object.assign(
+          new Error(
+            'new row for relation "roles" violates check constraint "roles_self_assignable_safe"',
+          ),
+          { code: '23514' },
+        ),
+      );
+      await expect(
+        service.updateAsMember(BRAND_NEW, CHAPTER_ID, USER.president, {
+          permissions: ['events:create'],
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('lets a rename or recolor through', async () => {
+      await service.updateAsMember(INTRAMURALS, CHAPTER_ID, USER.riskChair, {
+        name: 'IM sports',
+      });
+      expect(roleRepo.update).toHaveBeenCalledWith(INTRAMURALS, {
+        name: 'IM sports',
+      });
+    });
+  });
+
+  describe('joining and leaving (POST /v1/roles/:id/join and /leave)', () => {
+    it('a brother joins a marked role through self_assign_role', async () => {
+      const result = await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        INTRAMURALS,
+        true,
+      );
+      expect(memberRepo.setSelfAssignedRole).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        'member-brother',
+        INTRAMURALS,
+        true,
+      );
+      expect(result).toEqual({ role_ids: [ROLE.brother, INTRAMURALS] });
+    });
+
+    it('and leaves it', async () => {
+      await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        INTRAMURALS,
+        false,
+      );
+      expect(memberRepo.setSelfAssignedRole).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        'member-brother',
+        INTRAMURALS,
+        false,
+      );
+    });
+
+    it('refuses joining an unmarked role, and leaving one an officer gave (#5650)', async () => {
+      expect(
+        await codeOf(
+          service.setOwnSelfAssignableRole(
+            CHAPTER_ID,
+            USER.brother,
+            BRAND_NEW,
+            true,
+          ),
+        ),
+      ).toEqual({ type: ForbiddenException, code: 'role.not_self_assignable' });
+      // Held but unmarked: an officer gave it, or stopped offering it, so an
+      // officer takes it off.
+      brother().role_ids.push(BRAND_NEW);
+      expect(
+        await codeOf(
+          service.setOwnSelfAssignableRole(
+            CHAPTER_ID,
+            USER.brother,
+            BRAND_NEW,
+            false,
+          ),
+        ),
+      ).toEqual({ type: ForbiddenException, code: 'role.not_self_assignable' });
+      expect(memberRepo.setSelfAssignedRole).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('records a join and a leave as exec-only audit rows', async () => {
+      await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        INTRAMURALS,
+        true,
+      );
+      expect(audit.record).toHaveBeenLastCalledWith({
+        chapterId: CHAPTER_ID,
+        actorUserId: USER.brother,
+        action: 'role_self_joined',
+        targetType: 'role',
+        targetId: INTRAMURALS,
+        diff: { member_id: { from: null, to: 'member-brother' } },
+        memberVisible: false,
+      });
+
+      brother().role_ids.push(INTRAMURALS);
+      await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        INTRAMURALS,
+        false,
+      );
+      expect(audit.record).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          action: 'role_self_left',
+          targetId: INTRAMURALS,
+          diff: { member_id: { from: 'member-brother', to: null } },
+          memberVisible: false,
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledTimes(2);
+    });
+
+    it('records nothing when the roles did not change', async () => {
+      // Leaving a role not held, as `self_assign_role` answers it.
+      await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        INTRAMURALS,
+        false,
+      );
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('refuses an alum, as the database answers', async () => {
+      memberRepo.setSelfAssignedRole.mockResolvedValueOnce({
+        outcome: 'alumni',
+        role_ids: null,
+      });
+      expect(
+        await codeOf(
+          service.setOwnSelfAssignableRole(
+            CHAPTER_ID,
+            USER.brother,
+            INTRAMURALS,
+            true,
+          ),
+        ),
+      ).toEqual({ type: ForbiddenException, code: 'role.not_self_assignable' });
+    });
+
+    it.each([
+      ["an officer's role", ROLE.vicePresident],
+      ["the President's role", ROLE.president],
+      ['a pledge role in a tier', ROLE.pledge],
+    ])('refuses %s, joining or leaving', async (_label, roleId) => {
+      for (const join of [true, false]) {
+        expect(
+          await codeOf(
+            service.setOwnSelfAssignableRole(
+              CHAPTER_ID,
+              USER.brother,
+              roleId,
+              join,
+            ),
+          ),
+        ).toEqual({
+          type: ForbiddenException,
+          code: 'role.not_self_assignable',
+        });
+      }
+      expect(memberRepo.setSelfAssignedRole).not.toHaveBeenCalled();
+    });
+
+    it('refuses joining a role marked but not safe', async () => {
+      // A row the database's constraint rules out; the API re-checks anyway.
+      Object.assign(roleById(INTRAMURALS), {
+        permissions: ['roles:manage'],
+      });
+      expect(
+        await codeOf(
+          service.setOwnSelfAssignableRole(
+            CHAPTER_ID,
+            USER.brother,
+            INTRAMURALS,
+            true,
+          ),
+        ),
+      ).toEqual({
+        type: ForbiddenException,
+        code: 'role.not_self_assignable',
+      });
+      Object.assign(roleById(INTRAMURALS), {
+        permissions: [],
+        system_key: 'PRESIDENT',
+      });
+      await expect(
+        service.setOwnSelfAssignableRole(
+          CHAPTER_ID,
+          USER.brother,
+          INTRAMURALS,
+          true,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(memberRepo.setSelfAssignedRole).not.toHaveBeenCalled();
+    });
+
+    it("refuses another chapter's role", async () => {
+      roleById(INTRAMURALS).chapter_id = 'chapter-other';
+      await expect(
+        service.setOwnSelfAssignableRole(
+          CHAPTER_ID,
+          USER.brother,
+          INTRAMURALS,
+          true,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(memberRepo.setSelfAssignedRole).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for a role that does not exist', async () => {
+      await expect(
+        service.setOwnSelfAssignableRole(
+          CHAPTER_ID,
+          USER.brother,
+          'role-missing',
+          true,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('answers 409 when the role changed under the lock', async () => {
+      memberRepo.setSelfAssignedRole.mockResolvedValueOnce({
+        outcome: 'not_assignable',
+        role_ids: null,
+      });
+      await expect(
+        service.setOwnSelfAssignableRole(
+          CHAPTER_ID,
+          USER.brother,
+          INTRAMURALS,
+          true,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('answers 404 for a caller with no membership', async () => {
+      await expect(
+        service.setOwnSelfAssignableRole(
+          CHAPTER_ID,
+          'user-nobody',
+          INTRAMURALS,
+          true,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('posting a role picker in chat (#4958)', () => {
+    beforeEach(() => {
+      // The permission read resolves the caller's roles by id.
+      roleRepo.findByIds.mockImplementation(async (ids: string[]) =>
+        roles.filter((role) => ids.includes(role.id)),
+      );
+    });
+
+    it('lets a roles manager list marked roles', async () => {
+      await expect(
+        service.assertMayPostRolePicker(CHAPTER_ID, USER.riskChair, [
+          INTRAMURALS.toUpperCase(),
+        ]),
+      ).resolves.toBeUndefined();
+    });
+
+    it('refuses a member who does not manage roles', async () => {
+      await expect(
+        service.assertMayPostRolePicker(CHAPTER_ID, USER.brother, [
+          INTRAMURALS,
+        ]),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('reads only this chapter’s roles, so a role marked elsewhere is refused', async () => {
+      roleRepo.findByChapter.mockImplementation(async (chapterId: string) =>
+        chapterId === CHAPTER_ID ? roles : [],
+      );
+      await expect(
+        service.assertMayPostRolePicker('chapter-other', USER.president, [
+          INTRAMURALS,
+        ]),
+      ).rejects.toBeInstanceOf(Error);
+      await service.assertMayPostRolePicker(CHAPTER_ID, USER.president, [
+        INTRAMURALS,
+      ]);
+      expect(roleRepo.findByChapter).toHaveBeenLastCalledWith(CHAPTER_ID);
+    });
+
+    it('refuses a role that is not marked, or not in the chapter', async () => {
+      for (const id of [BRAND_NEW, ROLE.brother, 'role-elsewhere']) {
+        await expect(
+          service.assertMayPostRolePicker(CHAPTER_ID, USER.president, [
+            INTRAMURALS,
+            id,
+          ]),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      }
+    });
+  });
+});

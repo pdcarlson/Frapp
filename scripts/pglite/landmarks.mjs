@@ -33,6 +33,28 @@ export const LANDMARKS = [
       ),
   },
   {
+    // An event's pre-start reminder claim keys on the UTC *date* of
+    // start_time, so a same-day reschedule only earns a new reminder because
+    // this trigger deletes the old claim (#1550). Pinned with its WHEN clause:
+    // without it every save of an event inside the window (a name or location
+    // edit) would re-send "starts in N minutes"; without the trigger the
+    // reschedule is silently never reminded. Deferred, so its delete sees a
+    // claim a sweep committed while the move was in flight. None of the three
+    // shows up as an error. The body's behavior is tiers/event-reminder-rearm.
+    name: "moving an event's start_time releases its EVENT_REMINDER claim",
+    sql: `select pg_get_triggerdef(t.oid) as def
+            from pg_trigger t
+           where t.tgrelid = 'public.events'::regclass
+             and t.tgname = 'events_release_reminder_claims'`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      /AFTER UPDATE OF start_time/i.test(rows[0].def ?? "") &&
+      /DEFERRABLE INITIALLY DEFERRED/i.test(rows[0].def ?? "") &&
+      /old\.start_time IS DISTINCT FROM new\.start_time/i.test(
+        rows[0].def ?? "",
+      ),
+  },
+  {
     // Pins an index the **initial schema** owns, not one any later migration
     // added — stated plainly because the reverse would be the more useful-
     // sounding lie. The pre-event reminder sweep filters `events` on a bounded
@@ -276,6 +298,27 @@ export const LANDMARKS = [
       /not\s+exists\s*\(\s*select\s+1\s+from\s+chat_member_blocks/i.test(rows[0].prosrc ?? "") &&
       /blocker_user_id\s*=\s*p_user_id/i.test(rows[0].prosrc ?? "") &&
       /blocked_user_id\s*=\s*m\.sender_id/i.test(rows[0].prosrc ?? ""),
+  },
+  {
+    // The unread badge's speed (#4342). `GET /v1/channels/unread` is the API's
+    // busiest route; with its old left-join body, or without this index, the
+    // planner scanned every chapter's messages (167 ms mean, 5.9 s max on
+    // production). The predicate is asserted with the body's shape: the index
+    // is reachable only while it implies nothing the per-channel count doesn't
+    // also filter on.
+    name: "get_channel_unread_counts counts per channel through the countable partial index (#4342)",
+    sql: `select
+            (select indexdef from pg_indexes
+              where indexname = 'idx_chat_messages_channel_countable') as indexdef,
+            (select prosrc from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+              where n.nspname = 'public' and p.proname = 'get_channel_unread_counts') as prosrc`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      /\(channel_id, created_at\)/.test(rows[0].indexdef ?? "") &&
+      /thread_root_id IS NULL/i.test(rows[0].indexdef ?? "") &&
+      /is_deleted = false/i.test(rows[0].indexdef ?? "") &&
+      /kind <> 'imported'/i.test(rows[0].indexdef ?? "") &&
+      /cross\s+join\s+lateral/i.test(rows[0].prosrc ?? ""),
   },
   {
     name: "chat_message_actions UNIQUE on (message_id, user_id, action_type)",

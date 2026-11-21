@@ -16,6 +16,9 @@ const captureException = jest.mocked(Sentry.captureException);
 
 // Moved out of `event.service.spec.ts` with the methods (#3270). Cases drive
 // `EventService.create` / `update`, which announce through this service.
+/** The maker of these events, an `events:update` holder (#3709). */
+const OFFICER = 'user-maker';
+
 describe('EventAnnouncementService', () => {
   let service: EventServiceFixture['service'];
   let mockEventRepo: EventServiceFixture['mockEventRepo'];
@@ -36,6 +39,9 @@ describe('EventAnnouncementService', () => {
       mockChatService,
       mockRbacService,
     } = await createEventServiceFixture());
+    // An officer makes these events: making anyone required takes
+    // `events:update` (#3709).
+    mockRbacService.memberHasAnyPermission.mockResolvedValue(true);
   });
 
   /** The copy one recipient reads from the last `notifyMembers` call. */
@@ -136,6 +142,7 @@ describe('EventAnnouncementService', () => {
       });
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter',
         start_time: thanksgiving.start_time,
@@ -241,6 +248,21 @@ describe('EventAnnouncementService', () => {
       });
     });
 
+    it('stays quiet for an event created silently (minutes for a meeting not on the calendar)', async () => {
+      mockEventRepo.create.mockResolvedValue(thanksgiving);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter',
+        start_time: thanksgiving.start_time,
+        end_time: thanksgiving.end_time,
+        created_by: 'user-creator',
+        silent: true,
+      });
+
+      expect(mockNotificationService.notifyMembers).not.toHaveBeenCalled();
+    });
+
     it('stays quiet for a save that round-trips the same time and place', async () => {
       mockEventRepo.findById.mockResolvedValue({
         ...thanksgiving,
@@ -273,6 +295,7 @@ describe('EventAnnouncementService', () => {
         .mockImplementation(() => undefined);
 
       const result = await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -344,6 +367,7 @@ describe('EventAnnouncementService', () => {
         });
 
         await service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Exec Meeting',
           start_time: thanksgiving.start_time,
@@ -418,14 +442,44 @@ describe('EventAnnouncementService', () => {
         point_value: 10,
         location: null,
         is_mandatory: false,
+        required_role_ids: [],
+        optional_role_ids: [],
+        excluded_role_ids: [],
+        others_invited: true,
       });
       expect(arg.content).toContain('Chapter Meeting');
+    });
+
+    it("carries the event's own role lists, so the card can tell whom it requires (#4660)", async () => {
+      // Everyone is invited (a card is refused otherwise); one role is
+      // required and another optional on top of that.
+      mockEventRepo.create.mockResolvedValue({
+        ...baseEvent,
+        required_role_ids: ['role-new'],
+        optional_role_ids: ['role-alumni'],
+        excluded_role_ids: [],
+        others_invited: true,
+      });
+      mockUserRepo.findByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Alice' },
+      ]);
+
+      await service.create(chatInput);
+
+      const arg = mockChatService.sendMessage.mock.calls[0][0];
+      expect(arg.payload).toMatchObject({
+        required_role_ids: ['role-new'],
+        optional_role_ids: ['role-alumni'],
+        excluded_role_ids: [],
+        others_invited: true,
+      });
     });
 
     it('does not post a card for a dashboard create (no chat fields)', async () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
 
       await service.create({
+        created_by: OFFICER,
         chapter_id: 'ch-1',
         name: 'Chapter Meeting',
         start_time: baseEvent.start_time,
@@ -480,6 +534,7 @@ describe('EventAnnouncementService', () => {
         mockEventRepo.create.mockResolvedValue(baseEvent);
 
         const result = await service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Chapter Meeting',
           start_time: baseEvent.start_time,
@@ -596,6 +651,7 @@ describe('EventAnnouncementService', () => {
         });
 
         await service.create({
+          created_by: OFFICER,
           chapter_id: 'ch-1',
           name: 'Exec Review',
           start_time: baseEvent.start_time,

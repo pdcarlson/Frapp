@@ -7,9 +7,9 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { expectBackRow } from "@/test/back-row";
 
 /**
- * #3022. Two More destinations with no screen spec of their own, s11 Dues and
+ * #3022. Two You destinations with no screen spec of their own, s11 Dues and
  * s12 Documents, render here with every query still loading, to pin that they
- * draw the board's `‹ More` and that it goes there. The others are pinned in
+ * draw the board's `‹ You` and that it goes there. The others are pinned in
  * their own screen specs (s16's in `settings-screen.spec.tsx`). It lives under `lib/`
  * because a spec under `app/` ships as a route module (`lib/routes.spec.ts`).
  *
@@ -98,11 +98,11 @@ afterEach(() => {
   });
 });
 
-describe("More destinations draw ‹ More (#3022)", () => {
+describe("You destinations draw ‹ You (#3022)", () => {
   it.each([
     ["s11 Dues", () => <DuesScreen />],
     ["s12 Documents", () => <DocumentsScreen />],
   ])("%s", (_name, screen) => {
-    expectBackRow(render(screen()), "More", "/more");
+    expectBackRow(render(screen()), "You", "/you");
   });
 });

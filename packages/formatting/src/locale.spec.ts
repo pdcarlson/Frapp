@@ -51,7 +51,7 @@ describe("formatClock", () => {
       new Date(value).toLocaleString(undefined, {
         hour: "numeric",
         minute: "2-digit",
-        month: "short",
+        month: "long",
         day: "numeric",
       }),
     );
@@ -64,6 +64,29 @@ describe("formatTimeOfDay", () => {
     expect(formatTimeOfDay("later")).toBe("");
     expect(formatTimeOfDayShort(null)).toBe("");
     expect(formatTimeOfDayShort("later")).toBe("");
+  });
+
+  it("reads a Date as the instant it is (#4976)", () => {
+    const at = new Date(2026, 7, 16, 17, 9);
+    expect(formatTimeOfDay(at)).not.toBe("");
+    expect(formatTimeOfDay(at)).toBe(formatTimeOfDay(at.toISOString()));
+    const since = new Date(2026, 7, 16, 16, 50);
+    expect(formatTimeOfDayShort(at, since)).toBe(
+      formatTimeOfDayShort(at.toISOString(), since.toISOString()),
+    );
+    expect(formatTimeOfDay(new Date(Number.NaN))).toBe("");
+    expect(formatTimeOfDayShort(new Date(Number.NaN))).toBe("");
+  });
+
+  it("its siblings read a Date the same way (#4976)", () => {
+    const at = new Date(2026, 7, 16, 17, 9);
+    const iso = at.toISOString();
+    expect(formatClock(at)).toBe(formatClock(iso));
+    expect(formatLocaleDate(at)).toBe(formatLocaleDate(iso));
+    expect(formatLocaleDateTime(at)).toBe(formatLocaleDateTime(iso));
+    expect(formatClock(new Date(Number.NaN))).toBe("");
+    expect(formatLocaleDate(new Date(Number.NaN))).toBe("—");
+    expect(formatLocaleDateTime(new Date(Number.NaN))).toBe("—");
   });
 
   it("prints the time of day and never the date", () => {

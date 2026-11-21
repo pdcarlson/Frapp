@@ -25,7 +25,7 @@ The committed assets ship **locked emblem B** — gold `#DDB844` on charcoal `#1
 | **Open Graph image**                      | Product | Preview card when a marketing URL is shared (Slack, iMessage, etc.)                                                   |
 | **Chapter logo**                          | Tenant  | In-app surfaces, PDFs, onboarding — from Storage (`logo_path`); **does not** replace product marks on marketing or docs |
 
-The product mark NEVER takes the chapter accent, and chapter accent applies inside chapter context only — see [brand-identity.md](brand-identity.md).
+The product mark NEVER takes the chapter accent, and chapter accent applies inside chapter context only — see [brand-identity.md](brand-identity.md). (There is one exception since #4702, Paul's: the crest drawn as a one-colour glyph on Ask Frapp's front doors, §2 there.)
 
 ---
 
@@ -53,7 +53,7 @@ Requirements:
 
 - App icon MUST stay legible at 16px favicon scale.
 - Lockup MUST stay readable at ~120px width; the word uses `fill="currentColor"` when inlined so theme text colors apply. The crest stays `#DDB844`.
-- **Page headers draw the crest alone, with no tile** (owner, 2026-09-28, [#2580](https://github.com/pdcarlson/Frapp/issues/2580)). On `--background` (`#0A0A0A` since 2026-11-05, `#131211` when this was ruled) a charcoal or `surface-1` tile reads as a second, slightly different dark square, so the lockup and the landing header put the gold crest straight on the page. The `#1A1A1A` tile (`signet-emblem-B-1024.png`, `-rounded`) stays wherever the mark is a square icon on its own: app icon, favicon, Apple touch icon, and the Stripe and Google OAuth icons.
+- **Page headers draw the crest alone, with no tile** (owner, 2026-09-28, [#2580](https://github.com/pdcarlson/Frapp/issues/2580)). On `--background` (`#050505` since 2026-11-12, `#0A0A0A` from 2026-11-05, `#131211` when this was ruled) a charcoal or `surface-1` tile reads as a second, slightly different dark square, so the lockup and the landing header put the gold crest straight on the page. The `#1A1A1A` tile (`signet-emblem-B-1024.png`, `-rounded`) stays wherever the mark is a square icon on its own: app icon, favicon, Apple touch icon, and the Stripe and Google OAuth icons.
 - Consumers MUST NOT hand-edit synced copies (`apps/*/app/icon.png`) or any raster in this package — every one of them is generated. Edit the SVG master and re-run rasterize + sync.
 - Use the `-glyph` pair wherever the mark sits on a surface that is not the charcoal field: it is rendered against transparency rather than keyed out of the tile, so it carries no dark fringe.
 
@@ -65,7 +65,7 @@ Requirements:
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | Vector master                         | `packages/brand-assets/assets/signet-emblem-B.svg` (plus `signet-emblem-B-glyph.svg`) |
 | Source rasters                        | `packages/brand-assets/assets/signet-emblem-B-1024.png`, `-180.png`, `-48.png`, `-32.png`, `-16.png`, `signet-emblem-B-glyph-1024.png`, and `signet-emblem-B.ico` (all generated) |
-| Synced copies | Every destination listed in `SYNCED` (`scripts/lib/brand-pixels.mjs`), the one list the sync copies along and the gate checks: the tab and Apple touch icons in both Next apps, `apps/web/app/favicon.ico` (the 16/32/48 container; `apps/landing` serves `icon.png` only), both apps' `public/brand/signet-emblem-B.png` tile, `apps/landing/app/opengraph-emblem.png`, and the chat system avatar (the 180² raster at `apps/web/public/brand/system-avatar.png` and `apps/mobile/assets/images/system-avatar.png`, the avatar both chats draw for Frapp's own posts) |
+| Synced copies | Every destination listed in `SYNCED` (`scripts/lib/brand-pixels.mjs`), the one list the sync copies along and the gate checks: the tab and Apple touch icons in both Next apps, `apps/web/app/favicon.ico` (the 16/32/48 container; `apps/landing` serves `icon.png` only), both apps' `public/brand/signet-emblem-B.png` tile, web's `public/brand/signet-emblem-B-glyph.png` (the glyph raster the 404 and error pages draw), `apps/landing/app/opengraph-emblem.png`, and the chat system avatar (the 180² raster at `apps/web/public/brand/system-avatar.png` and `apps/mobile/assets/images/system-avatar.png`, the avatar both chats draw for Frapp's own posts) |
 | Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — Frapp word plus the crest from [`signet-crest.tsx`](../../apps/landing/components/signet-crest.tsx), inlined as one path since #2366 and no longer a raster. The crest (`#DDB844`) sits on the page background with no tile since ADR-25 step 5. |
 | OG image                              | `apps/landing/app/opengraph-image.tsx`                                                                 |
 
@@ -114,7 +114,7 @@ Shapes: `icon.png` 1024² opaque RGB, the full-bleed tile, which Expo uses where
 After the SVG master changes:
 
 1. Run `npm run rasterize:brand-assets` then `npm run sync:brand-assets`.
-2. `android.adaptiveIcon.backgroundColor` MUST stay the mark field (`#1A1A1A`) — the launcher paints it behind the transparent crest, so it *is* the mark's field on Android. The `expo-splash-screen` plugin's `backgroundColor` is deliberately **not** the mark field: the splash image is transparent, so it sits on the app's own `--background` and the splash-to-app transition has no seam.
+2. `android.adaptiveIcon.backgroundColor` MUST stay the mark field (`#1A1A1A`) — the launcher paints it behind the transparent crest, so it *is* the mark's field on Android. The `expo-splash-screen` plugin's `backgroundColor` is deliberately **not** the mark field: the splash image is transparent and sits on a near-black meant to match the app's own background. _Corrected 2026-11-18 (#5449; this sentence used to say it sits on the app's `--background`):_ it is `#0A0A0A` while `--background` has been `#050505` since 2026-11-12, and the native splash only changes with a new `expo.version` (#4392). The seam is hidden instead by the phone's launch logo, which draws the same emblem on the same `#0A0A0A` and fades into the app ([`mobile/navigation.md` § The launch logo](mobile/navigation.md#the-launch-logo); `apps/mobile/lib/launch/launch-look.ts`, held to `app.json` by its spec).
 3. The iOS icon ships in the binary, not through App Store Connect, which has no icon field ([Add an app icon](https://developer.apple.com/help/app-store-connect/manage-app-information/add-an-app-icon)), so a changed icon reaches people only with a new build. Each appearance in `expo.ios.icon` must name a PNG: prebuild rasterizes every entry of the object into a 1024² universal icon, and a `.icon` directory there is something it cannot rasterize. `check:brand-assets` fails if `icon-light.png` or `icon-tinted.png` stops being a render of the glyph, and `npm run test:ci-scripts` fails if `app.json` names other files or a `.icon` bundle reappears.
 
 ---

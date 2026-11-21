@@ -4,8 +4,19 @@ import {
   IsUrl,
   Matches,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  CHAPTER_NAME_MAX_LENGTH,
+  CHAPTER_NAME_MIN_LENGTH,
+  CHAPTER_UNIVERSITY_MAX_LENGTH,
+  CHAPTER_UNIVERSITY_MIN_LENGTH,
+} from '@repo/validation';
+import {
+  ChapterNameRules,
+  ChapterUniversityRules,
+} from '../decorators/chapter-identity.decorator';
 
 export class LogoUploadUrlDto {
   @ApiProperty({ description: 'Original filename (e.g. logo.png)' })
@@ -37,14 +48,25 @@ export class ConfirmLogoDto {
 }
 
 export class UpdateChapterDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  // The onboarding wizard's rule (`ChapterOnboardingDto`), so a name one route
+  // takes the other takes too. Settings sends only a field the officer
+  // changed, so a name stored before the rule never refuses an unrelated save.
+  @ApiPropertyOptional({
+    description: `The chapter's name. Trimmed; at least ${CHAPTER_NAME_MIN_LENGTH} characters. Omit it to leave it as stored.`,
+    maxLength: CHAPTER_NAME_MAX_LENGTH,
+  })
+  // Not `@IsOptional`, which would also skip the checks for `null` and let it
+  // reach the NOT NULL column as a 500: only an absent name is skipped.
+  @ValidateIf((_obj, value) => value !== undefined)
+  @ChapterNameRules()
   name?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
+  @ApiPropertyOptional({
+    description: `The chapter's university. Trimmed; at least ${CHAPTER_UNIVERSITY_MIN_LENGTH} characters. Omit it to leave it as stored.`,
+    maxLength: CHAPTER_UNIVERSITY_MAX_LENGTH,
+  })
+  @ValidateIf((_obj, value) => value !== undefined)
+  @ChapterUniversityRules()
   university?: string;
 
   @ApiPropertyOptional()

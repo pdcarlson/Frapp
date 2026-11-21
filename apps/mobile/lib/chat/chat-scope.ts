@@ -106,9 +106,10 @@ export interface ChatScope {
  * can write.
  *
  * Note this is the *session* uid, which survives a cold start because Supabase
- * persists the session to SecureStore — unlike the chapter claim, whose read is
- * a network round trip. That asymmetry is the whole reason the header above
- * gives for keying on the member and not the chapter.
+ * persists the session to SecureStore. The chapter claim was once a network
+ * round trip behind it; it is decoded from the restored token now (#5768),
+ * but keying on the member and not the chapter stays the reason the header
+ * above gives.
  */
 let lastKnownUserId: string | null = null;
 

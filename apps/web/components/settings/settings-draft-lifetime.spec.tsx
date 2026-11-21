@@ -18,46 +18,28 @@ const { mockCurrentChapter } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
 }));
 
-vi.mock("@repo/hooks", () => ({
-  useCurrentChapter: () => mockCurrentChapter(),
-  useMyPermissions: () => ({
-    data: { permissions: ["*"] },
-    isPending: false,
-    isError: false,
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => mockCurrentChapter(),
+    permissions: () => ["*"],
   }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useOrgConfig: () => ({
-    data: { org_archetype: "ifc" },
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-}));
+);
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(),
+);
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
-}));
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(),
+);
 
-vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+vi.mock("@/components/shared/can", async () =>
+  (await import("@/tests/settings-harness")).canPassThrough(),
+);
 
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
-}));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(),
+);
 
 const { SettingsPage } = await import("./settings-page");
 

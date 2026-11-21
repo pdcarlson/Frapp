@@ -1,7 +1,10 @@
 import {
   dueEntryFields,
+  dueEntryFromTask,
+  dueTimePassed,
   formatWeekdayDay,
   localIsoDate,
+  splitDueEntry,
 } from "@repo/formatting";
 
 /**
@@ -24,8 +27,44 @@ import {
  * A picked day is held as a date, like "Friday" ({@link resolveDue}).
  */
 
-import { TASK_SUBTASKS_MAX } from "@repo/validation";
-import { POINTS_MAX, TITLE_MAX_LENGTH } from "./limits";
+import type { CreateOpenTaskBody, useCreateTask } from "@repo/hooks";
+import {
+  TASK_AUDIENCE_COPY,
+  TASK_SUBTASKS_MAX,
+  TASK_TITLE_MAX_LENGTH,
+  normalizeTaskWho,
+  taskWhoRequest,
+  type TaskProofKind,
+  type TaskWho,
+} from "@repo/validation";
+import { POINTS_MAX } from "./limits";
+import type { TaskRowModel } from "./board";
+
+/**
+ * What the task forms say about a value they can't send: the New task sheet
+ * and the task screen's edit alike (#5514).
+ */
+export const TASK_FORM_COPY = {
+  points: `Points must be a whole number, up to ${POINTS_MAX.toLocaleString("en-US")}.`,
+  timePassed:
+    "That time has already passed today. Pick a later time or another day.",
+} as const;
+
+/**
+ * A task's stored due (`due_date`, and `due_at` when it has a time) as the
+ * forms hold it: the day and `HH:MM` of its `due_at` on this device, or the
+ * stored day with no time. The inverse of `dueEntryFields`, read alike by
+ * New task's suggestion and Duplicate and the task screen's edit.
+ */
+export function storedDueOf(due: { dueDay: string; dueAt: string | null }): {
+  dueDate: string;
+  dueTime: string | null;
+} {
+  const { dueDate, dueTime } = splitDueEntry(
+    dueEntryFromTask({ due_date: due.dueDay, due_at: due.dueAt }),
+  );
+  return { dueDate, dueTime: dueTime ?? null };
+}
 
 export interface NewTaskDraft {
   title: string;
@@ -38,9 +77,21 @@ export interface NewTaskDraft {
   dueTime?: string | null;
   /** The steps, in order (#4003); blank lines are dropped on send. */
   subtasks?: string[];
-  assigneeId: string | null;
+  /**
+   * Who it is for (2026-11-18): one person, a copy each for several people,
+   * a role, a group or the chapter, or one task up for grabs among them.
+   * `null` while nobody is picked.
+   */
+  who: TaskWho | null;
   /** Raw keypad text, so a half-typed value is not silently coerced. */
   pointsInput: string;
+  /** What Mark done needs (#4635); absent reads as None. */
+  proofKind?: TaskProofKind;
+  /**
+   * The officer's notes, sent as they are. The form has no field for them;
+   * only a Duplicate carries the original's over (#5492).
+   */
+  description?: string | null;
 }
 
 export interface DuePreset {
@@ -157,7 +208,7 @@ export function resolveDue(choice: DueChoice, now: Date): ResolvedDue {
 }
 
 /**
- * The drawn date-field label — "Fri, Aug 21".
+ * The drawn date-field label — "Friday, August 21".
  *
  * Parsed at local noon so a bare `YYYY-MM-DD` renders as its own day in every
  * zone, the same fix `lib/more/service-hours.ts` documents.
@@ -196,62 +247,39 @@ export function parsePointReward(value: string): PointsParse {
 
 export interface ValidatedNewTask {
   title: string;
-  assignee_id: string;
+  /**
+   * Who it is for, never nobody. {@link createRequestOf} turns it into the
+   * create: a task, a copy each, or one task up for grabs.
+   */
+  who: TaskWho;
   due_date: string;
   /** The moment it is due, when the draft has a time. */
   due_at?: string;
   /** Subtask titles, in order, when the draft has any. */
   subtasks?: string[];
   point_reward?: number;
-}
-
-/**
- * The time field's text: `"5 PM"`, `"9:30 AM"`. The minutes only when there
- * are some, as a calendar writes a time.
- */
-export function formatDueTimeLabel(time: string): string {
-  const [hours = 0, minutes = 0] = time.split(":").map(Number);
-  const period = hours < 12 ? "AM" : "PM";
-  const hour = hours % 12 === 0 ? 12 : hours % 12;
-  return minutes === 0
-    ? `${hour} ${period}`
-    : `${hour}:${String(minutes).padStart(2, "0")} ${period}`;
-}
-
-/**
- * Where "Add a time" starts: 5 PM, the end of a chapter's working day, or
- * for a task due today once that has passed, the next whole hour (up to
- * 11 PM), so a fresh time is never already behind.
- */
-export function suggestedDueTime(dueDate: string, now: Date): string {
-  if (dueDate !== localIsoDate(now) || now.getHours() < 17) return "17:00";
-  return `${String(Math.min(now.getHours() + 1, 23)).padStart(2, "0")}:00`;
-}
-
-/**
- * True when the draft names a time on today that has already gone by: a
- * task created like that would be overdue the moment it exists.
- */
-export function dueTimePassed(
-  draft: Pick<NewTaskDraft, "dueDate" | "dueTime">,
-  now: Date,
+  /** What Mark done needs, when it is more than None (#4635). */
+  proof_kind?: TaskProofKind;
+  /** The notes a Duplicate carries over (#5492). */
+  description?: string;
   /**
-   * An edit's due as the task already has it (#4296). A task that is
-   * overdue can still have its title or points changed, so its own due
-   * isn't refused for having passed; only a newly picked one is.
+   * Reference photos' storage paths, in order (#4635): added by the sheet
+   * once the picked photos are up, never by {@link validateNewTask}.
    */
-  kept?: Pick<NewTaskDraft, "dueDate" | "dueTime">,
-): boolean {
-  if (!draft.dueTime) return false;
-  if (
-    kept &&
-    kept.dueDate === draft.dueDate &&
-    (kept.dueTime ?? null) === draft.dueTime
-  ) {
-    return false;
-  }
-  const { due_at } = dueEntryFields(`${draft.dueDate}T${draft.dueTime}`);
-  return due_at !== undefined && Date.parse(due_at) <= now.getTime();
+  reference_photo_paths?: string[];
+  /**
+   * Repeat on this rule (#5119), the task its series' first copy: added by
+   * the sheet from its Repeat control, never by {@link validateNewTask}. One
+   * person's task only; the API refuses it on a group or up for grabs.
+   */
+  recurrence_rule?: string;
+  /**
+   * The tier, role or group it is from (#5473): added by the sheet from its
+   * From field, never by {@link validateNewTask}. Not on a task up for grabs
+   * (once claimed it is the claimer's own) nor a repeating one, which the
+   * API refuses.
+   */
+  followed_by?: string;
 }
 
 /**
@@ -266,24 +294,19 @@ export function dueTimePassed(
 export function validateNewTask(
   draft: NewTaskDraft,
   now: Date = new Date(),
-  /** An edit's stored due, which may have passed (see `dueTimePassed`). */
-  kept?: Pick<NewTaskDraft, "dueDate" | "dueTime">,
 ): ValidatedNewTask | null {
   const title = draft.title.trim();
-  if (title.length === 0 || title.length > TITLE_MAX_LENGTH) return null;
-  if (!draft.assigneeId) return null;
+  if (title.length === 0 || title.length > TASK_TITLE_MAX_LENGTH) return null;
+  const who = draft.who ? normalizeTaskWho(draft.who) : null;
+  if (!who) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate)) return null;
   if (draft.dueTime && !/^\d{2}:\d{2}$/.test(draft.dueTime)) return null;
-  if (dueTimePassed(draft, now, kept)) return null;
+  if (dueTimePassed(draft, now)) return null;
 
   const points = parsePointReward(draft.pointsInput);
   if (points.kind === "invalid") return null;
 
-  const body: ValidatedNewTask = {
-    title,
-    assignee_id: draft.assigneeId,
-    due_date: draft.dueDate,
-  };
+  const body: ValidatedNewTask = { title, who, due_date: draft.dueDate };
   if (draft.dueTime) {
     const { due_at } = dueEntryFields(`${draft.dueDate}T${draft.dueTime}`);
     if (due_at) body.due_at = due_at;
@@ -294,74 +317,160 @@ export function validateNewTask(
     .slice(0, TASK_SUBTASKS_MAX);
   if (subtasks.length > 0) body.subtasks = subtasks;
   if (points.kind === "value") body.point_reward = points.points;
+  if (draft.proofKind && draft.proofKind !== "none") {
+    body.proof_kind = draft.proofKind;
+  }
+  const description = draft.description?.trim();
+  if (description) body.description = description;
   return body;
 }
 
-/** A task as an edit opens it (#4296): what the sheet's fields start from. */
-export interface TaskEditTarget {
-  id: string;
+/**
+ * What New task opens on for a Duplicate (#5492): the task's words, points,
+ * proof, steps and who, as a new task, as Things 3's and Todoist's Duplicate
+ * copy an item. Not its photos, which would have to go up again, nor anything
+ * that happened to it (done, sent back, confirmed).
+ */
+export interface TaskPrefill {
   title: string;
-  assigneeId: string;
-  /** The stored `due_date`. */
-  dueDay: string;
-  /** The stored `due_at`, or `null` for a task due by the day. */
-  dueAt: string | null;
-  pointReward: number | null;
-  /** The stored status: a new assignee starts anything past To do over. */
-  storedStatus: string | null;
+  description: string | null;
+  who: TaskWho | null;
+  pointsInput: string;
+  proofKind: TaskProofKind;
+  subtasks: string[];
+  /** Its own day while that is still ahead, else New task's default. */
+  due: DueChoice;
+  dueTime: string | null;
+  /** The tier, role or group it is from (#5473), or `null`. */
+  followedBy: string | null;
 }
 
 /**
- * The sheet's draft for a task as it stands. A timed task opens on the day
- * and time of its `due_at` on this device, the inverse of `dueEntryFields`.
+ * Who a Duplicate goes to: the same person, or the group a copy was one of,
+ * named as its read names it (the chapter, a tier, a role, a chapter group); people
+ * picked one by one are its copies' assignees. `null`, for the officer to
+ * pick, when a group's members can't be read off `copies`.
  */
-export function editDraftOf(task: TaskEditTarget): NewTaskDraft {
-  const at = task.dueAt ? new Date(task.dueAt) : null;
-  const timed = at !== null && !Number.isNaN(at.getTime());
-  const pad = (value: number) => String(value).padStart(2, "0");
+export function duplicateWho(
+  row: TaskRowModel,
+  copies: readonly TaskRowModel[],
+): TaskWho | null {
+  const group = row.group;
+  if (!row.groupId || !group) {
+    return row.assigneeId ? { kind: "person", userId: row.assigneeId } : null;
+  }
+  if (group.audience === "everyone") {
+    return { kind: "each", target: { kind: "chapter" } };
+  }
+  if (
+    (group.audience === "role" ||
+      group.audience === "group" ||
+      group.audience === "tier") &&
+    group.targetId
+  ) {
+    return {
+      kind: "each",
+      target: { kind: group.audience, id: group.targetId },
+    };
+  }
+  const userIds = [
+    ...new Set(
+      copies.flatMap((copy) => (copy.assigneeId ? [copy.assigneeId] : [])),
+    ),
+  ];
+  return userIds.length > 0
+    ? { kind: "each", target: { kind: "people", userIds } }
+    : null;
+}
+
+export function taskDuplicateOf(
+  row: TaskRowModel,
+  copies: readonly TaskRowModel[],
+  now: Date,
+): TaskPrefill {
+  const { dueDate, dueTime } = row.dueDay
+    ? storedDueOf({ dueDay: row.dueDay, dueAt: row.dueAt })
+    : { dueDate: "", dueTime: null };
+  // A day that has gone would only be refused; New task's Today stands in.
+  const ahead = dueDate !== "" && dueDate >= localIsoDate(now);
+  // So would a time that has gone (due today at 9, duplicated at noon): the
+  // day stays and the time goes, so the form opens ready to create.
+  const time =
+    ahead && dueTime && !dueTimePassed({ dueDate, dueTime }, now)
+      ? dueTime
+      : null;
   return {
-    title: task.title,
-    dueDate: timed ? localIsoDate(at) : task.dueDay,
-    dueTime: timed ? `${pad(at.getHours())}:${pad(at.getMinutes())}` : null,
-    subtasks: [],
-    assigneeId: task.assigneeId,
-    pointsInput: task.pointReward ? String(task.pointReward) : "",
+    title: row.title,
+    description: row.description,
+    who: duplicateWho(row, copies),
+    pointsInput: row.pointReward ? String(row.pointReward) : "",
+    proofKind: row.proofKind,
+    subtasks: row.subtasks.map((subtask) => subtask.title),
+    due: ahead ? { kind: "date", date: dueDate } : DEFAULT_DUE_CHOICE,
+    dueTime: time,
+    followedBy: row.followedBy,
   };
 }
 
-/** What `PATCH /v1/tasks/:id` takes (#4296). */
-export interface TaskEditBody {
-  title?: string;
-  assignee_id?: string;
-  due_date?: string;
-  due_at?: string | null;
-  point_reward?: number | null;
+/**
+ * What a create from this sheet says it did. Someone else's task is on no
+ * board the creator sees, so it names where it went. The quick actions' +
+ * and the task board's own + both say it.
+ */
+export function taskCreatedLine(
+  assigneeName: string | null,
+  wasSelf: boolean,
+  /** It went on Up for grabs for someone to claim. */
+  upForGrabs = false,
+): string {
+  if (upForGrabs) return `Posted to ${TASK_AUDIENCE_COPY.upForGrabs}.`;
+  return wasSelf
+    ? "Added to your tasks."
+    : `Assigned to ${assigneeName ?? "your chapter member"}.`;
+}
+
+/** What `useCreateTask` sends. */
+export type CreateTaskBody = Parameters<
+  ReturnType<typeof useCreateTask>["mutate"]
+>[0];
+
+/**
+ * The create a validated form makes (`taskWhoRequest`): `POST /v1/tasks` for
+ * one person or a copy each, `POST /v1/open-tasks` for one task up for grabs,
+ * which carries no photos and no From.
+ */
+export type TaskCreateRequest =
+  | { route: "task"; body: CreateTaskBody }
+  | { route: "open"; body: CreateOpenTaskBody };
+
+export function createRequestOf(task: ValidatedNewTask): TaskCreateRequest {
+  const { who, reference_photo_paths, recurrence_rule, followed_by, ...fields } =
+    task;
+  const request = taskWhoRequest(who);
+  if (!request) {
+    // `validateNewTask` never lets nobody through.
+    throw new Error("A task needs someone to do it.");
+  }
+  if (request.endpoint === "/v1/open-tasks") {
+    return { route: "open", body: { ...fields, ...request.fields } };
+  }
+  return {
+    route: "task",
+    body: {
+      ...fields,
+      ...request.fields,
+      ...(reference_photo_paths ? { reference_photo_paths } : {}),
+      ...(recurrence_rule ? { recurrence_rule } : {}),
+      ...(followed_by && !recurrence_rule ? { followed_by } : {}),
+    },
+  };
 }
 
 /**
- * Only what the officer changed, the due date and time as a pair, as the
- * API reads them. Empty when nothing changed, so Save sends nothing.
+ * Whether a who may carry reference photos: one person only. A copy each
+ * can't yet (`TASK_AUDIENCE_COPY.noPhotos`), and a task up for grabs takes
+ * none.
  */
-export function taskEditBody(
-  task: TaskEditTarget,
-  next: ValidatedNewTask,
-): TaskEditBody {
-  const body: TaskEditBody = {};
-  if (next.title !== task.title) body.title = next.title;
-  if (next.assignee_id !== task.assigneeId) {
-    body.assignee_id = next.assignee_id;
-  }
-  const dueAt = next.due_at ?? null;
-  const storedAt = task.dueAt ? new Date(task.dueAt).toISOString() : null;
-  // A timed task's day is its time's day: an unchanged `due_at` is an
-  // unchanged due, even read on a device whose zone puts it on another day.
-  const dueChanged =
-    dueAt !== storedAt || (dueAt === null && next.due_date !== task.dueDay);
-  if (dueChanged) {
-    body.due_date = next.due_date;
-    body.due_at = dueAt;
-  }
-  const points = next.point_reward || null;
-  if (points !== (task.pointReward || null)) body.point_reward = points;
-  return body;
+export function whoTakesPhotos(who: TaskWho | null): boolean {
+  return !who || who.kind === "person";
 }

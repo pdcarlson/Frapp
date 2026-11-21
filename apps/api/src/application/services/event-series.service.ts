@@ -5,12 +5,22 @@ import {
   Logger,
 } from '@nestjs/common';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
-import type { IEventRepository } from '#domain/repositories/event.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type {
+  IEventRepository,
+  OccurrenceCarry,
+} from '#domain/repositories/event.repository.interface';
 import { Event } from '#domain/entities/event.entity';
+import type { EventExcuse } from '#domain/entities/event-excuse.entity';
 import {
-  RECURRENCE_RULES,
+  advanceRepeatRule,
+  shiftRepeatRule,
+  checkSeriesLength,
+  isRepeatRule,
   isRecurrenceRule,
-  recurrenceChildCount,
+  isSupportedTimeZone,
+  seriesChildStarts,
 } from '@repo/validation';
 import {
   EventAnnouncementService,
@@ -18,25 +28,25 @@ import {
 } from './event-announcement.service';
 import type { EventChange } from './event-announcement.service';
 import { normalizeCheckInZone } from './event-input';
+import { NotificationService } from './notification.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
-import type { UpdateEventInput } from './event-input';
+import type { SeriesUpdateInput } from './event-input';
 
 /**
  * Fields whose change forces future instances to be regenerated rather than
  * patched, because they determine *when* the generated occurrences fall.
  *
  * Compared by value, not by presence: a client that PATCHes the whole event
- * object back (which the web editor does — its save payload in
- * `event-editor-dialog.tsx` carries `recurrence_rule` whenever the event has
- * one) would otherwise trigger a destructive regenerate on
- * every save. Regeneration deletes rows, and `event_attendance` is
+ * object back (as the web editor did until #3667, and an older build or
+ * another API caller still may) would otherwise trigger a destructive
+ * regenerate on every save. Regeneration deletes rows, and `event_attendance` is
  * `on delete cascade`, so a needless regenerate is a data-loss bug.
  */
 const RECURRENCE_DEFINING_FIELDS = [
   'recurrence_rule',
   'start_time',
   'end_time',
-] as const satisfies readonly (keyof UpdateEventInput)[];
+] as const satisfies readonly (keyof SeriesUpdateInput)[];
 
 /**
  * Fields that are meaningful on a generated instance and therefore propagate
@@ -48,13 +58,77 @@ const RECURRENCE_DEFINING_FIELDS = [
  * re-point the series at itself.
  */
 function propagatableFields(
-  input: UpdateEventInput,
-): Omit<UpdateEventInput, 'start_time' | 'end_time' | 'recurrence_rule'> {
-  const propagate: UpdateEventInput = { ...input };
+  input: SeriesUpdateInput,
+): Omit<SeriesUpdateInput, 'start_time' | 'end_time' | 'recurrence_rule'> {
+  const propagate: SeriesUpdateInput = { ...input };
   delete propagate.start_time;
   delete propagate.end_time;
   delete propagate.recurrence_rule;
   return propagate;
+}
+
+/**
+ * How far a rebuilt meeting may sit from where an old one was expected to land
+ * and still count as the same meeting, moved (#4620). Covers a structured
+ * rule keeping its wall-clock time across a DST change, which moves an
+ * instant by an hour, and stays well under the gap between two meetings of
+ * any rule (a day, at the closest).
+ */
+const CARRY_TOLERANCE_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Pair each upcoming occurrence a series edit is about to delete with the
+ * rebuilt one that replaces it, so its excuses can move there (#4620).
+ *
+ * An old meeting is expected to land where it was plus the shift the edit
+ * moved the series by (`shiftMs`, zero when the start did not move), which is
+ * what rescheduling a recurring meeting means (see `splitStartedHead`). It
+ * pairs with the rebuilt meeting nearest that instant, within
+ * `CARRY_TOLERANCE_MS`, each rebuilt meeting taken once. So a series moved an
+ * hour later carries every excuse an hour later; weekly made every two weeks
+ * carries the excuses on the meetings that stay; and a meeting with no
+ * rebuilt one near it (its day left the rule, or it was individually moved)
+ * carries nothing rather than a guess. Its members are told instead
+ * (`tellDroppedExcuses`).
+ *
+ * A meeting the shifted pass leaves unpaired then tries its own instant, with
+ * no shift. That is what a retried edit needs: when the parent write after a
+ * committed swap fails, the old rows are already at the new times while the
+ * parent still reads the old start, so the shift is counted again, and
+ * without this pass a retried move of a day would carry nothing.
+ */
+function pairReplacedOccurrences(
+  old: readonly Event[],
+  rebuilt: readonly Event[],
+  shiftMs: number,
+): OccurrenceCarry[] {
+  const startOf = (row: Event) => new Date(row.start_time).getTime();
+  const open = [...rebuilt];
+  const pairs: OccurrenceCarry[] = [];
+  let unpaired = [...old].sort((a, b) => startOf(a) - startOf(b));
+  for (const shift of shiftMs === 0 ? [0] : [shiftMs, 0]) {
+    const left: Event[] = [];
+    for (const from of unpaired) {
+      const expected = startOf(from) + shift;
+      let best = -1;
+      let bestGap = Infinity;
+      open.forEach((row, i) => {
+        const gap = Math.abs(startOf(row) - expected);
+        if (gap <= CARRY_TOLERANCE_MS && gap < bestGap) {
+          best = i;
+          bestGap = gap;
+        }
+      });
+      if (best === -1) {
+        left.push(from);
+        continue;
+      }
+      pairs.push({ from: from.id, to: open[best].id });
+      open.splice(best, 1);
+    }
+    unpaired = left;
+  }
+  return pairs;
 }
 
 /**
@@ -71,15 +145,71 @@ export class EventSeriesService {
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
     private readonly announcements: EventAnnouncementService,
+    private readonly notifications: NotificationService,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
   ) {}
 
   /**
    * Materialize the generated occurrences of a recurring parent, in one
    * insert: they all land or none do. The caller owns the parent row and
    * decides what a failure means for it (`EventService.create` deletes it).
+   * `requestZone` is the creating request's `x-time-zone` (`legacyZoneFor`).
    */
-  async generateRecurringInstances(parent: Event): Promise<Event[]> {
-    return this.eventRepo.createMany(this.buildOccurrencePayloads(parent));
+  async generateRecurringInstances(
+    parent: Event,
+    requestZone?: string | null,
+  ): Promise<Event[]> {
+    const zone = await this.legacyZoneFor(
+      parent,
+      parent.created_by,
+      requestZone,
+    );
+    return this.eventRepo.createMany(
+      this.buildOccurrencePayloads(parent, zone),
+    );
+  }
+
+  /**
+   * The zone a series' legacy token keeps the wall clock of when it is
+   * (re)generated (#4505): the saving request's own `x-time-zone`, else the
+   * zone on file (`timeZoneFor`) for the officer saving it, else for its
+   * creator. Chapters keep no zone of their own, and the officer who
+   * schedules a meeting is on its campus.
+   *
+   * The saver comes first because their Repeat control captions the series,
+   * and decides whether a token says the same meetings as their structured
+   * rule (`legacyTokenFor` in `@repo/validation`), on their device's zone.
+   * The request's header is that zone as the device has it now; the zone on
+   * file can lag it after a trip, because it is recorded without waiting and
+   * each process remembers it for hours (`TimeZoneSyncService`), so it only
+   * stands in for a request that sends no header or one this runtime can't
+   * step in (#4746). On a new series the saver is the creator. The creator
+   * stands in when the saver has no zone, and covers a series no request is
+   * saving.
+   *
+   * `null` (step in UTC, as tokens always did) for a structured rule, which
+   * names its own zone and needs no read, and when none of them has a zone.
+   */
+  private async legacyZoneFor(
+    series: Event,
+    saverId: string | null | undefined,
+    requestZone?: string | null,
+  ): Promise<string | null> {
+    if (!isRecurrenceRule(series.recurrence_rule)) return null;
+    // Untrimmed is passed over: the zone check trims, the stepper doesn't.
+    if (
+      requestZone &&
+      requestZone === requestZone.trim() &&
+      isSupportedTimeZone(requestZone)
+    ) {
+      return requestZone;
+    }
+    for (const userId of new Set([saverId, series.created_by])) {
+      if (!userId) continue;
+      const zone = await this.notifications.timeZoneFor(userId);
+      if (zone) return zone;
+    }
+    return null;
   }
 
   /**
@@ -102,19 +232,37 @@ export class EventSeriesService {
    *
    * `existingIds` are all of the head's occurrences before the swap, so rows
    * the insert added can be told apart from ones it did not touch.
+   *
+   * The old rows' excuses move to the rebuilt meetings that replace them
+   * (`pairReplacedOccurrences`) in the same transaction as the delete, so a
+   * failed delete leaves them on the old rows, where the recovery below keeps
+   * them (#4620). The pending and approved excuses that had nowhere to go
+   * are deleted with the rows, and their members are told as soon as that
+   * commits (`tellDroppedExcuses`), not after the caller's later writes: those
+   * can fail and leave the swap standing. A swap that only reads back as
+   * committed tells nobody, since which excuses it dropped went with the lost
+   * response; that is the one case an excuse goes without a word.
    */
   private async replaceOccurrences(swap: {
     headId: string;
     chapterId: string;
     existingIds: string[];
-    oldIds: string[];
+    old: Event[];
     replacements: Partial<Event>[];
+    shiftMs: number;
+    /** The series' name, for the push to members whose excuse was dropped. */
+    name: string;
   }): Promise<void> {
-    const { headId, chapterId, existingIds, oldIds, replacements } = swap;
+    const { headId, chapterId, existingIds, old, replacements, shiftMs } = swap;
+    const oldIds = old.map((row) => row.id);
+    let dropped: EventExcuse[];
     try {
-      await this.eventRepo.createMany(replacements);
-      await this.eventRepo.deleteMany(oldIds, chapterId);
-      return;
+      const rebuilt = await this.eventRepo.createMany(replacements);
+      dropped = await this.eventRepo.deleteReplacedOccurrences(
+        oldIds,
+        chapterId,
+        pairReplacedOccurrences(old, rebuilt, shiftMs),
+      );
     } catch (error) {
       let landedIds: string[] = [];
       try {
@@ -147,126 +295,86 @@ export class EventSeriesService {
       }
       throw error;
     }
-  }
-
-  /**
-   * How many occurrences a rule generates, or `null` when it is not a rule this
-   * service can generate from.
-   *
-   * Separated out so a caller can discover that a rule is ungeneratable
-   * *before* deleting anything.
-   */
-  private occurrenceCountFor(rule: string): number | null {
-    // Sourced from @repo/validation so the series this materializes and the
-    // meeting count the Repeat pickers promise are derived from one number.
-    return recurrenceChildCount(rule);
+    await this.tellDroppedExcuses(chapterId, {
+      headId,
+      name: swap.name,
+      ended: replacements.length === 0,
+      dropped,
+    });
   }
 
   /**
    * Build the rows for a recurring parent's generated occurrences. Pure — no
    * writes — so a regenerate can be judged before anything is destroyed.
    *
-   * Skipping rather than filtering is load-bearing. Filtering a fixed window
-   * anchored on the parent's original `start_time` meant that once a series
-   * grew older than that window — 12 weeks, or 6 months — every candidate fell
-   * in the past and a rule change regenerated **nothing**, leaving a parent
-   * advertising a rule with no occurrences behind it.
+   * When they fall is `seriesChildStarts` in `@repo/validation`, the same
+   * stepper the Repeat controls caption a series from, so what an officer is
+   * told and what gets written cannot drift apart. A structured rule steps in
+   * its own zone, keeping the wall-clock time across DST (#3662); a legacy
+   * token steps in `legacyZone`, the one `legacyZoneFor` picks (the saving
+   * request's, else a zone on file, #4505 / #4746), or UTC without one. The
+   * zone is read before this, so it stays pure.
+   *
+   * For a legacy token, skipping rather than filtering is load-bearing: its
+   * run is counted from `skipBefore`, not from the head. Filtering a fixed
+   * window anchored on the parent's original `start_time` meant that once a
+   * series grew older than that window — 12 weeks, or 6 months — every
+   * candidate fell in the past and a rule change regenerated **nothing**,
+   * leaving a parent advertising a rule with no occurrences behind it. A
+   * structured rule's `COUNT` or `UNTIL` is fixed from the head, so for one
+   * the past meetings are filtered out and only those still to come are made.
    */
   private buildOccurrencePayloads(
     parent: Event,
+    legacyZone: string | null,
     skipBefore?: number,
   ): Partial<Event>[] {
-    const rule = parent.recurrence_rule;
-    // Narrowing through the shared type guard (rather than a truthiness check
-    // plus a count lookup) is what lets the step switch below be exhaustive:
-    // adding a rule to RECURRENCE_RULES without giving it a date step becomes a
-    // compile error instead of a series of duplicate events at the parent's
-    // own start instant.
-    if (!isRecurrenceRule(rule)) return [];
-    const count = this.occurrenceCountFor(rule);
-    if (count === null) return [];
+    const starts = seriesChildStarts(
+      parent.recurrence_rule,
+      parent.start_time,
+      skipBefore,
+      { legacyTimeZone: legacyZone },
+    );
+    if (!starts) return [];
 
-    const start = new Date(parent.start_time);
-    const end = new Date(parent.end_time);
     // Derive each occurrence's end from its own start plus the parent's
     // duration. Clamping start and end independently against their own months
     // could invert the interval: a MONTHLY event running 2027-01-29T20:00Z to
     // 2027-01-30T08:00Z generated a February occurrence ending twelve hours
     // before it began, slipping past the `end <= start` guard that `create` and
     // `update` both enforce.
-    const durationMs = end.getTime() - start.getTime();
+    const durationMs =
+      new Date(parent.end_time).getTime() -
+      new Date(parent.start_time).getTime();
 
-    // Bounds the catch-up scan for a long-dormant series: ~11 years of weeks or
-    // 50 years of months, while still guaranteeing termination.
-    const MAX_OCCURRENCE_SCAN = 600;
-
-    const payloads: Partial<Event>[] = [];
-    for (let i = 1; i <= MAX_OCCURRENCE_SCAN && payloads.length < count; i++) {
-      const instanceStart = new Date(start);
-
-      switch (rule) {
-        case 'WEEKLY':
-          instanceStart.setDate(instanceStart.getDate() + i * 7);
-          break;
-        case 'BIWEEKLY':
-          instanceStart.setDate(instanceStart.getDate() + i * 14);
-          break;
-        case 'MONTHLY': {
-          instanceStart.setDate(1);
-          instanceStart.setMonth(start.getMonth() + i);
-          const maxStartDay = new Date(
-            instanceStart.getFullYear(),
-            instanceStart.getMonth() + 1,
-            0,
-          ).getDate();
-          instanceStart.setDate(Math.min(start.getDate(), maxStartDay));
-          break;
-        }
-        default: {
-          // Unreachable today. It exists so that a rule added to
-          // RECURRENCE_RULES without a step here fails to compile: the old
-          // if/else chain silently fell through, leaving every occurrence at
-          // the parent's start instant and creating N duplicate events.
-          const unhandled: never = rule;
-          throw new Error(`Unhandled recurrence rule: ${String(unhandled)}`);
-        }
-      }
-
-      if (skipBefore !== undefined && instanceStart.getTime() <= skipBefore) {
-        continue;
-      }
-
-      payloads.push({
-        chapter_id: parent.chapter_id,
-        name: parent.name,
-        description: parent.description,
-        location: parent.location,
-        start_time: instanceStart.toISOString(),
-        end_time: new Date(instanceStart.getTime() + durationMs).toISOString(),
-        point_value: parent.point_value,
-        is_mandatory: parent.is_mandatory,
-        recurrence_rule: null,
-        parent_event_id: parent.id,
-        required_role_ids: parent.required_role_ids,
-        optional_role_ids: parent.optional_role_ids,
-        excluded_role_ids: parent.excluded_role_ids,
-        others_invited: parent.others_invited,
-        notes: parent.notes,
-        // The zone is part of "where this event is", so every occurrence needs
-        // it — without this a weekly meeting's check-in geofence applied only to
-        // the first date, and a series edit that patches future instances would
-        // set a zone that a later regenerate silently dropped again.
-        check_in_zone: parent.check_in_zone,
-        check_in_zone_name: parent.check_in_zone_name,
-        check_in_opens_minutes: parent.check_in_opens_minutes,
-        // A weekly chapter meeting is a chapter meeting every week.
-        event_type_id: parent.event_type_id,
-        // Whoever made the series made each of its meetings.
-        created_by: parent.created_by,
-      });
-    }
-
-    return payloads;
+    return starts.map((instanceStart) => ({
+      chapter_id: parent.chapter_id,
+      name: parent.name,
+      description: parent.description,
+      location: parent.location,
+      start_time: instanceStart.toISOString(),
+      end_time: new Date(instanceStart.getTime() + durationMs).toISOString(),
+      point_value: parent.point_value,
+      is_mandatory: parent.is_mandatory,
+      recurrence_rule: null,
+      parent_event_id: parent.id,
+      required_role_ids: parent.required_role_ids,
+      optional_role_ids: parent.optional_role_ids,
+      excluded_role_ids: parent.excluded_role_ids,
+      others_invited: parent.others_invited,
+      notes: parent.notes,
+      // The zone is part of "where this event is", so every occurrence needs
+      // it — without this a weekly meeting's check-in geofence applied only to
+      // the first date, and a series edit that patches future instances would
+      // set a zone that a later regenerate silently dropped again.
+      check_in_zone: parent.check_in_zone,
+      check_in_zone_name: parent.check_in_zone_name,
+      check_in_opens_minutes: parent.check_in_opens_minutes,
+      // A weekly chapter meeting is a chapter meeting every week.
+      event_type_id: parent.event_type_id,
+      // Whoever made the series made each of its meetings.
+      created_by: parent.created_by,
+    }));
   }
 
   /**
@@ -318,24 +426,27 @@ export class EventSeriesService {
 
   /**
    * Apply an edit to a whole recurring series — the parent and every *future*
-   * occurrence. Past occurrences are never in the write set.
+   * occurrence. Past occurrences are never in the write set. `requestZone`
+   * is the saving request's `x-time-zone` (`legacyZoneFor`).
    */
   async updateSeries(
     target: Event,
     chapterId: string,
-    input: UpdateEventInput,
+    input: SeriesUpdateInput,
     actorId?: string,
+    requestZone?: string | null,
   ): Promise<Event> {
     const parent = await this.resolveSeriesParent(target, chapterId);
 
     // A series edit issued against a *child* carries that child's times, not the
-    // series anchor's. Clients round-trip the whole event object, so a rename
-    // saved from a later occurrence arrived carrying that occurrence's
+    // series anchor's. A client that round-trips the whole event object (both
+    // apps did before they sent only what changed, #3667) sends a rename
+    // saved from a later occurrence carrying that occurrence's
     // `start_time` — which is not a request to move the series, it is whichever
     // row the client happened to have open. Honouring it dragged the anchor onto
     // the child's date and rebuilt every future occurrence with fresh ids.
     const issuedFromChild = target.id !== parent.id;
-    const effective: UpdateEventInput = { ...input };
+    const effective: SeriesUpdateInput = { ...input };
     if (issuedFromChild) {
       delete effective.start_time;
       delete effective.end_time;
@@ -362,7 +473,7 @@ export class EventSeriesService {
       }
     }
 
-    const normalized: UpdateEventInput = {
+    const normalized: SeriesUpdateInput = {
       ...effective,
       ...(effective.check_in_zone !== undefined
         ? { check_in_zone: normalizeCheckInZone(effective.check_in_zone) }
@@ -390,25 +501,50 @@ export class EventSeriesService {
     // That was harmless while this value only gated the check below, but the
     // split path also *writes* it to the new head, where it would resurrect a
     // series the caller just cleared.
-    const nextRule =
+    const callerRule =
       normalized.recurrence_rule !== undefined
         ? normalized.recurrence_rule
         : parent.recurrence_rule;
+    const keptRule = callerRule === parent.recurrence_rule;
+
+    // Moving the head moves the series: a structured rule names its days, so
+    // a kept rule's days move with the head (`shiftRepeatRule`), or a series
+    // moved from Monday to Tuesday would rebuild on Mondays behind its new
+    // Tuesday head. A legacy token steps from the head and needs nothing.
+    const nextRule =
+      keptRule && hasChanged('start_time')
+        ? shiftRepeatRule(
+            callerRule,
+            parent.start_time,
+            normalized.start_time as string,
+          )
+        : callerRule;
 
     // Refuse a rule this service cannot generate from *before* touching
-    // anything. `recurrence_rule` arrives as a free string, and the old order
-    // deleted the whole future half of the series and only then discovered it
-    // had nothing to rebuild with.
-    if (regenerates && nextRule && this.occurrenceCountFor(nextRule) === null) {
-      throw new BadRequestException(
-        `recurrence_rule must be one of ${RECURRENCE_RULES.join(', ')}`,
-      );
+    // anything. The old order deleted the whole future half of the series and
+    // only then discovered it had nothing to rebuild with. The DTO already
+    // checks the rule's shape; this also catches one that doesn't fit the
+    // series' first meeting (an UNTIL before its second, or past the cap).
+    //
+    // A started head is checked in `splitStartedHead` instead, against the
+    // meeting that becomes the series' first: the head itself is retired.
+    const now = Date.now();
+    const headStarted = new Date(parent.start_time).getTime() <= now;
+    if (regenerates && nextRule) {
+      if (!isRepeatRule(nextRule)) {
+        throw new BadRequestException('recurrence_rule is not a repeat rule');
+      }
+      if (!headStarted) {
+        const problem = checkSeriesLength(
+          nextRule,
+          normalized.start_time ?? parent.start_time,
+        );
+        if (problem) throw new BadRequestException(problem);
+      }
     }
 
     // What members are told moved, judged against the series as it stood.
     const change = eventChangeOf(parent, normalized);
-
-    const now = Date.now();
 
     // Resolve children before any write: `parent_event_id` is
     // `on delete set null`, so a parent removed first takes the pointers with it.
@@ -433,7 +569,7 @@ export class EventSeriesService {
     // occurrence. Once it has started, writing the patch to it edits a meeting
     // that already happened, and its `event_attendance` rows then describe an
     // event as it never was.
-    if (new Date(parent.start_time).getTime() <= now) {
+    if (headStarted) {
       return this.splitStartedHead({
         parent,
         children,
@@ -441,11 +577,13 @@ export class EventSeriesService {
         normalized,
         regenerates,
         nextRule,
+        keptRule,
         startShiftMs,
         nextDurationMs,
         now,
         change,
         actorId,
+        requestZone,
       });
     }
 
@@ -460,18 +598,25 @@ export class EventSeriesService {
       // In this order a failure anywhere before the parent write leaves a
       // retry that still regenerates, and replacing the occurrences again is
       // safe because it rebuilds whatever upcoming rows the parent has.
-      const template: Event = { ...parent, ...normalized };
+      const written: SeriesUpdateInput = {
+        ...normalized,
+        recurrence_rule: nextRule,
+      };
+      const template: Event = { ...parent, ...written };
+      const zone = await this.legacyZoneFor(template, actorId, requestZone);
       await this.replaceOccurrences({
         headId: parent.id,
         chapterId,
         existingIds: children.map((child) => child.id),
-        oldIds: future.map((child) => child.id),
-        replacements: this.buildOccurrencePayloads(template, now),
+        old: future,
+        replacements: this.buildOccurrencePayloads(template, zone, now),
+        shiftMs: startShiftMs,
+        name: template.name,
       });
       updatedParent = await this.eventRepo.update(
         parent.id,
         chapterId,
-        normalized,
+        written,
       );
     } else {
       updatedParent = await this.eventRepo.update(
@@ -530,14 +675,16 @@ export class EventSeriesService {
     parent: Event;
     children: Event[];
     chapterId: string;
-    normalized: UpdateEventInput;
+    normalized: SeriesUpdateInput;
     regenerates: boolean;
     nextRule: string | null;
+    keptRule: boolean;
     startShiftMs: number;
     nextDurationMs: number | null;
     now: number;
     change: EventChange | null;
     actorId?: string;
+    requestZone?: string | null;
   }): Promise<Event> {
     const {
       parent,
@@ -546,11 +693,13 @@ export class EventSeriesService {
       normalized,
       regenerates,
       nextRule,
+      keptRule,
       startShiftMs,
       nextDurationMs,
       now,
       change,
       actorId,
+      requestZone,
     } = args;
 
     const { future, past } = this.partitionByTime(children, now);
@@ -590,6 +739,31 @@ export class EventSeriesService {
 
     const carried = propagatableFields(normalized);
 
+    // The rule the new head carries. When the caller kept the rule it is
+    // handed on from the retired head (`advanceRepeatRule`): a COUNT drops by
+    // the meetings of the pattern before the new head, canceled ones
+    // included, or the next regenerate would add that many at the end, and a
+    // rule with fewer than two meetings left ends. Both starts move by the
+    // caller's shift, as `nextRule`'s days already have. A rule the caller
+    // changed is theirs as sent.
+    const newHeadStart = retimed.start_time ?? successor.start_time;
+    const seriesRule = keptRule
+      ? advanceRepeatRule(
+          nextRule,
+          new Date(new Date(parent.start_time).getTime() + startShiftMs),
+          newHeadStart,
+        )
+      : nextRule;
+
+    // The successor is the series' first meeting from here, so a regenerated
+    // rule must fit it, not the retired head: an UNTIL that leaves it no
+    // second meeting would otherwise make a lone head that still carries a
+    // rule. Checked before the first write.
+    if (regenerates && seriesRule) {
+      const problem = checkSeriesLength(seriesRule, newHeadStart);
+      if (problem) throw new BadRequestException(problem);
+    }
+
     // Retire the head. `recurrence_rule` and nothing else: every one of its own
     // fields keeps the value it had while the meeting was happening, so the
     // `event_attendance` rows hanging off it still describe it accurately.
@@ -628,7 +802,13 @@ export class EventSeriesService {
     let newHead = await this.eventRepo.update(successor.id, chapterId, {
       ...carried,
       ...retimed,
-      recurrence_rule: regenerates ? parent.recurrence_rule : nextRule,
+      recurrence_rule: regenerates
+        ? advanceRepeatRule(
+            parent.recurrence_rule,
+            parent.start_time,
+            successor.start_time,
+          )
+        : seriesRule,
       parent_event_id: null,
     });
 
@@ -652,19 +832,20 @@ export class EventSeriesService {
       // over the occurrences it already had, under the old rule. That is a
       // consistent series, just not regenerated; the request fails, and
       // repeating a rule change against the new head finishes the rebuild.
+      const template: Event = { ...newHead, recurrence_rule: seriesRule };
+      const zone = await this.legacyZoneFor(template, actorId, requestZone);
       await this.replaceOccurrences({
         headId: newHead.id,
         chapterId,
         existingIds: rest.map((child) => child.id),
-        oldIds: rest.map((child) => child.id),
-        replacements: this.buildOccurrencePayloads(
-          { ...newHead, recurrence_rule: nextRule },
-          now,
-        ),
+        old: rest,
+        replacements: this.buildOccurrencePayloads(template, zone, now),
+        shiftMs: startShiftMs,
+        name: newHead.name,
       });
-      if (newHead.recurrence_rule !== nextRule) {
+      if (newHead.recurrence_rule !== seriesRule) {
         newHead = await this.eventRepo.update(newHead.id, chapterId, {
-          recurrence_rule: nextRule,
+          recurrence_rule: seriesRule,
         });
       }
     }
@@ -677,6 +858,64 @@ export class EventSeriesService {
     );
 
     return newHead;
+  }
+
+  /**
+   * Tell each member whose pending or approved excuse went with a deleted
+   * occurrence (no rebuilt meeting replaced it) that it's gone (#4620): to
+   * send one again when the series was rescheduled, and that there is nothing
+   * to do when it ended. Only current members: an excuse outlives its
+   * sender's membership (it cascades with the user), and a push naming the
+   * chapter's event must not reach someone who left. Best-effort, like every
+   * push here: the swap has already landed.
+   */
+  private async tellDroppedExcuses(
+    chapterId: string,
+    swap: {
+      headId: string;
+      name: string;
+      ended: boolean;
+      dropped: readonly EventExcuse[];
+    },
+  ): Promise<void> {
+    if (swap.dropped.length === 0) return;
+    try {
+      const current = new Set(
+        (await this.memberRepo.findByChapter(chapterId)).map(
+          (member) => member.user_id,
+        ),
+      );
+      const members = [
+        ...new Set(swap.dropped.map((excuse) => excuse.user_id)),
+      ].filter((userId) => current.has(userId));
+      if (members.length === 0) return;
+      await this.notifications.notifyMembers(
+        chapterId,
+        members,
+        swap.ended
+          ? {
+              title: 'Your excuse was removed',
+              body: `${swap.name} no longer repeats, so the meeting your excuse was for is off the calendar. There's nothing more to do.`,
+              priority: 'NORMAL',
+              category: 'events',
+              data: { target: { screen: 'events', eventId: swap.headId } },
+            }
+          : {
+              title: 'Send your excuse again',
+              body: `${swap.name} was rescheduled, and the meeting your excuse was for is no longer on the calendar. Send one again for any meeting you can't make.`,
+              priority: 'NORMAL',
+              category: 'events',
+              data: { target: { screen: 'events', eventId: swap.headId } },
+            },
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'event-series-dropped-excuses-notify',
+        message: `Could not tell members their excuse for ${swap.headId} was dropped`,
+        error,
+      });
+    }
   }
 
   /**
@@ -724,8 +963,16 @@ export class EventSeriesService {
 
     const [successor, ...rest] = future;
 
+    // A COUNT drops by the meetings of the pattern before the successor
+    // (`advanceRepeatRule`), so a later regenerate keeps the series' length
+    // rather than growing it; a rule with fewer than two meetings left ends,
+    // and the successor stands alone.
     await this.eventRepo.update(successor.id, chapterId, {
-      recurrence_rule: parent.recurrence_rule,
+      recurrence_rule: advanceRepeatRule(
+        parent.recurrence_rule,
+        parent.start_time,
+        successor.start_time,
+      ),
       parent_event_id: null,
     });
 

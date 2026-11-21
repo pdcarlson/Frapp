@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { chapterSubscription } from "@/tests/chapter-subscription";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EventCard } from "./event-card";
 import type { ChatMessage } from "@repo/chat-core/types";
 
@@ -10,7 +10,18 @@ import type { ChatMessage } from "@repo/chat-core/types";
 
 const mockUseAttendance = vi.fn();
 const mockUseMyPermissions = vi.fn();
+const mockEventCardExcuse = vi.fn<(payload: unknown) => unknown>(() => ({
+  kind: "none",
+}));
 const checkIn = vi.fn().mockResolvedValue(undefined);
+// The viewer's own row and the event, read while check-in is open (#4136).
+const mockMyAttendance = vi.fn();
+const mockUseEvent = vi.fn();
+const checkInState: {
+  isPending: boolean;
+  /** The event of the session's own last successful check-in, if any. */
+  succeededFor?: string;
+} = { isPending: false };
 
 const { mockCurrentChapter, mockOffline } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -29,16 +40,29 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // these cases predate the gate, so they run against an active chapter.
   useCurrentChapter: () => mockCurrentChapter(),
   useAttendance: (id: string) => mockUseAttendance(id),
-  useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
+  useCheckIn: () => ({
+    mutateAsync: checkIn,
+    isPending: checkInState.isPending,
+    isSuccess: checkInState.succeededFor !== undefined,
+    variables: checkInState.succeededFor
+      ? { eventId: checkInState.succeededFor }
+      : undefined,
+  }),
+  useMyAttendance: (id: string) => mockMyAttendance(id),
+  useEvent: (id: string) => mockUseEvent(id),
   useMyPermissions: () => mockUseMyPermissions(),
   useNow: () => Date.now(),
+  useEventCardExcuse: (payload: unknown) => mockEventCardExcuse(payload),
+  // A viewer with no roles: the event's default decides (the rule is the
+  // hook's own spec).
+  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
+    fields.is_mandatory === true,
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
     selector({ activeChapterId: "chap-1" }),
 }));
-
 
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
@@ -76,6 +100,18 @@ describe("EventCard", () => {
     vi.clearAllMocks();
     mockOffline.value = false;
     mockUseAttendance.mockReturnValue({ data: [] });
+    checkInState.isPending = false;
+    checkInState.succeededFor = undefined;
+    mockMyAttendance.mockReturnValue({
+      data: null,
+      isPending: false,
+      fetchStatus: "idle",
+    });
+    mockUseEvent.mockReturnValue({
+      data: { id: "evt-1", check_in_zone: null },
+      isError: false,
+    });
+    mockEventCardExcuse.mockReturnValue({ kind: "none" });
     // Default to an attendance-viewer (admin) so the count tests exercise the
     // count path; the non-admin case is covered explicitly below.
     mockUseMyPermissions.mockReturnValue({
@@ -90,13 +126,64 @@ describe("EventCard", () => {
     expect(screen.getByText(/\+15 pts/)).toBeInTheDocument();
   });
 
-  it("draws Mandatory as the danger badge, never the accent", () => {
+  it("draws Mandatory as the hairline badge, as the Events list does (#4132)", () => {
     render(
       <EventCard message={makeMessage({ is_mandatory: true })} isConfirmed />,
     );
     const badge = screen.getByText("Mandatory");
-    expect(badge.className).toContain("text-destructive-text");
+    expect(badge.className).toContain("text-muted-foreground");
+    expect(badge.className).not.toContain("text-destructive-text");
     expect(badge.className).not.toContain("text-accent-text");
+  });
+
+  it("shows Mandatory only when the event requires this viewer (#4132)", () => {
+    render(
+      <EventCard
+        message={makeMessage({ is_mandatory: true, viewer_required: false })}
+        isConfirmed
+      />,
+    );
+    expect(screen.queryByText("Mandatory")).not.toBeInTheDocument();
+  });
+
+  // #4660: the rule is `useEventCardExcuse`'s (its own spec in @repo/hooks);
+  // the card draws what it answers.
+  it("offers Can't make it, linking to the sheet with the line open", () => {
+    mockEventCardExcuse.mockReturnValue({ kind: "offer" });
+    render(<EventCard message={makeMessage()} isConfirmed />);
+    const link = screen.getByRole("link", { name: "Can't make it?" });
+    expect(link).toHaveAttribute("href", "/events?event=evt-1&excuse=1");
+    // A quiet link, not a second button beside Check in (#4933).
+    expect(link.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["underline", "pointer-coarse:min-h-11"]),
+    );
+    expect(link.className).not.toMatch(/\bborder\b|\bbg-/);
+  });
+
+  it("says where a sent excuse stands instead", () => {
+    mockEventCardExcuse.mockReturnValue({
+      kind: "sent",
+      status: "PENDING",
+      reason: "Away game",
+      title: "Excuse sent to Jake",
+      detail: null,
+      canWithdraw: true,
+    });
+    render(<EventCard message={makeMessage()} isConfirmed />);
+    expect(screen.getByText("Excuse sent to Jake")).toBeInTheDocument();
+    expect(screen.queryByText("Can't make it?")).not.toBeInTheDocument();
+  });
+
+  it("offers nothing to a member the event doesn't require", () => {
+    render(<EventCard message={makeMessage()} isConfirmed />);
+    expect(screen.queryByText("Can't make it?")).not.toBeInTheDocument();
+  });
+
+  it("hands the rule the card's own payload", () => {
+    render(<EventCard message={makeMessage()} isConfirmed />);
+    expect(mockEventCardExcuse).toHaveBeenCalledWith(
+      expect.objectContaining({ event_id: "evt-1", is_mandatory: false }),
+    );
   });
 
   it("falls back to the content string on a malformed payload", () => {
@@ -148,6 +235,188 @@ describe("EventCard", () => {
     // Object payload since #994 — the card sends no token and no coordinates,
     // which is what makes it the *plain* self check-in surface.
     expect(checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
+  });
+
+  // #4136: the phone's check-in states, read while the window is open.
+  describe("the viewer's own check-in (#4136)", () => {
+    function openCard() {
+      const now = Date.now();
+      return makeMessage({
+        start_time: new Date(now - 60_000).toISOString(),
+        end_time: new Date(now + 60_000).toISOString(),
+      });
+    }
+
+    it("reads the viewer's row and the event only while check-in is open", () => {
+      render(<EventCard message={makeMessage()} isConfirmed />);
+      expect(mockMyAttendance).toHaveBeenCalledWith("");
+      expect(mockUseEvent).toHaveBeenCalledWith("");
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(mockMyAttendance).toHaveBeenCalledWith("evt-1");
+      expect(mockUseEvent).toHaveBeenCalledWith("evt-1");
+    });
+
+    it("says Checking in… while the check-in runs", () => {
+      checkInState.isPending = true;
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(
+        screen.getByRole("button", { name: "Checking in…" }),
+      ).toBeDisabled();
+    });
+
+    it("turns into a disabled Checked in once the viewer is on the list", () => {
+      mockMyAttendance.mockReturnValue({
+        data: {
+          attendance: {
+            status: "PRESENT",
+            check_in_time: new Date().toISOString(),
+          },
+        },
+        isPending: false,
+        fetchStatus: "idle",
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(screen.getByRole("button", { name: "Checked in" })).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: "Check in" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says the officer's mark instead of offering Check in", () => {
+      mockMyAttendance.mockReturnValue({
+        data: { attendance: { status: "EXCUSED", check_in_time: null } },
+        isPending: false,
+        fetchStatus: "idle",
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(screen.getByText("Marked excused")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("sends a zoned event to the app, and waits for the event to say", () => {
+      mockUseEvent.mockReturnValue({ data: undefined, isError: false });
+      const { unmount } = render(
+        <EventCard message={openCard()} isConfirmed />,
+      );
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+      unmount();
+
+      mockUseEvent.mockReturnValue({
+        data: {
+          id: "evt-1",
+          check_in_zone: [
+            { lat: 1, lng: 1 },
+            { lat: 1, lng: 2 },
+            { lat: 2, lng: 2 },
+          ],
+        },
+        isError: false,
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(
+        screen.getByText(
+          "This event checks your location, so check in from the Frapp mobile app.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says to scan the officer's code once a screen has made it required (#4808)", () => {
+      mockUseEvent.mockReturnValue({
+        data: { id: "evt-1", check_in_zone: null, check_in_needs_code: true },
+        isError: false,
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(
+        screen.getByText(
+          "Point your phone's camera at the code on the officer's screen to check in.",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says Checked in the moment the member's own check-in lands", () => {
+      // Before the row is read back: no row yet, but this session's POST
+      // succeeded, so Check in must not come back for a refused second press.
+      checkInState.succeededFor = "evt-1";
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(screen.getByRole("button", { name: "Checked in" })).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: "Check in" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("says an approved excuse once, as the mark (the phone's rule)", () => {
+      mockMyAttendance.mockReturnValue({
+        data: { attendance: { status: "EXCUSED", check_in_time: null } },
+        isPending: false,
+        fetchStatus: "idle",
+      });
+      mockEventCardExcuse.mockReturnValue({
+        kind: "sent",
+        status: "APPROVED",
+        reason: "Away game",
+        title: "Excused",
+        detail: null,
+        canWithdraw: false,
+      });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(screen.getByText("Marked excused")).toBeInTheDocument();
+      expect(screen.queryByText("Excused")).not.toBeInTheDocument();
+    });
+
+    it("says nothing about Events being off before check-in opens", () => {
+      mockCurrentChapter.mockReturnValue({
+        data: {
+          subscription_status: "active",
+          enabled_modules: { events: false },
+        },
+        isPending: false,
+        isError: false,
+      });
+      mockEventCardExcuse.mockReturnValue({ kind: "offer" });
+      // A required event days away: no check-in is due, so no line about it.
+      render(<EventCard message={makeMessage()} isConfirmed />);
+      expect(
+        screen.queryByText(/Check-in is turned off/),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Can't make it?" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("offers neither control with Events turned off, and says why", () => {
+      mockCurrentChapter.mockReturnValue({
+        data: {
+          subscription_status: "active",
+          enabled_modules: { events: false },
+        },
+        isPending: false,
+        isError: false,
+      });
+      mockEventCardExcuse.mockReturnValue({ kind: "offer" });
+      render(<EventCard message={openCard()} isConfirmed />);
+      expect(
+        screen.queryByRole("button", { name: /check in/i }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Can't make it?" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Check-in is turned off for your chapter right now. An officer can turn events back on.",
+        ),
+      ).toBeInTheDocument();
+      expect(mockMyAttendance).toHaveBeenCalledWith("");
+    });
   });
 
   it("hides Check in outside the event window", () => {
@@ -254,7 +523,6 @@ describe("EventCard", () => {
   });
 });
 
-
 describe("EventCard subscription gating", () => {
   // `POST /v1/events/:eventId/attendance/check-in` is on `AttendanceController`,
   // which carries `ChapterGuard` with no `@FreeTier`. The card is rendered in
@@ -336,5 +604,46 @@ describe("EventCard subscription gating", () => {
     );
     expect(checkInButton).not.toHaveAttribute("aria-describedby");
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+// #4135: the time line is the shared `formatEventWindow`, the phone's words.
+describe("EventCard time line", () => {
+  beforeEach(() => {
+    chapter.active();
+    mockUseAttendance.mockReturnValue({ data: [] });
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 5, 12, 9));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("says Tonight for an evening event today, the day period once", () => {
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(2026, 5, 12, 18).toISOString(),
+          end_time: new Date(2026, 5, 12, 19).toISOString(),
+        })}
+        isConfirmed
+      />,
+    );
+    expect(screen.getByText("Tonight · 6:00 – 7:00 PM")).toBeInTheDocument();
+  });
+
+  it("names tomorrow", () => {
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(2026, 5, 13, 10).toISOString(),
+          end_time: new Date(2026, 5, 13, 11).toISOString(),
+        })}
+        isConfirmed
+      />,
+    );
+    expect(screen.getByText("Tomorrow · 10:00 – 11:00 AM")).toBeInTheDocument();
   });
 });

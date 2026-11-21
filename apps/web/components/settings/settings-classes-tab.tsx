@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, Loader2, Pencil, Plus, Trash2, Users, X } from "lucide-react";
 import {
   fraternalOrderComparator,
@@ -16,6 +16,15 @@ import {
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
 import {
+  hasKeptDraft,
+  readKeptDraft,
+  readKeptPanel,
+  useKeptDraftKeys,
+  useKeptFormDraft,
+  writeKeptPanel,
+} from "@repo/hooks/kept-drafts";
+import { KeptDraftNote } from "@/components/shared/kept-draft-note";
+import {
   PLEDGE_CLASS_ASSIGNMENTS_MAX,
   PLEDGE_CLASS_NAME_MAX_LENGTH,
   PLEDGE_CLASSES_MAX,
@@ -25,16 +34,18 @@ import { ProfileSection } from "@/components/profile/profile-section";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sheet } from "@/components/ui/sheet";
 import {
   ErrorState,
   OfflineState,
   anyReadUncached,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import { MemberSearchField } from "@/components/shared/member-search-field";
 import {
   PanelBody,
+  Panel,
   PanelContent,
   PanelFooter,
   PanelHeader,
@@ -44,9 +55,8 @@ import { SettingsListCardSkeleton } from "@/components/settings/settings-skeleto
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import {
+  addRow,
   classAssignments,
-  nextOrderNumber,
-  parseOrderNumber,
   renumberRows,
   type ClassEditorRow,
 } from "@/lib/pledge-classes";
@@ -60,9 +70,6 @@ type Props = {
   /** The chapter's word for a member's number: "Fraternal order", "Roll number". */
   orderTerm: string;
 };
-
-/** How many matches the add-member search lists at once. */
-const ADD_MATCH_LIMIT = 8;
 
 function memberCountLabel(count: number): string {
   return count === 1 ? "1 member" : `${count} members`;
@@ -83,6 +90,17 @@ function memberCountLabel(count: number): string {
  * plural or a lowercased form of a free-text word comes out wrong for "PC" or
  * "Family" (`settings-semester-tab.tsx` words around its term the same way).
  */
+/** One class's kept member draft (`@repo/hooks/kept-drafts`, #4593). */
+function classDraftName(classId: string): string {
+  return `pledge-class:${classId}`;
+}
+
+/** What the member editor keeps: the rows, and the roster they were read from. */
+type ClassDraft = {
+  members: readonly MemberProfile[];
+  rows: ClassEditorRow[];
+};
+
 export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   const classesQuery = usePledgeClasses();
   const membersQuery = useMembers();
@@ -92,7 +110,19 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   // Above the loading and error branches, so a failed background refetch does
   // not unmount an open delete confirmation (see `SettingsFieldsTab`).
   const { confirm, confirmDialog } = useConfirmDialog();
-  const [editingClassId, setEditingClassId] = useState<string | null>(null);
+  // The class whose members are being edited. A tab left with one open
+  // (#4593) opens it again, on its draft, while it still holds one.
+  const keptKeys = useKeptDraftKeys();
+  const editorPanelKey = keptKeys.panel("pledge-classes");
+  const [editingClassId, setEditingClassId] = useState<string | null>(() => {
+    const left = readKeptPanel<string>(editorPanelKey);
+    return left && hasKeptDraft(keptKeys.draft(classDraftName(left)))
+      ? left
+      : null;
+  });
+  useEffect(() => {
+    writeKeptPanel(editorPanelKey, editingClassId);
+  }, [editorPanelKey, editingClassId]);
   // The order as the officer just dropped it, shown until the save and the
   // re-read answer, so a row never jumps back and then forward again.
   const [pendingOrder, setPendingOrder] = useState<PledgeClass[] | null>(null);
@@ -153,8 +183,7 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
     }
   }
 
-  const paused =
-    classesQuery.isPending && classesQuery.fetchStatus === "paused";
+  const paused = pausedRead(classesQuery);
 
   let body: ReactNode;
   if (isOffline && anyReadUncached(classesQuery)) {
@@ -243,13 +272,15 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
     <div className="space-y-10">
       {confirmDialog}
       {body}
-      <Sheet
-        open={editingClass !== null && members !== undefined}
+      <Panel
+        open={editingClass !== null && members !== undefined && canManage}
         onOpenChange={(open) => {
           if (!open) setEditingClassId(null);
         }}
+        docked
+        backLabel={`Back to ${classTerm}`}
       >
-        {editingClass && members ? (
+        {editingClass && members && canManage ? (
           <ClassMembersEditor
             // Keyed by class, so a draft never carries over to the next class.
             key={editingClass.id}
@@ -260,7 +291,7 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
             onDone={() => setEditingClassId(null)}
           />
         ) : null}
-      </Sheet>
+      </Panel>
     </div>
   );
 }
@@ -500,11 +531,33 @@ function rowName(member: MemberProfile): string {
   return memberLabel(member.display_name, member.user_id);
 }
 
+/** A class's members as editor rows, in the order the Directory lists them. */
+function rowsOf(
+  members: readonly MemberProfile[],
+  classId: string,
+  classes: readonly PledgeClass[],
+): ClassEditorRow[] {
+  return members
+    .filter((member) => member.pledge_class_id === classId)
+    .sort(fraternalOrderComparator(classes))
+    .map((member) => ({
+      memberId: member.id,
+      name: rowName(member),
+      number: member.order_number === null ? "" : String(member.order_number),
+    }));
+}
+
 /**
- * One class's members, in the order the Directory will list them. Dragging a
- * row renumbers the class (`renumberRows` says how), and each number can be
- * typed instead. Nothing is written until Save, which sends every change in
- * one request the API applies whole or not at all.
+ * One class's members, in the order the Directory will list them. The order
+ * is set by dragging a row, or by its grip's arrow keys (#5738): the numbers
+ * follow the list (`renumberRows` says how), and there is no number to type
+ * here. A chapter-wide roll's first number is set once on a member's profile,
+ * and the class keeps counting from it. Nothing is written until Save, which
+ * sends every change in one request the API applies whole or not at all.
+ *
+ * Going back or leaving the page keeps the draft (#4593), with the roster it
+ * was worked out against, so Save still sends only what the officer changed.
+ * Cancel and Save give it up.
  */
 function ClassMembersEditor({
   pledgeClass,
@@ -522,22 +575,37 @@ function ClassMembersEditor({
 }) {
   const { toast } = useToast();
   const assign = useAssignPledgeClasses();
+  const keptKeys = useKeptDraftKeys();
+  const [opening] = useState(() =>
+    readKeptDraft<ClassDraft>(keptKeys.draft(classDraftName(pledgeClass.id))),
+  );
   // The roster as it stood when the editor opened. The rows are built from it
   // once, so the save is worked out against the same snapshot: a background
   // re-read that brings in a member another officer just added to this class
-  // must not read as "the officer took them out".
-  const [members] = useState(liveMembers);
-  const [rows, setRows] = useState<ClassEditorRow[]>(() =>
-    members
-      .filter((member) => member.pledge_class_id === pledgeClass.id)
-      .sort(fraternalOrderComparator(classes))
-      .map((member) => ({
-        memberId: member.id,
-        name: rowName(member),
-        number: member.order_number === null ? "" : String(member.order_number),
-      })),
+  // must not read as "the officer took them out". A kept draft brings its own.
+  const [members, setMembers] = useState(() => opening?.members ?? liveMembers);
+  const [rows, setRows] = useState<ClassEditorRow[]>(
+    () => opening?.rows ?? rowsOf(liveMembers, pledgeClass.id, classes),
   );
-  const [search, setSearch] = useState("");
+  const kept = useKeptFormDraft<ClassDraft>(
+    classDraftName(pledgeClass.id),
+    true,
+    { members, rows },
+    { signature: JSON.stringify(rows), restoredAtMount: opening !== undefined },
+  );
+
+  /** Cancel: give the draft up and close. */
+  function cancel() {
+    kept.drop();
+    onDone();
+  }
+
+  /** Discard: start over from the roster as it is now. */
+  function discard() {
+    kept.discard();
+    setMembers(liveMembers);
+    setRows(rowsOf(liveMembers, pledgeClass.id, classes));
+  }
 
   const classNameById = useMemo(
     () => new Map(classes.map((entry) => [entry.id, entry.name])),
@@ -547,17 +615,20 @@ function ClassMembersEditor({
     () => new Set(rows.map((row) => row.memberId)),
     [rows],
   );
-  const matches = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (!query) return [];
-    return members
-      .filter(
-        (member) =>
-          !inDraft.has(member.id) &&
-          rowName(member).toLowerCase().includes(query),
-      )
-      .slice(0, ADD_MATCH_LIMIT);
-  }, [members, inDraft, search]);
+  // Everyone who can be added: members in no class first, since they are the
+  // ones a new class is usually made of, then members of another class.
+  const addable = useMemo(
+    () =>
+      members
+        .filter((member) => !inDraft.has(member.id))
+        .sort(
+          (a, b) =>
+            Number(a.pledge_class_id !== null) -
+              Number(b.pledge_class_id !== null) ||
+            rowName(a).localeCompare(rowName(b)),
+        ),
+    [members, inDraft],
+  );
 
   const assignments = classAssignments(pledgeClass.id, rows, members);
   const invalid = assignments === null;
@@ -566,24 +637,21 @@ function ClassMembersEditor({
   const dirty = assignments === null || assignments.length > 0;
 
   function addMember(member: MemberProfile) {
-    setRows((previous) => [
-      ...previous,
-      {
-        memberId: member.id,
-        name: rowName(member),
-        number: nextOrderNumber(previous),
-      },
-    ]);
-    setSearch("");
+    setRows((previous) =>
+      addRow(previous, { memberId: member.id, name: rowName(member) }),
+    );
   }
 
   async function handleSave() {
     if (!assignments || assignments.length === 0 || tooMany) return;
+    kept.hold();
     try {
       await assign.mutateAsync(assignments);
+      kept.drop();
       toast({ title: `${pledgeClass.name} saved` });
       onDone();
     } catch (error) {
+      kept.release();
       toast({
         title: `Couldn't save ${pledgeClass.name}`,
         description: getErrorMessage(
@@ -599,52 +667,21 @@ function ClassMembersEditor({
     <PanelContent aria-describedby={undefined}>
       <PanelHeader>{pledgeClass.name}</PanelHeader>
       <PanelBody>
-        <div className="grid gap-1">
-          <Label htmlFor="class-add-member">Add a member</Label>
-          <Input
-            id="class-add-member"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by name"
-            autoComplete="off"
-          />
-          {search.trim() ? (
-            matches.length > 0 ? (
-              <ul className="divide-y divide-border rounded-md border border-border">
-                {matches.map((member) => {
-                  const from = member.pledge_class_id
-                    ? classNameById.get(member.pledge_class_id)
-                    : undefined;
-                  return (
-                    <li
-                      key={member.id}
-                      className="flex items-center justify-between gap-3 px-3 py-1.5"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm">{rowName(member)}</p>
-                        {from ? (
-                          <p className="text-caption text-muted-foreground">
-                            Moves from {from}
-                          </p>
-                        ) : null}
-                      </div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => addMember(member)}
-                        aria-label={`Add ${rowName(member)}`}
-                      >
-                        Add
-                      </Button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <InlineNote>No other member matches.</InlineNote>
-            )
-          ) : null}
-        </div>
+        <MemberSearchField
+          label="Add a member"
+          items={addable}
+          nameOf={rowName}
+          keyOf={(member) => member.id}
+          detailOf={(member) => {
+            const from = member.pledge_class_id
+              ? classNameById.get(member.pledge_class_id)
+              : undefined;
+            return from ? `Moves from ${from}` : null;
+          }}
+          onAdd={addMember}
+          emptyText="Everyone is already in it."
+          disabled={assign.isPending}
+        />
 
         <div className="space-y-2">
           <p className="text-label font-semibold text-muted-foreground">
@@ -660,53 +697,32 @@ function ClassMembersEditor({
               getLabel={(row) => row.name}
               onReorder={(next) => setRows(renumberRows(next))}
               disabled={assign.isPending}
-              renderItem={(row) => {
-                const bad = parseOrderNumber(row.number) === undefined;
-                return (
-                  <div className="flex items-center gap-2">
-                    <p className="min-w-0 flex-1 break-words text-sm">
-                      {row.name}
-                    </p>
-                    <Input
-                      inputMode="numeric"
-                      value={row.number}
-                      onChange={(event) =>
-                        setRows((previous) =>
-                          previous.map((entry) =>
-                            entry.memberId === row.memberId
-                              ? { ...entry, number: event.target.value }
-                              : entry,
-                          ),
-                        )
-                      }
-                      aria-label={`${orderTerm} for ${row.name}`}
-                      aria-invalid={bad || undefined}
-                      disabled={assign.isPending}
-                      className="h-9 w-24 shrink-0 text-right"
-                    />
-                    <IconButton
-                      label={`Remove ${row.name} from ${pledgeClass.name}`}
-                      disabled={assign.isPending}
-                      onClick={() =>
-                        setRows((previous) =>
-                          previous.filter(
-                            (entry) => entry.memberId !== row.memberId,
-                          ),
-                        )
-                      }
-                    >
-                      <X className="h-4 w-4" />
-                    </IconButton>
-                  </div>
-                );
-              }}
+              renderItem={(row) => (
+                <div className="flex items-center gap-2">
+                  {/* The number follows the row's place, not a field. */}
+                  <span className="w-8 shrink-0 text-right text-sm tabular-nums text-muted-foreground">
+                    {row.number}
+                  </span>
+                  <p className="min-w-0 flex-1 break-words text-sm">
+                    {row.name}
+                  </p>
+                  <IconButton
+                    label={`Remove ${row.name} from ${pledgeClass.name}`}
+                    disabled={assign.isPending}
+                    onClick={() =>
+                      setRows((previous) =>
+                        previous.filter(
+                          (entry) => entry.memberId !== row.memberId,
+                        ),
+                      )
+                    }
+                  >
+                    <X className="h-4 w-4" />
+                  </IconButton>
+                </div>
+              )}
             />
           )}
-          {invalid ? (
-            <p role="alert" className="text-caption text-destructive-text">
-              A number is a whole number from 1 up, or blank for none.
-            </p>
-          ) : null}
           {tooMany ? (
             <p role="alert" className="text-caption text-destructive-text">
               That is more than {PLEDGE_CLASS_ASSIGNMENTS_MAX} changes at once.
@@ -716,9 +732,10 @@ function ClassMembersEditor({
         </div>
       </PanelBody>
       <PanelFooter>
+        {kept.restored ? <KeptDraftNote onDiscard={discard} /> : null}
         <Button
           variant="secondary"
-          onClick={onDone}
+          onClick={cancel}
           disabled={assign.isPending}
         >
           Cancel

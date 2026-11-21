@@ -92,6 +92,8 @@ npm run eas -- build --profile preview --platform android
 `eas.json` carries the values that are the same for everyone and safe in git (`EXPO_PUBLIC_API_URL`,
 `EXPO_PUBLIC_SENTRY_ENVIRONMENT`) per build profile, and since 2026-09-06 **binds each profile to
 the EAS environment of the same name** (`"environment": "development" | "preview" | "production"`).
+The two exceptions are `e2e` and `staging` (the Frapp Staging variant, #4917), which both bind to
+`preview`: there is no `staging` EAS environment, and a value set on `preview` reaches all three.
 Everything else the bundle inlines is an **EAS environment variable**, created once per EAS
 environment so a `preview` build gets the *staging* Supabase project and a `production` build the
 *production* one:
@@ -203,27 +205,24 @@ is seeded empty so App Review never sees that footer or a Pay control (the store
 reviewer's chapter). The listing's text still names dues and payment history; the shots keep out the
 in-app payment copy.
 
-**App Store size: 1320 × 2868 pixels, portrait**, a 440 × 956 point viewport at 3x, which is also
-the viewport every screen is captured at. Apple's
+**App Store size: 1206 × 2622 pixels, portrait**, a 402 × 874 point viewport at 3x (the iPhone 16
+Pro's screen), which is also the viewport every screen is captured at. That is what App Store
+Connect took on 2026-11-05: its screenshot slot is now *iPhone with Dynamic Island (medium
+display)*, the 6.1"/6.3" size, which lists 1179 × 2556, 1206 × 2622 and their landscape twins, and
+its dialog said it uses that one set for every iPhone display size. It rejected the 1320 × 2868 set
+the pipeline rendered then, from Apple's
 [screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications)
-(read 2026-09-22) list it among the accepted 6.9" iPhone sizes, alongside 1290 × 2796 and
-1260 × 2736, and require a 6.5" set only when no 6.9" set is provided; smaller iPhone sizes are
-scaled from the larger set. `app.json` sets `ios.supportsTablet: false`, so no iPad set applies.
-**What the console took (2026-11-05), which overrides the paragraph above.** App Store Connect's
-screenshot slot is now *iPhone with Dynamic Island (medium display)*, the 6.1"/6.3" size, and it
-rejected the 1320 × 2868 set. It lists 1179 × 2556, 1206 × 2622 and their landscape twins, and it
-took **1206 × 2622**. Its dialog then said it uses that one set for every iPhone display size. The upload was a
-scale-to-cover and center crop of the 1320 × 2868 frames. The pipeline still renders 1320 × 2868,
-so scale the output the same way until it renders 1206 × 2622 itself
-([#2454](https://github.com/pdcarlson/Frapp/issues/2454)). Google Play's size is § 6.5.
+(6.9", read 2026-09-22); that day's upload was a scale-and-crop of it, and since 2026-11-12 the
+pipeline renders 1206 × 2622 itself ([#2454](https://github.com/pdcarlson/Frapp/issues/2454)).
+`app.json` sets `ios.supportsTablet: false`, so no iPad set applies. Google Play's size is § 6.5.
 
 **Procedure**, on a machine or cloud sandbox with the local stack running (API on `:3001`, local
 Supabase):
 
 1. Write `apps/mobile/.env.local` per
-   [`docs/guides/demo-data.md` § Mobile setup](../../guides/demo-data.md#mobile-setup), **without**
-   `EXPO_PUBLIC_ASK_ENABLED`. With it set the app draws the ✦ Ask pill, and the run stops
-   rather than write a set containing it. The same section's `EVENT_CHECK_IN_TOKEN_SECRET` must be
+   [`docs/guides/demo-data.md` § Mobile setup](../../guides/demo-data.md#mobile-setup), and leave
+   the API's `AI_ENABLED` off (the default). With AI on, the Tasks shot can carry a suggested-tasks row, and the run stops
+   rather than write a set containing it. (Since #4702 the Ask Frapp bar is also on every tab for a member with Ask, and the stop matches it by its name, so with AI on the run stops at the first tab shot.) The same section's `EVENT_CHECK_IN_TOKEN_SECRET` must be
    in `apps/api/.env.local` before the API starts (the cloud sandbox's bring-up does not write
    it): without it the Host check-in screen shows "Code unavailable" instead of a QR, and that
    shot times out.
@@ -244,21 +243,21 @@ Supabase):
 It prints each folder it wrote, and exits non-zero if a screen lands on a route other than the one
 requested (a lost session redirects to sign-in), if a screen's data never arrives, or if a file is
 the wrong size or (for Play) not an opaque 8-bit RGB PNG, and then deletes all three folders so
-there is no set with a gap to upload; re-run it. If any Ask surface is on screen it stops at once,
+there is no set with a gap to upload; re-run it. If an AI surface is on screen in a shot (Ask, or a suggested-tasks row) it stops at once,
 with the same deletion. A caption that says "Signet", or common wording that ranks the app or
 cites an award, price or promotion (which Play forbids), refuses the run before anything is
 captured, as does a frame list in `store-frames.mjs` that no longer matches the screens. The copy
 check is a word list, so read the captions before uploading.
 
 **Upload is the owner's step**, files in filename order, for the English (U.S.) localization:
-App Store Connect → the app → the version → iPhone with Dynamic Island (medium display) → drag in the 1206 × 2622 set; Play Console
+App Store Connect → the app → the version → iPhone with Dynamic Island (medium display) → drag in `app-store/` (1206 × 2622); Play Console
 → the app → Main store listing → Phone screenshots → `google-play/` (needs the developer account,
 #2556). `screenshots/` is gitignored and the PNGs are not committed; regenerate them with the
 procedure above rather than keeping copies.
 
 ### 6.5 Google Play screenshots
 
-Play can't take the App Store size: 1320 × 2868 is about 2.17:1, and Play caps a screenshot's long
+Play can't take the App Store size: 1206 × 2622 is about 2.17:1, and Play caps a screenshot's long
 side at twice its short side ([#2557](https://github.com/pdcarlson/Frapp/issues/2557)). So the Play
 frame is its own shape around the same capture (§ 6.4).
 
@@ -306,9 +305,11 @@ with `autoIncrement` gives every production build the next one. When a store ref
 
 #### From Deploy production (CI)
 
-Dispatch **Deploy production** as usual and set **`mobile_build`** to `ios`, `android`, `all` or
-`auto`. The default, `none`, does nothing for the app, and the run is exactly what it was without
-the input. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
+Dispatch **Deploy production** as usual. **`mobile_build`** defaults to `auto` (Paul, 2026-11-12;
+it was `none` from 2026-10-01), so every ship reaches phones: an OTA update where it can, a store
+build where it can't. `ios`, `android` and `all` force a store build. `none` does nothing for the
+app, and the run is exactly what it was without the input; pick it for a ship that must not
+publish, such as the next one after a rollback. Anything for the app runs only on a `full`, non-dry-run ship, after the deploy **and**
 the version tag succeed. A dry run or a `migrations-only` run never builds or publishes, whatever
 the input says.
 
@@ -334,50 +335,52 @@ Merge each `shipped-builds.json` PR before the next `auto` ship: an unrecorded b
 to the plan, which would build that version again instead of updating it. A store build then
 calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111):
 
-1. **`build`** checks out the validated SHA and nothing else, runs `npm ci`, and installs eas-cli
-   **24.8.0** with `--before=2026-10-01`, so none of eas-cli's own dependencies can be a version
-   published after that date (it ships no lockfile; the lockfile fix is #3118). It refuses to go
-   on unless the tree is exactly that commit with nothing changed (eas-cli uploads uncommitted
-   changes with the build), and unless that commit is still the latest `v*` tag, read from the
-   API. Then:
-   - Each platform starts on its own:
-     `eas build --platform <p> --profile production --non-interactive --no-wait --json` hands its
-     build id on at once. `eas build --platform all` would start Android and then die on an iOS
-     failure, leaving the Android build running unreported.
-   - One step polls the builds (`eas build:view <id> --json`) until each ends, under a 230-minute
-     deadline of its own. A build still queued at the deadline is reported by id, not lost. Each
-     build's status is logged as it changes, and a build that errors or is cancelled is named in
-     the log the round it is seen, usually within a minute (longer only when an EAS read stalls
-     or a retry is starting), while the other platform builds on (#3812). A build that has ended
-     is not read again.
-   - A build that errored on a transient network failure (a 5xx, timeout or reset while fetching
-     pods or packages, read from EAS's error message and the end of the build's logs) is started
-     again, once per platform, and the retry takes its place. Nothing else is retried, because EAS
-     meters every build: not a cancelled build, any other error, a failure with under an hour
-     left before the deadline, or one after the `v*` tags changed since the builds started (or
-     couldn't be read), since a retry is a build start like any other. The log match only looks
-     at the last 100 lines, so a network warning the build recovered from long before it failed
-     doesn't count; it is a heuristic, and a wrong call costs one build. iOS 0.10.3 is why: a 504
-     from GitHub's release download behind `RNSentry.podspec` sank it in pod install (run
-     42567552486). Retrying the build covers any pod or package host, where pinning that one fetch
-     wouldn't.
-   - Only a build EAS reports `FINISHED` from the shipped commit goes on.
-   - The latest-tag check runs again: a ship made while EAS was building (a rollback, say) stops
-     every upload.
-   - Then `eas submit --platform <p> --profile production --id <build id> --non-interactive --no-wait`;
+1. **`ios`** (on `macos-latest`) and **`android`** (on `ubuntu-latest`) each build their own
+   platform on a GitHub runner with `eas build --local`, side by side, so one platform's failure
+   doesn't stop the other's build or upload. Paul moved the builds off Expo's cloud on 2026-11-16
+   (#5162): the Free plan's build credits ran out on 2026-11-14 until 2026-12-01, and the 11-14 and
+   11-16 ships went live and then failed at the build start ("You've reached your included build
+   credits"). A local build is metered by nothing, and runners are free for a public repository.
+   It still takes its signing credentials, its `production` EAS environment variables (§ 6.3) and
+   its next build number from EAS with `EXPO_TOKEN`, so the build numbers stay one sequence with
+   the cloud builds before it. Each job:
+   - checks out the validated SHA and nothing else, runs `npm ci`, and installs eas-cli
+     **24.8.0** with `--before=2026-10-01`, so none of eas-cli's own dependencies can be a version published
+     after that date (it ships no lockfile; the lockfile fix is #3118). The runner is set up as
+     **Staging app**'s build of the same platform is (§ 6.8): iOS picks the runner's newest stable
+     Xcode 26, because a local build ignores `eas.json`'s `image`; Android uses Java 17 and gives
+     Gradle 4 GB.
+   - Android only: fetches `GOOGLE_SERVICES_JSON`, a File variable whose file `eas build --local`
+     doesn't fetch, with `eas env:pull --environment production`, and points the variable at it.
+   - refuses to go on unless the tree is exactly that commit with nothing changed (a local build
+     packs uncommitted changes too), and unless that commit is still the latest `v*` tag, read
+     from the API.
+   - turns Sentry's upload off (`SENTRY_DISABLE_AUTO_UPLOAD`) when the `automation` environment has
+     no `SENTRY_AUTH_TOKEN`, and says so in the summary: the binary ships, and its native crash
+     reports stay unsymbolicated (What a run needs outside the repo, below).
+   - builds with `eas build --local --platform <p> --profile production --non-interactive --output <archive>`.
+     eas-cli takes the next build number from EAS and prints it ("Incremented buildNumber from 24
+     to 25."); that line is the only place a local build reports it, so the job reads it from the
+     log, with the version from `expo.version`, and stops unless it finds exactly one. On iOS the
+     binary's own `Info.plist` must agree before anything uploads.
+   - runs the latest-tag check again: a ship made while the runner was building (a rollback, say)
+     stops the upload.
+   - then `eas submit --platform <p> --profile production --path <archive> --non-interactive --no-wait`;
      iOS also passes `--no-auto-testflight-setup`, so CI never creates a TestFlight group. The
      step ends once EAS accepts the submission and hands its id on, because Expo's free plan
      queues a submission for about 47 minutes before uploading, and waiting for that turned
-     uploads that worked into red runs with nothing recorded (#3483, 2026-11-05).
+     uploads that worked into red runs with nothing recorded (#3483, 2026-11-05). Submissions
+     aren't builds, so they cost no build credits.
 
-   One platform's failure doesn't stop the other's build or upload.
+   An iOS build took 22 to 33 minutes and an Android one 34 on these runners when Frapp Staging's
+   were measured (#4877).
 2. **`record`** opens the PR that adds one `shipped-builds.json` entry per build whose
    submission EAS accepted, which may still be in Expo's queue
    (`scripts/ci/record-shipped-builds.mjs`). It uses the PR base sync GitHub App's token, because
    a PR opened with the Actions `GITHUB_TOKEN` starts no CI, and that PR's `api-contract-check`
-   is the point. **Merge it before any tester installs the build.** A build EAS reports from any
-   other commit is refused, not recorded. The run summary lists every build: its EAS id, status,
-   version, upload result, and whether it was recorded.
+   is the point. It merges itself (`AUTO_MERGE` in `_mobile-build.yml`; Paul, 2026-11-12), so the next `auto` ship sees the build: once `confirm` (step 3) sees every upload finish, the **`merge-record`** job turns on its squash auto-merge with the same App token, and its required checks still hold it. Not before, because a record PR that merged ahead of a failed upload would tag and plan around a build no store has. If an upload failed or never finished, or GitHub refuses auto-merge, that job comments on the PR instead: **drop any failed build's entry and merge it by hand before any tester installs the build.** A build from any
+   other commit is refused, not recorded. The run summary lists every platform: its job's status,
+   the version and build number, the upload result, and whether it was recorded.
    If that PR's `api-contract-check` fails, `main` has already changed the API in a way the new
    build can't take: `main` is ahead of the tag, and nothing compared the change against this
    build until it was listed. Fix it on `main` before the next production ship, or waive a route
@@ -398,55 +401,71 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    shows the same thing, but would put eas-cli's unlocked dependencies (#3118) in a job holding
    the token. It goes green when every successful upload has `FINISHED`, and red, with what to
    do, when one errors, is cancelled, is still queued at its 280-minute deadline, can't be read,
-   or came back with no submission id. `FINISHED` means the binary reached the store, not that it
+   or came back with no submission id. A submission that errors with App Store Connect's or
+   Google Play's `SERVER_ERROR` (their side failed, as iOS 0.12.0 (21) did on run 43297725458) is
+   retried through EAS's `retrySubmission` mutation, the one `eas submit:retry` sends: the same
+   build and submit config, no rebuild, at most twice, while EAS still allows it (`canRetry`).
+   The summary names each retry. Any other error is reported, not retried (Paul, 2026-11-12).
+   EAS's error for a store failure is only a code and a stock sentence, so for each submission
+   that errors or is cancelled the job also prints the end of that submission's own log on EAS
+   (the log expo.dev shows on its page; `LOG_TAIL_LINES` lines), which names the store step that
+   failed. The job log is public, so links and email addresses in it are removed first.
+   `FINISHED` means the binary reached the store, not that it
    passed processing: App Store Connect can still reject an iOS binary by email afterwards, as it
    did iOS 0.9.1 (8) with ITMS-90683.
 4. **`snapshot`** dispatches **Migration snapshot** as the store build starts. The run stays in
-   flight for as long as EAS takes, and the snapshot otherwise publishes only when a Deploy
+   flight while the builds and Expo's submission queue take their time, and the snapshot otherwise publishes only when a Deploy
    production run completes, so the required PR migration gates would judge production against
    the pre-ship state until then (`download-migration-snapshot`'s header).
 
-All four jobs name the `automation` environment, which has no reviewers, so a ship stays one Approve
+Every job here names the `automation` environment, which has no reviewers, so a ship stays one Approve
 click ([`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets)).
 The build reads the same EAS `production` environment variables (§ 6.3) and credentials as a
-laptop build, so anything a hand build needs, this one needs too.
+laptop build, so anything a hand build needs, this one needs too, plus what a local build can't
+read from EAS: the Firebase file and the Sentry token (What a run needs outside the repo, below).
 
 **When it fails.** Production and the tag are already live and stay as they are. The `mobile` job
 goes red on its own, and the deploy summary and alert don't change. The `record` job's summary
-lists each platform's EAS id, status and upload, and says which of these applies, except a
+lists each platform's status, version and upload, and says which of these applies, except a
 red `confirm`, whose own summary says what happened to each submission. A build that
 uploaded but couldn't be recorded is listed there as the JSON entries to add.
 
-A re-run builds every platform the run asked for again, so re-run only when nothing uploaded and
-nothing is still building.
+Each platform builds in its own job, so **Re-run failed jobs** builds again only the platform
+whose job failed, with a new build number, and uploads and records it. A runner keeps no binary,
+so a build that finished but didn't upload is built again rather than uploaded by hand. A re-run
+stops if a later ship has tagged another commit; dispatch Deploy production for that one instead.
 
-- **A build finished but EAS refused its submission** (the `build` job is red): fix the cause,
-  run the summary's `npm run eas -- submit … --id <build id>` from the repo root, and record the
-  build by hand.
+- **A build or its upload failed** (the `ios` or `android` job is red): the job's log says why.
+  Fix the cause, then **Re-run failed jobs**. The deploy and the tag succeeded and don't run
+  again. A profile that "doesn't include the … capability" is the capability item under What a
+  run needs outside the repo, below. If the other platform's record PR hasn't merged yet when the
+  re-run records, the re-run's record PR lists that build again. Once the first merges, the PR
+  base sync merges `main` into the second when the repeated entry matches exactly
+  (`resolve-registry-conflict.mjs`); when it was recorded on another day, the sync comments
+  instead, and the repeated entry is deleted from the second PR by hand.
 - **EAS accepted a submission and then failed to upload it** (the `confirm` job is red): the
   record PR already lists the build. Either, while its commit is still the latest `v*` tag, fix
-  the cause and upload it again with the `npm run eas -- submit … --id <build id>` the `confirm`
-  summary gives, and keep the entry, or drop the entry: delete it from the record PR before
-  merging, or, if that has merged, move it to the registry's `dropped` list with the run as its
-  reason, in a PR of its own (a plain deletion fails `api-contract-check`). A build that never
-  reached a store can be dropped at once
+  the cause and upload it again, and keep the entry, or drop the entry. Once EAS won't retry the
+  submission, only dropping it is left: the runner kept no copy of the binary, so the `confirm`
+  summary says to drop the entry and re-run that platform's job by itself (its own re-run button;
+  **Re-run failed jobs** skips it, since its upload was accepted) for a new build. To upload it again, run
+  the **Retry a store upload** workflow (`mobile-retry-upload.yml`) with the platform and the
+  submission id the `confirm` summary names: it retries that submission on EAS, any error
+  included, and waits for it like `confirm` does, with nothing rebuilt or redeployed. Merge the
+  record PR by hand once the upload finished. To drop the entry, delete it from the record PR
+  before merging, or, if that has merged, move it to the registry's `dropped` list with the run
+  as its reason, in a PR of its own (a plain deletion fails `api-contract-check`). A build that
+  never reached a store can be dropped at once
   ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
-- **A build was still running when the job stopped waiting:** it may finish on EAS. Don't start
-  another. When it finishes, and its commit is still the latest `v*` tag, upload it with the same
-  `npm run eas -- submit … --id` and record it.
-- **One platform uploaded and the other didn't build:** fix the cause, then build and upload the
-  other by hand from the latest `v*` tag (below), and record it. The wait step's log says whether
-  a transient network failure was retried (and names both builds) or why it wasn't.
-- **Production shipped another commit before or while EAS was building:** nothing from this run
-  may upload. The next store build comes with the next ship.
+- **One platform uploaded and the other didn't build:** **Re-run failed jobs**, as above. Or merge
+  the uploaded platform's record PR and let the next `auto` ship build the other: the plan gives a
+  platform with no recorded build of the version a store build, and the recorded one an update.
+- **Production shipped another commit before or while the runner was building:** nothing from
+  this run may upload. The next store build comes with the next ship.
 - **A tag check failed without finding production moved** (a GitHub API error that outlasted its
   retries, or a top `v*` tag that isn't `vX.Y.Z`; the summary keeps both apart from a moved
-  production): resolve that first. Before the builds, nothing started, so then re-run; before the
-  uploads, the builds are done, so confirm the commit is the latest `v*` tag and upload them by
-  hand with the summary's `npm run eas -- submit … --id`.
-- **Nothing built:** **Re-run failed jobs** on the same run. The deploy and the tag succeeded and
-  don't run again, and the builds get fresh build numbers. The re-run stops if a later ship has
-  tagged another commit; dispatch Deploy production for that one instead.
+  production): resolve that first, confirm the commit is the latest `v*` tag, then **Re-run
+  failed jobs**.
 - **The tag failed, so the store build never started:** `mobile` shows skipped, and the deploy
   summary says the run asked for one. Fix the tag's cause, then use **Re-run failed jobs** on this
   run rather than the Release workflow: it retries the tag without redeploying, then runs the
@@ -461,12 +480,37 @@ nothing is still building.
 *Status* says what existed when someone last looked, and how they looked.
 
 - **`EXPO_TOKEN`**: an Expo access token, as a secret of the GitHub **`automation`** environment.
-  Not Infisical, and never a repository secret (#2518). Without it the `build` job's first step
+  Not Infisical, and never a repository secret (#2518). Without it each build job's first step
   fails, before any checkout. *Status (Expo → account → Access tokens, and the `automation`
   environment's secrets in GitHub, 2026-10-01):* the token of the robot user
   `github-deploy-production` (role Developer) on the `pdcarlson` Expo account, so it isn't tied to
   a person. To rotate it, create a new token for that robot on that page, replace the secret, then
   revoke the old token.
+- **Every capability the app declares, turned on for the App ID and carried by the App Store
+  profile, before the first store build that declares it** (#4002). A non-interactive build can't
+  add one. eas-cli turns capabilities on only when it is signed in to Apple before it sets up the
+  profile (`SetUpTargetBuildCredentials`), and a non-interactive run skips that sign-in
+  (`bestEffortAppStoreAuthenticateAsync` returns at once). Its profile check then looks at the
+  certificate, the bundle identifier, the expiry and, when it can reach Apple, whether the profile
+  still exists and is active (`validateProvisioningProfileAsync`); it never compares entitlements.
+  So the build starts as usual and fails in Xcode's signing, about four minutes in. iOS 0.11.0 (17)
+  did, on `applinks:app.frapp.live` (`ios.associatedDomains` in `apps/mobile/app.json`, new in
+  0.11.0), which the profile made in September 2026 doesn't carry: `XCODE_BUILD_ERROR`,
+  "Provisioning profile "*[expo] live.frapp.mobile AppStore 2026-09-17T20:30:23.750Z" doesn't
+  include the Associated Domains capability" (Deploy production run 43138604118, 2026-11-12; the
+  web, the API and Android shipped). Before the first store build of a version that adds a
+  capability (`associatedDomains`, `usesAppleSignIn`, a key under `ios.entitlements`, or a config
+  plugin that writes one), from a checkout that has the change, run
+  `npm run eas -- credentials --platform ios` → `production` → log in to the Apple account →
+  **Build Credentials: Manage everything needed to build your project** → **All: Set up all the
+  required credentials to build your project**. It prints `Synced capabilities: Enabled: <name>`
+  and remakes the profile when Apple no longer reports the old one active (answer yes if it asks
+  whether to reuse the original profile: it is reconfigured in place). If the profile was left as
+  it was, delete it (**Provisioning Profile: Delete one from your project**) and run **All** again.
+  An interactive `npm run eas -- build --platform ios --profile production` runs the same setup,
+  but also starts a build outside Deploy production. *The failure is from the run. The cause and
+  the commands are read from eas-cli 24.8.0's source (2026-11-12); the fix itself hasn't been run
+  yet, so correct this from the first time it is.*
 - **iOS signing credentials in EAS.** A non-interactive build can't create the distribution
   certificate (eas-cli's `SetUpDistributionCertificate` throws `MissingCredentialsNonInteractiveError`).
   One interactive `npm run eas -- build --platform ios --profile production` creates it. *Status
@@ -492,15 +536,29 @@ nothing is still building.
   production Android build also needs the `GOOGLE_SERVICES_JSON` file variable
   (`apps/mobile/app.config.js` refuses to evaluate without it), set in EAS since 2026-11-03
   (#1826).
-- **An EAS plan whose build quota covers each ticked ship** (one build per platform). *Status
-  (Expo → account → Billing, 2026-10-01):* the Free plan, with 15 iOS and 15 Android builds a
-  month, on the low-priority queue. A queued build can outlast the wait's deadline (When it fails,
-  above, says what to do then); if that keeps happening, a paid plan is the fix.
+- **`GOOGLE_SERVICES_JSON` readable outside EAS's servers** (Android). It is a File variable in
+  the EAS `production` environment (#1826), and the `android` job fetches it with `eas env:pull`,
+  which skips a variable of **Secret** visibility: the job then stops with what to change. It must
+  be Plain text or Sensitive (`npm run eas -- env:list --environment production` shows it). The
+  file is Firebase's client config, which ships inside the app anyway. *Status:* set since
+  2026-11-03, but as **Secret**: the first production run from a GitHub runner (44113979528,
+  2026-11-17) stopped on it, so the owner changes it to Sensitive.
+- **`SENTRY_AUTH_TOKEN`** as a secret of the GitHub **`automation`** environment, the
+  organization token `_mobile-update.yml` uses for an update's source maps. EAS's variable of that
+  name is Secret and never reaches a runner. Without it the build still ships, with Sentry's upload
+  turned off and a warning in the summary, and its native crash reports stay unsymbolicated
+  ([`ENV_REFERENCE.md` § apps/mobile](../../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas)).
+- **No EAS build credits.** The builds run on GitHub's runners since 2026-11-16 (#5162), so the
+  Free plan's monthly credits (15 iOS and 15 Android builds, used up on 2026-11-14) don't limit a
+  ship. Submissions aren't metered.
 
 #### By hand
 
-Run from the repo root, after checking out the latest `v*` tag and building it on EAS
-(`npm run eas -- build --platform <p> --profile production`). A tag cut before `npm run eas`
+Run from the repo root, after checking out the latest `v*` tag and building it
+(`npm run eas -- build --platform <p> --profile production`). That builds on EAS and needs the Free
+plan's build credits; add `--local --output <file>` to build on your own Mac (iOS, with Xcode 26) or
+a machine with the Android SDK and Java 17, as the store build does on GitHub's runners, then
+submit that file with `--path <file>` in place of `--latest`. A tag cut before `npm run eas`
 existed (#3124) doesn't have it; there, use the global fallback at the top of § 6. Both platforms read the `production` submit
 profile in `apps/mobile/eas.json`; `eas submit` defaults to it, and falls back to it when the
 build's own profile has no submit profile of the same name.
@@ -551,7 +609,12 @@ shapes too: with a changed `build:view` shape, no build ever reads as finished, 
 to its deadline. *2026-11-09 (#3812):* the retry reads `build:view --json`'s `error.errorCode`,
 `error.message` and `logFiles` (signed log URLs), from eas-cli 24.8.0's `BuildFragment`; eas-cli
 24.8 has no command that re-runs a build, so a retry is a fresh `eas build --no-wait`. A changed
-shape there only stops the retry: the error is still reported.
+shape there only stops the retry: the error is still reported. *2026-11-16 (#5162):* the builds moved to `eas build --local`, read from
+eas-cli 24.8.0's source: the local build plugin's environment is EAS's plain and sensitive
+variables overlaid by the runner's own (`runLocalBuildAsync`), so a variable the job sets wins;
+eas-cli reads the variables without File contents (`includeFileContent` unset), while `eas env:pull` asks for them and writes each file under `.eas/.env/`;
+and `--output` and `eas submit --path` are in the same version's `--help`. The cloud path's
+`--no-wait --json`, `build:view` and retry are gone with it.
 `npm run eas` runs the version CI pins (see the top of this section), so the table holds on a
 laptop too; after a bump, or when a run disagrees, re-check it against
 `npm run eas -- submit --help`.
@@ -559,9 +622,17 @@ laptop too; after a bump, or when a run disagrees, re-check it against
 ### 6.7 OTA updates
 
 A JS-only fix can reach installed beta builds as an over-the-air update instead of a store build.
-Deploy production publishes one when asked (below), and a person can still publish from a laptop.
-Both go through the same guard. #2511 still owns a staging app variant, promotion and staged
-rollout.
+Deploy production publishes one on every ship by default (`mobile_build: auto`, below), and a person can still
+publish from a laptop. Both go through the same guard. The staging app variant is built and
+updated by its own workflow ([§ 6.8](#68-frapp-staging)); #2511 still
+owns promotion and staged rollout. Its runtime is the version plus a hash of its native inputs, not
+the version alone ([`spec/environments`](../../../spec/environments/README.md#mobile-eas)), so what
+follows about `expo.version` is about the store app.
+
+An update only reaches phones whose store build has the same `expo.version` (the `appVersion`
+runtime policy). Once a PR changes native code and bumps that version on `main`, nothing more
+can reach the older builds until the new version's store builds ship (§ 6.6): as of 2026-11-12,
+`main` is at 0.12.0 and every installed build is 0.11.0 or older.
 
 #### Published by Deploy production
 
@@ -605,6 +676,8 @@ git switch main   # afterwards
 Before publishing, `git show <tag>:scripts/eas-update.mjs` must succeed. From `main`, the guard
 refuses outright while the latest release predates it.
 
+*Superseded 2026-11-12: Deploy production has published updates since 2026-11-10; the
+paragraph below is the history of how the first one became possible.*
 **Nothing can take an update yet.** As of 2026-11-05, the only store build is Android 0.9.0
 build 2 (from `v0.8.1`), and `main` is at 0.9.1, because native code changed after that build
 (#3472). The first update becomes possible once Deploy production ships a release that carries
@@ -630,11 +703,11 @@ traps a bare `eas update` falls into (eas-cli 24.8.0 source, read 2026-11-05, #3
   holds, so nothing local is inlined. A name set in both places must agree: a store build takes
   `eas.json`'s value and an update would take EAS's, so the guard refuses a difference.
 - **The production fences.** `app.config.js` reads `FRAPP_EAS_UPDATE_PROFILE`, which the guard
-  sets, so the API, Supabase, app URL and Ask fences run as they would for a store build. A
+  sets, so the API, Supabase and app URL fences run as they would for a store build. A
   production update also needs `EXPO_PUBLIC_SENTRY_DSN`. A local run loads only EAS variables whose
   visibility is Plain text or Sensitive, never Secret, so keep the § 6.3 variables Plain text.
-- **How far an update reaches.** `runtimeVersion` uses the `appVersion` policy, so an update
-  reaches every installed build whose `expo.version` matches, on that channel. If native code
+- **How far an update reaches.** The store app's `runtimeVersion` uses the `appVersion` policy, so an
+  update reaches every installed build whose `expo.version` matches, on that channel. If native code
   changed since one of those builds, the update calls a module the binary lacks, and the app
   crashes at launch. For `production`, the guard reads every store build of the current
   `expo.version` from `apps/mobile/store/shipped-builds.json`. It refuses unless `app.json`,
@@ -654,15 +727,141 @@ variable of that name is Secret and never reaches a local run. Without it, the u
 live and its errors still reach Sentry, but with minified stack traces, and the guard prints the
 command to run later. Never pass the token as a command-line argument (the note at the top of § 6).
 
-**Check it landed.** `npm run eas -- update:list --branch production` shows the new group. Open
-the app twice: the first launch downloads the update, the second runs it. Sentry events from the
-update carry the commit as the `git_sha` tag, and the `production` environment.
+#### On the phone
 
-**Rolling back.** `npm run eas -- update:roll-back-to-embedded --channel production` (or
-`update:republish` of an earlier group) passes through without the guard, because it publishes
-no new bundle. Read its `--help` first; eas-cli's rollback flags change between versions.
+`app.json` has expo-updates check at every cold launch (`checkAutomatically: ON_LOAD`) without
+waiting for the download (`fallbackToCacheTimeout: 0`), so on its own an update downloads on one
+cold launch and runs on the next. iOS keeps an app suspended for days, so the app adds two rules
+of its own ([`lib/updates/resume-updates.ts`](../../../apps/mobile/lib/updates/resume-updates.ts),
+mounted in `AppRuntime`):
+
+- **Coming back to the app checks again**, at most every 15 minutes, and downloads what it finds,
+  a rollback included.
+- **A downloaded update runs when the member comes back after 10 minutes or more away.** The app
+  reloads into it a second later, behind the splash screen's near-black with no spinner, showing
+  the Frapp emblem where the phone can load it natively, then the launch logo until the first
+  screen is ready ([`navigation.md` § The launch logo](../../../spec/ui/mobile/navigation.md#the-launch-logo)). A
+  shorter trip out never reloads, and neither does a return through a link or a notification tap,
+  which the running bundle is already handling (the update waits for the next return). Chat drafts
+  and the outbox are on disk and survive the reload; a sheet left half filled for ten minutes (a
+  new event, a poll) doesn't, as when iOS ends a suspended app. It never reloads while a meeting
+  recording is starting, running, saving or uploading, and does nothing in development, Expo Go
+  or an emergency launch (an update that failed to start, so expo-updates fell back to the store
+  build).
+
+So a fix reaches most members within a day: the first return after the publish downloads it, the
+next return after ten minutes away runs it.
+
+#### Watching an update spread
+
+- **Sentry** tags every mobile event with `expo.updates.update_id`, `expo.updates.channel` and
+  `expo.updates.runtime_version`, through `@sentry/react-native`'s built-in Expo context, and
+  reports an emergency launch as a warning tagged `expo.updates.emergency_launch`. Events from an
+  update also carry its commit as the `git_sha` tag.
+- **PostHog**: the events the mobile SDK sends itself (`$screen`, `Application Became Active` and
+  the other lifecycle events, `$identify`) carry `app_launch` (`store_build`, `update`,
+  `emergency` or `development`), `app_update_id`, `app_update_published_at`, `app_update_channel`
+  and `app_runtime_version`, as super properties
+  ([`lib/updates/running-update.ts`](../../../apps/mobile/lib/updates/running-update.ts)). Break
+  `$screen` down by `app_update_id` to see how far an update has reached. Named product events
+  (`task-created` and the rest) go through the API (`POST /v1/analytics/events`) and don't carry
+  them.
+- **EAS**: `npm run eas -- update:list --branch production` lists the groups; the Expo dashboard
+  shows each group's launches and crashes.
+
+#### Rolling back
+
+Run **Roll back the app update** in GitHub Actions
+([`mobile-rollback.yml`](../../../.github/workflows/mobile-rollback.yml)) from `main`, with:
+
+- **`runtime_version`**: the `expo.version` the bad update went to (`0.12.0`, say). Only phones on
+  that version are affected.
+- **`to`**: `store_build` sends those phones back to the JavaScript inside their store build.
+  `update_group` republishes an earlier update group instead; copy its ID from the Expo dashboard
+  (Updates, the `production` branch) into **`group`**. The job refuses a group that isn't on the
+  `production` branch or wasn't built for `runtime_version`, because a republish lands on the
+  group's own branch and version, whatever the form says.
+- **`platform`**: `all`, `ios` or `android`.
+
+It publishes no new bundle, so it skips the guard, and it needs no laptop. It runs eas-cli from
+the release production serves (the newest `vX.Y.Z` tag), and refuses a tag whose commit isn't on
+`main`. Phones pick it up the way they pick up an update (above). The next Deploy production publish replaces it, so fix forward
+before shipping again, or ship with `mobile_build: none`. `auto` is the default, so pick `none`
+on purpose.
+
+From a laptop, the same two commands are `npm run eas -- update:roll-back-to-embedded --channel
+production --runtime-version <version>` and `npm run eas -- update:republish --group <id>` (eas-cli
+24.8.0's flags, read from `--help` on 2026-11-12).
 
 The `preview` and `development` channels go through the same argument and env handling. There
 are no store-build records for those channels, so the native check is skipped there.
+
+### 6.8 Frapp Staging
+
+Frapp Staging is the second app that installs beside the store app and talks to staging
+(the `staging` profile; what makes it a separate app is in
+[`spec/environments` § Mobile (EAS)](../../../spec/environments/README.md#mobile-eas)). It was for
+the people building Frapp, never a chapter (Paul, 2026-11-13); since 2026-11-19 it is also the app
+Paul's chapter beta-tests on, while production has no members yet. The **Staging app** workflow
+([`staging-app.yml`](../../../.github/workflows/staging-app.yml)) builds, uploads and updates it.
+Its header owns how; this section is how to use it.
+
+One run at a time: while a run is in flight, GitHub keeps only the newest waiting run and cancels
+an older waiting one, so dispatch again if a run you asked a named platform from shows as cancelled.
+
+It runs by itself after every successful staging deploy, for the commit that deploy shipped: it
+publishes the update, and builds each platform whose runtime has no uploaded binary: iOS to
+TestFlight, Android to the Play internal track. Play took the app's first bundle by hand in Play
+Console on 2026-11-20 (a new app's first bundle can't go through the API); every later one is
+uploaded by the workflow. Android push works only when EAS's `preview` environment has a
+`GOOGLE_SERVICES_JSON` File variable that lists `live.frapp.mobile.staging`; without one the build
+ships with push off and its summary says so. A run by hand takes these choices:
+
+- **`build: auto`** (the default) publishes the commit as an update to the `staging` channel, and
+  builds a binary for a platform only when no uploaded binary carries this commit's runtime, which
+  is the version plus a hash of the native inputs. So a JS-only change reaches installed apps in
+  minutes, and a native change produces a new TestFlight build and a new Play internal build.
+- **`ios`**, **`android`**, **`all`** build that platform whatever the record says. Use one after
+  an upload failed.
+- **`none`** publishes the update only.
+
+Binaries are compiled on GitHub's runners with `eas build --local` (Paul, 2026-11-13, after the
+spike in #4877), so they cost no Expo build. They are signed with the credentials EAS holds for
+`live.frapp.mobile.staging`, and uploaded through EAS Submit (`submit.staging` in `eas.json`; its
+`ascAppId`, `6834835826`, is the Frapp Staging app in App Store Connect), whose free queue adds about 47
+minutes before a binary reaches the store. The run's summary says what each platform did, and its
+`confirm` job goes red when an upload didn't finish. Any failed job on `main` emails the owner through the
+*Staging app updates are failing* alert ([`alert-routing.md`](../alert-routing.md#automated-github-issue-alerts)),
+once per change in what fails, and the next all-green automatic run closes it.
+
+Since 2026-11-17 the staging binary claims `app.staging.frapp.live`'s `/join` and `/check-in`
+(`withStagingVariant` in `apps/mobile/app.config.js`), so a staging QR opens Frapp Staging. The
+claim needs three things beyond the build: the `live.frapp.mobile.staging` App ID's provisioning
+profile must include the Associated Domains capability (`eas credentials -p ios --profile staging`
+regenerates it, the way [§ 6.6](#66-store-submission) does for the store app), and the staging web must publish its two
+`.well-known` files, which name the staging app on any non-production Vercel deployment but stay
+404 until `NEXT_PUBLIC_APPLE_TEAM_ID` and `NEXT_PUBLIC_ANDROID_APP_CERT_SHA256` are set in
+Infisical `staging` ([`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md)). Until
+then a staging QR opens the staging web page, whose Open in Frapp Staging still reaches the app.
+
+**Getting testers in (2026-11-19).** Testers outside the developer team come in through a TestFlight
+**external** group with its public link turned on, not as App Store Connect users: nobody's Apple ID
+is collected, and the link takes up to 10,000 people. Apple's Beta App Review checks the first build
+of each new version (the group's test information needs a staging sign-in for the reviewer); later
+builds of that version usually go straight out, and OTA updates never need review. A new binary
+reaches the external group only once it is added there in App Store Connect (TestFlight → the
+group → Builds → +), because `eas submit`'s `--groups` takes internal groups only (Expo's
+[TestFlight guide](https://docs.expo.dev/submit/testflight/), read 2026-11-19). On Android, Play's
+internal track takes up to 100 testers, and only accounts on its email list or Google Group can open
+its link, so a tester has to be on the list first. Each link goes in Infisical `staging` as
+`MOBILE_UPDATE_URL_IOS` / `_ANDROID`, which the web's install links reference
+([`ENV_REFERENCE.md` § References](../../internal/environment/ENV_REFERENCE.md#references--framework-specific-names)),
+and an invite link opened on a phone then walks the tester from getting the app to opening the
+invite in it
+([`spec/behavior/onboarding.md` § Invite Token Rules](../../../spec/behavior/onboarding.md#invite-token-rules)).
+
+Known limits: a staging binary's native crashes are not symbolicated in Sentry, because a local
+build can't read the Secret EAS variable the upload needs; and a native change takes about an hour
+and a half to reach a phone (build, Expo's queue, the store's processing).
 
 ---

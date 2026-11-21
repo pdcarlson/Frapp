@@ -25,22 +25,20 @@ import {
 vi.mock("@/components/chat/chat-background", () => ({
   ChatBackground: () => null,
 }));
-
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
+// The welcome card (#5627) reads events and its own mark; it has its own spec.
+vi.mock("@/components/onboarding/welcome-card", () => ({
+  WelcomeCard: () => null,
 }));
+
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ThreadRow } from "@repo/chat-core/blocks";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { ScheduleSendSheet } from "@/components/chat/schedule-send-sheet";
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import {
@@ -53,13 +51,20 @@ import {
   ThreadHistoryEdge,
 } from "@/components/chat/thread-history-edge";
 import { ThreadSkeleton } from "@/components/chat/thread-skeleton";
-import { jumpToLatestLabel } from "@/components/chat/jump-to-latest-button";
+import { jumpToLatestLabel } from "@repo/chat-core/jump-to-latest";
 import { reactionActionType } from "@repo/chat-core/types";
 import type { UseChatChannelResult } from "@/lib/chat/use-chat-channel";
 import { FrappThemeProvider } from "@/lib/theme";
 import { stackScreen } from "@/test/stack-screen";
 import { flatStyle } from "@/test/flat-style";
 import { screenText } from "@/test/screen-text";
+import { CHANNEL_UNREAD_COUNTS_KEY } from "@repo/hooks";
+import {
+  CHAT_CATCH_UP_COPY,
+  CHAT_CATCH_UP_OFFER_AT,
+  chatCatchUpOfferLine,
+} from "@repo/validation";
+import { ScreenReady } from "@/lib/sentry/screen-ready";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 
 /**
@@ -149,24 +154,6 @@ vi.mock("@/components/chat/message-thread-screen", async () => {
   };
 });
 
-const presentProfileSheet = vi.fn();
-vi.mock("@/components/directory/member-detail-sheet", async () => {
-  const { createElement, forwardRef, useImperativeHandle } =
-    await import("react");
-  return {
-    MemberDetailSheet: forwardRef(function MemberDetailSheet(
-      props: Record<string, unknown>,
-      ref,
-    ) {
-      useImperativeHandle(ref, () => ({
-        present: presentProfileSheet,
-        dismiss: vi.fn(),
-      }));
-      return createElement("MemberDetailSheet", props);
-    }),
-  };
-});
-
 const presentPollSheet = vi.fn();
 const dismissPollSheet = vi.fn();
 vi.mock("@/components/chat/new-poll-sheet", async () => {
@@ -182,6 +169,24 @@ vi.mock("@/components/chat/new-poll-sheet", async () => {
         dismiss: dismissPollSheet,
       }));
       return createElement("NewPollSheet", props);
+    }),
+  };
+});
+
+const presentTaskLinkSheet = vi.fn();
+vi.mock("@/components/chat/task-link-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    TaskLinkSheet: forwardRef(function TaskLinkSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentTaskLinkSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("TaskLinkSheet", props);
     }),
   };
 });
@@ -231,17 +236,6 @@ vi.mock("@/components/events/new-event-sheet", async () => {
     }),
   };
 });
-vi.mock("@/components/service-hours/log-hours-sheet", async () => {
-  const { createElement, forwardRef } = await import("react");
-  return {
-    LogHoursSheet: forwardRef(function LogHoursSheet(
-      props: Record<string, unknown>,
-    ) {
-      return createElement("LogHoursSheet", props);
-    }),
-  };
-});
-
 const presentMemberSheet = vi.fn();
 const dismissMemberSheet = vi.fn();
 vi.mock("@/components/chat/channel-member-sheet", async () => {
@@ -327,8 +321,9 @@ function channelState(
     send: vi.fn(async () => true),
     sendInFlight: () => false,
     sendPoll: vi.fn(async () => ({ ok: true as const })),
+    sendGif: vi.fn(async () => ({ ok: true as const })),
     postTask: vi.fn(async () => ({ ok: true })),
-    postHours: vi.fn(async () => ({ ok: true })),
+    linkTask: vi.fn(async () => ({ ok: true })),
     trackEventCard: vi.fn(() => ({
       clientMessageId: "c1",
       failed: vi.fn(),
@@ -337,7 +332,9 @@ function channelState(
     edit: vi.fn(async () => {}),
     remove: vi.fn(async () => {}),
     closePoll: vi.fn(async () => {}),
+    closeCard: vi.fn(async () => {}),
     flag: vi.fn(async () => {}),
+    setPinned: vi.fn(async () => {}),
     react: vi.fn(async () => {}),
     unreact: vi.fn(async () => {}),
     act: vi.fn(async () => {}),
@@ -347,6 +344,7 @@ function channelState(
     retryPhoto: vi.fn(),
     draft: "",
     setDraft: vi.fn(),
+    restoreDraftFor: vi.fn(),
     sendError: null,
     reactionError: null,
     clearReactionError: vi.fn(),
@@ -355,6 +353,7 @@ function channelState(
     typingUsers: [],
     emitTyping: vi.fn(),
     connection: "live",
+    unavailable: false,
     retry: vi.fn(async () => {}),
     discard: vi.fn(async () => {}),
     ...overrides,
@@ -362,6 +361,11 @@ function channelState(
 }
 
 let channel = channelState();
+// The thread cards' new-reply counts have their own spec (use-thread-unread).
+vi.mock("@/lib/chat/use-thread-unread", () => ({
+  useThreadUnread: () => ({}),
+}));
+
 vi.mock("@/lib/chat/use-chat-channel", () => ({
   useChatChannel: () => channel,
 }));
@@ -377,6 +381,8 @@ let channelLocked = false;
 let channelReadAt = 1_000;
 /** A read-only channel (announcements) the viewer can only read. */
 let channelIsReadOnly = false;
+// Which channel the Scheduled list was read for (#4956).
+const scheduledListFor = vi.fn();
 /** The open channel is the chapter's audit log (#3909). */
 let channelIsAuditLog = false;
 /** The viewer's permissions, and the chapter's modules, for the + (#3701). */
@@ -397,7 +403,11 @@ const BLOCK_LIST = {
 
 const ROSTER = {
   byId: {},
-  nameFor: () => null,
+  // Only the typing specs read a name: the rest of this file draws rows by id.
+  nameFor: (id: string) =>
+    ({ [MEMBER]: "Winston Hewitt", "member-4": "Shawn" })[id] ?? null,
+  typistLabelFor: (id: string) =>
+    ({ [MEMBER]: "Winston Hewitt", "member-4": "Shawn" })[id] ?? null,
   avatarFor: () => null,
   isPending: false,
   isError: false,
@@ -425,55 +435,204 @@ const setNotificationLevel = {
   variables: undefined,
 };
 const markRead = { mutate: vi.fn() };
+const markUnread = {
+  mutateAsync: vi.fn<(messageId: string) => Promise<unknown>>(async () => ({})),
+};
 const requestUploadUrl = { mutateAsync: vi.fn() };
 
-vi.mock("@repo/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useActiveChapterId: () => "chapter-1",
-  useChannel: (id: string) =>
-    channelRow === "found"
-      ? {
-          data: {
-            id,
-            name: "general",
-            type: channelType,
-            description: "The whole chapter.",
-            can_post: !channelIsAuditLog && !channelIsReadOnly,
-            is_read_only: channelIsAuditLog || channelIsReadOnly,
-            is_audit_log: channelIsAuditLog,
-            display_locked: channelLocked,
-          },
-          dataUpdatedAt: channelReadAt,
-          isFetching: false,
-        }
-      : // No row and no cached list: a blank title while it is read, then the
-        // `Thread` fallback (`threadTitleFor`).
-        { data: undefined, isFetching: channelRow === "reading" },
-  useCurrentUser: () => viewerQuery,
-  useMemberDisplayNames: () => ROSTER,
-  useChapterRoster: () => ({ data: MENTION_ROSTER }),
-  useMentionRoles: () => ({ data: MENTION_ROLES }),
-  // No imported authors with avatars in these fixtures.
-  useAuthorAvatars: () => ({ data: undefined }),
-  usePermissionList: () => permissionList,
-  useMyPermissions: () => ({
-    data: { permissions: permissionList },
-    isError: false,
-    fetchStatus: "idle",
-  }),
-  useCurrentChapter: () =>
-    chapterUnread
-      ? { data: undefined, fetchStatus: "fetching" }
-      : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
-  useMarkChannelRead: () => markRead,
-  useRequestChatUploadUrl: () => requestUploadUrl,
-  useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
-  useSetChannelNotificationLevel: () => setNotificationLevel,
-  useImportantMessages: () => importantState,
-  useBlockedUserIds: () => BLOCK_LIST,
-  // The viewer reads the message's images through the row's query.
-  useMessageAttachments: () => ({ data: [IMAGE] }),
+const rosterCatchUp = vi.hoisted(() =>
+  vi.fn<(typists: readonly string[], rows?: readonly unknown[]) => void>(),
+);
+
+/** The viewer's saved message ids; cleared after each test that adds one. */
+const SAVED: Set<string> = new Set();
+const bookmarkWrites = vi.hoisted(() => ({
+  save: { mutateAsync: vi.fn(async () => undefined) },
+  unsave: { mutateAsync: vi.fn(async () => undefined) },
 }));
+/** Remind me about this (#4957): the set, seen and answered. */
+const reminderWrites = vi.hoisted(() => ({
+  set: { mutateAsync: vi.fn(async (input: unknown) => void input) },
+}));
+
+/** The unread counts' fetch, stood in for `GET /v1/channels/unread`. */
+const unreadCountsFetch = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
+
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  const { useQuery } = await import("@tanstack/react-query");
+  return {
+    ...actual,
+    // Dictation's cleanup needs the API client; nothing here dictates.
+    useCleanDictation: () => async () => null,
+    // The real hook's shape, minus the API client this spec doesn't provide:
+    // one query under the shared key, always with its fetch (#4885).
+    useChannelUnreadCounts: (options?: { enabled?: boolean }) =>
+      useQuery({
+        queryKey: actual.CHANNEL_UNREAD_COUNTS_KEY,
+        queryFn: unreadCountsFetch,
+        enabled: options?.enabled ?? true,
+      }),
+    // The roster catch-up has its own spec in `@repo/hooks`.
+    useRosterCatchUp: rosterCatchUp,
+    // GIFs (#4631): off here, so the + sheet offers no GIF row.
+    useGifAvailability: () => ({ available: false, provider: "" }),
+    useActiveChapterId: () => "chapter-1",
+    // Pinned and Saved (#3723): nothing saved, no pins, writes that succeed.
+    useBookmarkedMessageIds: () => SAVED,
+    useBookmarkMessage: () => bookmarkWrites.save,
+    useUnbookmarkMessage: () => bookmarkWrites.unsave,
+    // Remind me about this (#4957): writes that succeed.
+    useSetMessageReminder: () => reminderWrites.set,
+    useBookmarks: () => ({ data: [], isPending: false, isError: false }),
+    usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
+    // Scheduled messages (#4956): none, and a schedule that never lands.
+    useScheduledMessages: (channelId: string | null) => ({
+      ...(scheduledListFor(channelId) as object),
+      data: [],
+      isPending: false,
+      isError: false,
+    }),
+    useScheduleMessage: () => ({ mutateAsync: vi.fn() }),
+    useChannel: (id: string) =>
+      channelRow === "found"
+        ? {
+            data: {
+              id,
+              name: "general",
+              type: channelType,
+              description: "The whole chapter.",
+              can_post: !channelIsAuditLog && !channelIsReadOnly,
+              is_read_only: channelIsAuditLog || channelIsReadOnly,
+              is_audit_log: channelIsAuditLog,
+              display_locked: channelLocked,
+            },
+            dataUpdatedAt: channelReadAt,
+            isFetching: false,
+          }
+        : // No row and no cached list: a blank title while it is read, then the
+          // `Thread` fallback (`threadTitleFor`).
+          { data: undefined, isFetching: channelRow === "reading" },
+    useCurrentUser: () => viewerQuery,
+    useMemberDisplayNames: () => ROSTER,
+    useChapterRoster: () => ({ data: MENTION_ROSTER }),
+    useMentionRoles: () => ({ data: MENTION_ROLES }),
+    // No imported authors with avatars in these fixtures.
+    useAuthorAvatars: () => ({ data: undefined }),
+    usePermissionList: () => permissionList,
+    useMyPermissions: () => ({
+      data: { permissions: permissionList },
+      isError: false,
+      fetchStatus: "idle",
+    }),
+    useCurrentChapter: () =>
+      chapterUnread
+        ? { data: undefined, fetchStatus: "fetching" }
+        : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
+    useMarkChannelRead: () => markRead,
+    useMarkMessageUnread: () => markUnread,
+    useRequestChatUploadUrl: () => requestUploadUrl,
+    useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
+    useSetChannelNotificationLevel: () => setNotificationLevel,
+    useImportantMessages: () => importantState,
+    useBlockedUserIds: () => BLOCK_LIST,
+    // The viewer reads the message's images through the row's query.
+    useMessageAttachments: () => ({ data: [IMAGE] }),
+  };
+});
+
+/** Catch me up (#3946): the gate, and the summary's hook, both stood in. */
+const catchUp = vi.hoisted(() => ({
+  surface: false,
+  waiting: false,
+  active: false,
+  start: vi.fn(),
+  resume: vi.fn(),
+  drop: vi.fn(),
+  options: undefined as
+    { onOpenPoint: (point: Record<string, unknown>) => void } | undefined,
+}));
+/** Whether the member has Ask, as the app knows it so far (#4713). */
+const askAccess = vi.hoisted(() => ({
+  value: "no" as "yes" | "no" | "unknown",
+}));
+vi.mock("@/lib/ai/availability", () => ({
+  useAiSurfaces: () => ({
+    catchUp: catchUp.surface,
+    askAccess: askAccess.value,
+  }),
+}));
+vi.mock("@/components/chat/catch-up", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/chat/catch-up")>()),
+  useCatchUp: (options: {
+    onOpenPoint: (point: Record<string, unknown>) => void;
+  }) => {
+    catchUp.options = options;
+    return {
+      start: catchUp.start,
+      waiting: catchUp.waiting,
+      active: catchUp.active,
+      resume: catchUp.resume,
+      drop: catchUp.drop,
+      // The open summary, drawn by the screen under its header.
+      block:
+        catchUp.active && !catchUp.waiting
+          ? React.createElement("Text", null, "Open summary block")
+          : null,
+      sheets: null,
+    };
+  },
+}));
+
+/**
+ * `@Frapp` from the thread (#4713). What a channel asks with and how a turn
+ * reads are `ask-in-channel.spec.tsx`'s; the screen decides when Send asks
+ * instead of posting, and where the turns sit. `value` is null for a member
+ * without Ask.
+ */
+const channelAsk = vi.hoisted(() => ({
+  value: null as null | {
+    busy: boolean;
+    send: (question: string, after: string | null) => void;
+    turns: { id: string; origin: { after?: string | null; at: string } }[];
+    renderTurn: (turn: { id: string }) => unknown;
+    sheets: null;
+  },
+  /** The channel each render asked from. */
+  channels: [] as (string | null | undefined)[],
+}));
+vi.mock("@/components/ask/ask-in-channel", async () => {
+  const { createElement } = await import("react");
+  return {
+    useChannelAsk: (channelId: string | null | undefined) => {
+      channelAsk.channels.push(channelId);
+      return channelAsk.value;
+    },
+    useAskTurnsPlacement: (byRow: unknown, renderTurn: unknown) => ({
+      byRow,
+      renderTurn,
+    }),
+    AskTurnsUnder: ({
+      placement,
+      rowKey,
+    }: {
+      placement: {
+        byRow: Map<string, { id: string }[]>;
+        renderTurn?: unknown;
+      };
+      rowKey: string;
+    }) =>
+      placement.renderTurn
+        ? (placement.byRow.get(rowKey) ?? []).map((turn) =>
+            createElement("AskChannelTurn", {
+              key: turn.id,
+              id: turn.id,
+              under: rowKey,
+            }),
+          )
+        : null,
+  };
+});
 
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ isOffline: false, writeBlockedReason: null }),
@@ -604,6 +763,12 @@ beforeEach(() => {
   enabledModules = {};
   chapterUnread = false;
   queryClient = new QueryClient();
+  catchUp.surface = false;
+  catchUp.waiting = false;
+  catchUp.active = false;
+  channelAsk.value = null;
+  channelAsk.channels = [];
+  askAccess.value = "no";
 });
 
 describe("chat thread way back", () => {
@@ -651,6 +816,81 @@ describe("chat thread in the audit log", () => {
     expect(
       tree.root.findAllByProps({ testID: "chat-audit-log-note" }),
     ).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers Schedule message from the composer, with its sheets mounted (#4956)", () => {
+    const tree = render();
+    const composer = tree.root.findByType(ChatComposer);
+    expect(typeof composer.props.onSchedule).toBe("function");
+    // Nothing scheduled here: no line above the input.
+    expect(composer.props.scheduled).toBeNull();
+    expect(tree.root.findAllByType(ScheduleSendSheet)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("hands Schedule message the reason a photo still uploading can't be scheduled (#4971)", () => {
+    channel = channelState({
+      draft: "Chapter at 8",
+      photos: [
+        {
+          key: "p1",
+          previewUri: "file:///a.jpg",
+          width: 10,
+          height: 10,
+          status: "ready",
+          attachment: null,
+          reason: null,
+        },
+      ],
+    } as unknown as Partial<UseChatChannelResult>);
+    const tree = render();
+    act(() => tree.root.findByType(ChatComposer).props.onSchedule());
+    expect(tree.root.findByType(ScheduleSendSheet).props.refusal).toMatch(
+      /^Wait for your photos/,
+    );
+    expect(tree.root.findByType(ScheduleSendSheet).props.preview).toBe(
+      "Chapter at 8",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("takes scheduled photos out of the tray once scheduled (#4971)", async () => {
+    channel = channelState({
+      draft: "Agenda",
+      photos: [
+        {
+          key: "p1",
+          previewUri: "file:///a.jpg",
+          width: 10,
+          height: 10,
+          status: "ready",
+          attachment: {
+            storagePath: "chapters/c/chat/ch/a/a.jpg",
+            filename: "a.jpg",
+            contentType: "image/jpeg",
+          },
+          reason: null,
+        },
+      ],
+    } as unknown as Partial<UseChatChannelResult>);
+    const tree = render();
+    act(() => tree.root.findByType(ChatComposer).props.onSchedule());
+    const sheet = tree.root.findByType(ScheduleSendSheet);
+    expect(sheet.props.refusal).toBeNull();
+    await act(async () => {
+      await sheet.props.onSchedule(new Date(Date.now() + 3_600_000));
+    });
+    expect(channel.removePhoto).toHaveBeenCalledWith("p1");
+    act(() => tree.unmount());
+  });
+
+  it("keeps the Scheduled list where the member can't post (#4956)", () => {
+    channelIsReadOnly = true;
+    scheduledListFor.mockClear();
+    const tree = render();
+    expect(tree.root.findByType(ChatComposer).props.onSchedule).toBeUndefined();
+    expect(scheduledListFor).toHaveBeenLastCalledWith(CHANNEL);
     act(() => tree.unmount());
   });
 });
@@ -711,6 +951,27 @@ describe("chat thread identity gate (#2250)", () => {
     expect(skeletons(tree)).toHaveLength(0);
     act(() => byLabel(tree, "Try again").props.onPress());
     expect(channel.reload).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread whose channel can't be read any more (#5765)", () => {
+  it("says the channel is gone in place of the timeline and the composer", () => {
+    // Its reads are refused too once the list is read again, so the load
+    // error underneath must not be what the member sees.
+    channel = channelState({
+      unavailable: true,
+      loadError: new Error("Forbidden"),
+    });
+    const tree = render();
+
+    const text = screenText(tree);
+    expect(text).toContain("This channel is no longer available");
+    expect(text).toContain("It was deleted, or you can no longer see it.");
+    expect(text).not.toContain("Couldn't load messages");
+    expect(rows(tree)).toHaveLength(0);
+    expect(skeletons(tree)).toHaveLength(0);
+    expect(tree.root.findAllByType(ChatComposer)).toHaveLength(0);
     act(() => tree.unmount());
   });
 });
@@ -959,17 +1220,18 @@ describe("chat thread image viewer (#2874)", () => {
 });
 
 describe("chat thread typing indicator after the block list (#2496)", () => {
-  // In a two-person DM "Someone is typing…" would tell the blocker that the
+  // In a two-person DM "Winston is typing…" would tell the blocker that the
   // member they blocked is writing to them. `visibleTypingUsers` is the rule;
   // this is the screen applying it to what it draws.
 
   it.each([
-    [[MEMBER], "Someone is typing…"],
+    // Named, as Discord does (2026-11-11).
+    [[MEMBER], "Winston Hewitt is typing…"],
     [[BLOCKED], null],
-    [[MEMBER, BLOCKED], "Someone is typing…"],
+    [[MEMBER, BLOCKED], "Winston Hewitt is typing…"],
     // The viewer's other device is not someone else typing.
     [[VIEWER], null],
-    [[MEMBER, "member-4"], "2 people are typing…"],
+    [[MEMBER, "member-4"], "Winston Hewitt and Shawn are typing…"],
   ])("with %j typing, shows %j", (typingUsers, shown) => {
     channel = channelState({ typingUsers });
     const tree = render();
@@ -980,6 +1242,36 @@ describe("chat thread typing indicator after the block list (#2496)", () => {
     } else {
       expect(text).not.toMatch(/typing…/);
     }
+    act(() => tree.unmount());
+  });
+
+  it("holds back a typist the roster can't name yet, hides the empty slot, and asks for a re-read (#4493)", () => {
+    channel = channelState({ typingUsers: ["new-joiner"] });
+    const tree = render();
+
+    expect(screenText(tree)).not.toMatch(/typing…/);
+    const [slot] = tree.root.findAll(
+      (node) => node.props.testID === "typing-line",
+    );
+    expect(slot?.props.accessibilityElementsHidden).toBe(true);
+    const [typists, rows] = rosterCatchUp.mock.lastCall ?? [];
+    expect(typists).toEqual(["new-joiner"]);
+    expect(rows).toBe(channel.messages);
+    act(() => tree.unmount());
+  });
+});
+
+describe("chat thread typing broadcasts", () => {
+  it("announces typing only while the box holds text, never for the clear after a send", () => {
+    const emitTyping = vi.fn();
+    channel = channelState({ emitTyping });
+    const tree = render();
+    const composer = () => tree.root.findByType(ChatComposer);
+    act(() => composer().props.onChangeText(""));
+    act(() => composer().props.onChangeText("   "));
+    expect(emitTyping).not.toHaveBeenCalled();
+    act(() => composer().props.onChangeText("on my way"));
+    expect(emitTyping).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 });
@@ -1028,7 +1320,7 @@ describe("chat thread typing line holds its place", () => {
       expect(slotStyle(typing)).not.toHaveProperty(key);
     }
     const line = caption(typing);
-    expect(line.props.children).toBe("Someone is typing…");
+    expect(line.props.children).toBe("Winston Hewitt is typing…");
     expect(line.props.numberOfLines).toBe(1);
     // Same type and line height as the blank, so the swap moves nothing.
     expect(flat(line.props.style)).toEqual(idleTextStyle);
@@ -1092,8 +1384,12 @@ describe("chat thread scrollback (#2772)", () => {
       isLoadingOlder: false,
       olderError: true,
     });
-    // The footer of an inverted list is drawn at the top.
-    expect(lastChild(list(tree)).type).toBe(ThreadHistoryEdge);
+    // The footer of an inverted list is drawn at the top: the edge, then the
+    // place for a turn asked of Frapp before the oldest loaded row (#4713),
+    // which draws nothing here.
+    const footer = list(tree).children.slice(-2) as ReactTestInstance[];
+    expect(footer[0]!.type).toBe(ThreadHistoryEdge);
+    expect(footer[1]!.props.rowKey).toBe("");
     act(() => byLabel(tree, "Retry loading earlier messages").props.onPress());
     expect(channel.loadOlder).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
@@ -1160,6 +1456,42 @@ describe("chat thread loading state (components.md §10)", () => {
     expect(screenText(tree)).not.toMatch(/Loading/);
     expect(lists(tree)).toHaveLength(0);
     act(() => tree.unmount());
+  });
+
+  it("marks the channel fully shown for Sentry when the shapes give way, to rows or to a failure (#4342)", () => {
+    const ready = (tree: ReactTestRenderer) =>
+      tree.root.findByType(ScreenReady).props.ready as boolean;
+
+    channel = channelState({ isLoading: true });
+    const loading = render();
+    expect(ready(loading)).toBe(false);
+    act(() => loading.unmount());
+
+    channel = channelState({});
+    const loaded = render();
+    expect(skeletons(loaded)).toHaveLength(0);
+    expect(ready(loaded)).toBe(true);
+    act(() => loaded.unmount());
+
+    channel = channelState({ viewerId: null, loadError: new Error("offline") });
+    const failed = render();
+    expect(ready(failed)).toBe(true);
+    act(() => failed.unmount());
+
+    // Messages from cache before `/users/me` answers: still the skeleton (#2250).
+    channel = channelState({ viewerId: null });
+    const noViewer = render();
+    expect(skeletons(noViewer)).toHaveLength(1);
+    expect(ready(noViewer)).toBe(false);
+    act(() => noViewer.unmount());
+
+    // `/users/me` failed: its error state is what the member is left with.
+    channel = channelState({ viewerId: null });
+    viewerQuery = { ...viewerQuery, isError: true };
+    const noAccount = render();
+    expect(screenText(noAccount)).toContain("Couldn't load your account");
+    expect(ready(noAccount)).toBe(true);
+    act(() => noAccount.unmount());
   });
 
   it("sits the shapes at the bottom, where an inverted thread's rows land", () => {
@@ -1914,21 +2246,57 @@ describe("chat thread channel start", () => {
 });
 
 describe("chat thread member profile", () => {
-  it("opens the profile sheet for whoever a row names, from a name, photo or @ chip", () => {
+  // #5568: the Directory's profile screen, pushed over the thread, which
+  // names itself so Message to this DM's member goes back to it.
+  it("pushes the profile screen for whoever a row names, from a name, photo or @ chip", () => {
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
     const tree = render();
     const row = rows(tree)[0]!;
     act(() => (row.props.onOpenProfile as (id: string) => void)("user-42"));
-    expect(presentProfileSheet).toHaveBeenCalled();
-    const sheet = tree.root.findByType("MemberDetailSheet" as never);
-    expect(sheet.props.member).toEqual({ userId: "user-42" });
-    expect(sheet.props.openChannelId).toBe(CHANNEL);
-    // The member list opens the same sheet.
-    expect(
-      tree.root.findByType("ChannelMemberSheet" as never).props.onOpenProfile,
-    ).toBe(row.props.onOpenProfile);
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/member",
+      params: { userId: "user-42", channelId: CHANNEL },
+    });
+    act(() => tree.unmount());
+  });
+
+  // From a row of the member list, the same screen; coming back from it
+  // reopens the list, which the push's blur closed.
+  it("reopens the member list on return from a profile it opened", () => {
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
+    const tree = render();
+    const list = tree.root.findByType("ChannelMemberSheet" as never);
+    act(() => (list.props.onOpenProfile as (id: string) => void)("user-7"));
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/member",
+      params: { userId: "user-7", channelId: CHANNEL },
+    });
+    act(() => blurThread());
+    presentMemberSheet.mockClear();
+    act(() => refocus());
+    expect(presentMemberSheet).toHaveBeenCalledTimes(1);
+    // Once: a later return from elsewhere doesn't reopen it.
+    act(() => blurThread());
+    act(() => refocus());
+    expect(presentMemberSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("doesn't reopen the list after a profile opened from a message", () => {
+    const tree = render();
+    const row = rows(tree)[0]!;
+    act(() => (row.props.onOpenProfile as (id: string) => void)("user-42"));
+    act(() => blurThread());
+    presentMemberSheet.mockClear();
+    act(() => refocus());
+    expect(presentMemberSheet).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });
+
+const blurThread = (expoRouter as unknown as { __blur: () => void }).__blur;
 
 describe("chat thread member list (#3536)", () => {
   const membersButtons = (tree: ReactTestRenderer) =>
@@ -2038,6 +2406,116 @@ describe("chat thread reports its transport to the connection pill", () => {
 });
 
 /*
+ * Mark unread (#3723): the sheet's row moves the read cursor back, and the
+ * thread stops stamping it for the rest of the visit, or leaving would read
+ * the channel straight back. Then it leaves, so the list shows the badge.
+ */
+describe("chat thread Mark unread", () => {
+  beforeEach(() => {
+    params = { channelId: CHANNEL };
+    markUnread.mutateAsync.mockClear();
+    markUnread.mutateAsync.mockImplementation(async () => ({}));
+  });
+
+  const openSheetOn = (tree: ReturnType<typeof render>) => {
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    return tree.root.findByType("MessageActionsSheet" as never);
+  };
+
+  it("offers Mark unread, moves the cursor, skips the blur's stamp and leaves", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    expect(sheet.props.target.canMarkUnread).toBe(true);
+    const goBack = vi.mocked(vi.mocked(expoRouter.useRouter)().dismissTo);
+    goBack.mockClear();
+
+    await act(async () => {
+      (sheet.props.onMarkUnread as (id: string) => void)("m1");
+      await Promise.resolve();
+    });
+
+    expect(markUnread.mutateAsync).toHaveBeenCalledWith("m1");
+    // The activity handler no longer re-stamps this channel.
+    expect(viewedChannelId()).toBeNull();
+    // Leaving runs the focus effect's cleanup, which must not stamp it back.
+    // (An unmount, not the global blur: another spec's mounted screen would
+    // answer that.)
+    markRead.mutate.mockClear();
+    act(() => tree.unmount());
+    expect(markRead.mutate).not.toHaveBeenCalled();
+    // A pushed thread with nothing below goes back to Chat home.
+    expect(goBack).toHaveBeenCalled();
+  });
+
+  it("reads the channel as usual on the next visit", () => {
+    channel = channelState({ messages: [message("m1")] });
+    markRead.mutate.mockClear();
+    const tree = render();
+    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("says so when it fails, without claiming the channel back for a screen that has gone", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    markUnread.mutateAsync.mockImplementation(async () => {
+      throw new Error("Couldn't reach the server");
+    });
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+
+    await act(async () => {
+      (sheet.props.onMarkUnread as (id: string) => void)("m1");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(alert).toHaveBeenCalledWith(
+      "Couldn't mark unread",
+      expect.any(String),
+    );
+    expect(viewedChannelId()).toBeNull();
+    alert.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("holds the channel against the activity handler's stamps until the next visit", async () => {
+    const { isChannelHeldUnread } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    act(() => (sheet.props.onMarkUnread as (id: string) => void)("m1"));
+    expect(isChannelHeldUnread(CHANNEL)).toBe(true);
+    // Back on the same screen: the hold ends and the visit reads as usual.
+    markRead.mutate.mockClear();
+    act(() => refocus());
+    expect(isChannelHeldUnread(CHANNEL)).toBe(false);
+    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("isn't offered on the viewer's own message, which never counts as unread", () => {
+    channel = channelState({
+      messages: [message("m1", { sender_id: VIEWER })],
+    });
+    const tree = render();
+    expect(openSheetOn(tree).props.target.canMarkUnread).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+/*
  * The thread says it is the one on screen only while focused (#3698): the
  * activity handler re-stamps the viewed channel read when a message lands in
  * it, and this screen stays mounted under one pushed over it (another thread
@@ -2088,19 +2566,18 @@ describe("chat thread + sheet (#3865)", () => {
     expect(presentPlusSheet).toHaveBeenCalledTimes(1);
     expect(rowsOf(tree)).toEqual([]);
     expect(footerOf(tree)).toEqual([
-      "Your role can't create polls, events, tasks or service hours.",
+      "Your role can't create polls, events or tasks.",
     ]);
     act(() => tree.unmount());
   });
 
-  it("offers each form the role allows, in web's order, and never Points", () => {
+  it("offers Poll, Event and Task, in web's order (#5772)", () => {
     permissionList = ["*"];
     const tree = render();
     expect(rowsOf(tree).map((row) => row.command)).toEqual([
       "poll",
       "event",
       "task",
-      "hours",
     ]);
     act(() => tree.unmount());
   });
@@ -2173,31 +2650,52 @@ describe("chat thread + sheet (#3865)", () => {
     act(() => tree.unmount());
   });
 
-  it("opens the Task form on first use, posting into this channel", () => {
+  it("opens the Task picker from its row, linking into this channel (#5772)", async () => {
+    permissionList = ["members:view"];
+    presentTaskLinkSheet.mockClear();
+    const tree = render();
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("task"));
+    expect(presentTaskLinkSheet).toHaveBeenCalledTimes(1);
+    const picker = tree.root.findByType("TaskLinkSheet" as never);
+    // A member who can only read tasks links one; making one is an officer's.
+    expect(picker.props.canCreate).toBe(false);
+    await act(async () => {
+      await (picker.props.onLink as (t: unknown) => Promise<unknown>)({
+        id: "t1",
+        title: "Fix the door",
+      });
+    });
+    expect(channel.linkTask).toHaveBeenCalledWith({
+      id: "t1",
+      title: "Fix the door",
+    });
+    act(() => tree.unmount());
+  });
+
+  it("opens the Task form from the picker's New task, posting into this channel", () => {
     permissionList = ["*"];
     const tree = render();
     expect(tree.root.findAllByType("NewTaskSheet" as never)).toHaveLength(0);
-    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
-    act(() => openForm("task"));
+    const picker = tree.root.findByType("TaskLinkSheet" as never);
+    expect(picker.props.canCreate).toBe(true);
+    act(() => (picker.props.onNew as () => void)());
     const task = tree.root.findByType("NewTaskSheet" as never);
     expect(task.props.postToChannel).toBe(channel.postTask);
     expect(presentTaskSheet).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
   });
 
-  it("opens Event and Service hours posting into this channel", () => {
+  it("opens Event posting into this channel", () => {
     permissionList = ["*"];
     const tree = render();
     const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
     act(() => openForm("event"));
-    act(() => openForm("hours"));
     const event = tree.root.findByType("NewEventSheet" as never);
     expect(event.props.chat).toEqual({
       channelId: CHANNEL,
       trackCard: channel.trackEventCard,
     });
-    const hours = tree.root.findByType("LogHoursSheet" as never);
-    expect(hours.props.postToChannel).toBe(channel.postHours);
     act(() => tree.unmount());
   });
 
@@ -2212,7 +2710,11 @@ describe("chat thread + sheet (#3865)", () => {
     });
     const tree = render();
     const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
-    act(() => openForm("task"));
+    act(() =>
+      (
+        tree.root.findByType("TaskLinkSheet" as never).props.onNew as () => void
+      )(),
+    );
     act(() => openForm("event"));
     const task = tree.root.findByType("NewTaskSheet" as never);
     act(() =>
@@ -2225,19 +2727,6 @@ describe("chat thread + sheet (#3865)", () => {
     expect(alert).toHaveBeenLastCalledWith(
       "Couldn't confirm the task",
       "Check the task board.",
-    );
-    act(() => openForm("hours"));
-    const hours = tree.root.findByType("LogHoursSheet" as never);
-    act(() =>
-      (hours.props.onPosted as (r: unknown) => void)({
-        ok: true,
-        unconfirmed: true,
-        warning: "Check the Service page.",
-      }),
-    );
-    expect(alert).toHaveBeenLastCalledWith(
-      "Couldn't confirm the hours",
-      "Check the Service page.",
     );
     const onPost = tree.root.findByType("NewPollSheet" as never).props
       .onPost as (poll: unknown) => Promise<unknown>;
@@ -2348,6 +2837,34 @@ describe("message threads (#3785)", () => {
     act(() => tree.unmount());
   });
 
+  it("offers Forward with the copy it will carry, and wires the picker (#4864)", () => {
+    const tree = render();
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", { content: "pizza at eight" }),
+      ),
+    );
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    expect(sheet.props.target).toMatchObject({
+      forward: {
+        messageId: "m2",
+        preview: { message_id: "m2", content: "pizza at eight" },
+        hidden: null,
+      },
+    });
+    expect(sheet.props.nameFor).toBeTypeOf("function");
+    // A card can't be forwarded.
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", { kind: "poll" }),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target.forward,
+    ).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
   it("starts no second thread on a parent that has one", () => {
     const tree = render();
     act(() =>
@@ -2409,6 +2926,132 @@ describe("message threads (#3785)", () => {
   });
 });
 
+// Pin and Save (#3723): Pin only for a `channels:manage` holder, both read
+// live, and the Pinned and Saved lists open what they list.
+describe("chat thread Pin and Save from the actions sheet", () => {
+  const openSheetOn = (tree: ReturnType<typeof render>, index = 0) => {
+    const row = rows(tree)[index]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    return tree.root.findByType("MessageActionsSheet" as never);
+  };
+
+  it("offers Pin only to a channels:manage holder, reading the pin live", () => {
+    channel = channelState({ messages: [message("m1")] });
+    let tree = render();
+    expect(openSheetOn(tree).props.target.pin).toBeUndefined();
+    act(() => tree.unmount());
+
+    permissionList = ["channels:manage"];
+    channel = channelState({ messages: [message("m1", { is_pinned: true })] });
+    tree = render();
+    expect(openSheetOn(tree).props.target.pin).toEqual({ pinned: true });
+    act(() => tree.unmount());
+  });
+
+  it("pins through the channel, and says so when the server refuses", async () => {
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    const setPinned = vi.fn(async () => {
+      throw new Error("This channel already has 50 pinned messages.");
+    });
+    permissionList = ["channels:manage"];
+    channel = channelState({ messages: [message("m1")], setPinned });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    await act(async () => {
+      (sheet.props.onSetPinned as (id: string, p: boolean) => void)("m1", true);
+      await Promise.resolve();
+    });
+    expect(setPinned).toHaveBeenCalledWith("m1", true);
+    expect(alert).toHaveBeenCalledWith(
+      "Couldn't pin message",
+      expect.any(String),
+    );
+    alert.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("reads Save from the viewer's saved messages, and saves or unsaves", () => {
+    SAVED.add("m1");
+    channel = channelState({ messages: [message("m1"), message("m2")] });
+    const tree = render();
+    let sheet = openSheetOn(tree, 0);
+    const savedTarget = sheet.props.target as {
+      messageId: string;
+      save: unknown;
+    };
+    const first = savedTarget.messageId;
+    expect(savedTarget.save).toEqual({ saved: SAVED.has(first) });
+    act(() =>
+      (sheet.props.onSetSaved as (id: string, s: boolean) => void)("m1", false),
+    );
+    expect(bookmarkWrites.unsave.mutateAsync).toHaveBeenCalledWith("m1");
+    sheet = openSheetOn(tree, 1);
+    const other = sheet.props.target as { messageId: string; save: unknown };
+    expect(other.save).toEqual({ saved: SAVED.has(other.messageId) });
+    expect([first, other.messageId].sort()).toEqual(["m1", "m2"]);
+    SAVED.clear();
+    act(() => tree.unmount());
+  });
+
+  it("sets a reminder on the sheet's message (#4957)", () => {
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree, 0);
+    const at = new Date("2026-11-20T14:00:00.000Z");
+    act(() =>
+      (sheet.props.onRemind as (id: string, at: Date) => void)("m1", at),
+    );
+    expect(reminderWrites.set.mutateAsync).toHaveBeenCalledWith({
+      messageId: "m1",
+      remindAt: at,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("opens a listed thread reply in its thread, and another channel's message there", () => {
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const list = tree.root.find(
+      (node) =>
+        typeof node.props.onOpen === "function" &&
+        typeof node.props.kind === "string",
+    );
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
+    act(() =>
+      (list.props.onOpen as (t: unknown) => void)({
+        channelId: "elsewhere",
+        messageId: "r1",
+        threadRootId: "root",
+      }),
+    );
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/chat-thread",
+      params: {
+        channelId: "elsewhere",
+        threadRootId: "root",
+        focusMessageId: "r1",
+      },
+    });
+    act(() =>
+      (list.props.onOpen as (t: unknown) => void)({
+        channelId: "elsewhere",
+        messageId: "m9",
+        threadRootId: null,
+      }),
+    );
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "elsewhere", focusMessageId: "m9" },
+    });
+    act(() => tree.unmount());
+  });
+});
+
 // The sheet's Flag row (#3921): offered where the viewer may change the
 // flag, reading the current flag live, and a refusal said aloud.
 describe("chat thread flags from the actions sheet", () => {
@@ -2422,13 +3065,25 @@ describe("chat thread flags from the actions sheet", () => {
     return tree.root.findByType("MessageActionsSheet" as never);
   };
 
+  it("offers Copy message link as the message's app.frapp.live link (#3723)", () => {
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    expect(openSheetOn(tree).props.target.link).toBe(
+      `https://app.frapp.live/chat?channel=${CHANNEL}&message=m1`,
+    );
+    act(() => tree.unmount());
+  });
+
   it("offers Flag on an unflagged message and sends the pick", () => {
     const flag = vi.fn(async () => {});
     channel = channelState({ messages: [message("m1")], flag });
     const tree = render();
     const sheet = openSheetOn(tree);
 
-    expect(sheet.props.target.flag).toEqual({ current: null });
+    expect(sheet.props.target.flag).toEqual({
+      current: null,
+      removeOnly: false,
+    });
     act(() =>
       (sheet.props.onFlag as (id: string, f: string | null) => void)(
         "m1",
@@ -2453,6 +3108,7 @@ describe("chat thread flags from the actions sheet", () => {
     tree = render();
     expect(openSheetOn(tree).props.target.flag).toEqual({
       current: "important",
+      removeOnly: false,
     });
     act(() => tree.unmount());
   });
@@ -2537,6 +3193,503 @@ describe("chat thread Important strip (#4186)", () => {
 
     act(() => byLabel(tree, "Dismiss important messages").props.onPress());
     expect(importantState.dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Catch me up in a channel (#3946)", () => {
+  const strips = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        typeof node.type === "string" && node.props.testID === "catch-up-strip",
+    );
+  /** What Chat home held when the channel was opened. */
+  const arriveWith = (unread: number) =>
+    queryClient.setQueryData(CHANNEL_UNREAD_COUNTS_KEY, [
+      { channel_id: CHANNEL, unread_count: unread },
+    ]);
+  const menuActions = (tree: ReactTestRenderer) =>
+    tree.root.findByType(NotificationLevelMenu).props.actions as
+      { label: string; onPress: () => void }[] | undefined;
+
+  it("offers nothing where the chapter has no summaries", () => {
+    arriveWith(60);
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    openMuteMenu(tree);
+    // Only the lists every channel has (#3723), no Catch me up.
+    expect(menuActions(tree)?.map((action) => action.label)).toEqual([
+      "Pinned messages",
+      "Saved messages",
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("offers nothing in a direct message or the audit log", () => {
+    catchUp.surface = true;
+    arriveWith(60);
+    channelType = "DM";
+    const dm = render();
+    expect(strips(dm)).toHaveLength(0);
+    act(() => dm.unmount());
+
+    channelType = "PUBLIC";
+    channelIsAuditLog = true;
+    const log = render();
+    expect(strips(log)).toHaveLength(0);
+    act(() => log.unmount());
+  });
+
+  it("offers the summary under the header on a channel opened far behind", () => {
+    catchUp.surface = true;
+    arriveWith(60);
+    const tree = render();
+    expect(screenText(tree)).toContain(chatCatchUpOfferLine(60));
+    act(() =>
+      byLabel(
+        tree,
+        `${chatCatchUpOfferLine(60)} ${CHAT_CATCH_UP_COPY.offer_action}`,
+      ).props.onPress(),
+    );
+    // The stretch that was new at the door, by its count and that moment:
+    // opening the channel already stamped it read.
+    expect(catchUp.start).toHaveBeenCalledWith({
+      kind: "channel",
+      channelId: CHANNEL,
+      unread: { count: 60, as_of: expect.any(String) },
+    });
+    // Asked once: the strip does not come back over the summary.
+    expect(strips(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("keeps the strip for a channel far behind, never a few messages", () => {
+    catchUp.surface = true;
+    arriveWith(CHAT_CATCH_UP_OFFER_AT - 1);
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("takes Dismiss as the answer, and still has the header's row", () => {
+    catchUp.surface = true;
+    arriveWith(60);
+    const tree = render();
+    act(() => byLabel(tree, CHAT_CATCH_UP_COPY.offer_dismiss).props.onPress());
+    expect(strips(tree)).toHaveLength(0);
+    expect(catchUp.start).not.toHaveBeenCalled();
+
+    openMuteMenu(tree);
+    const actions = menuActions(tree)!;
+    expect(actions.map((action) => action.label)).toEqual([
+      CHAT_CATCH_UP_COPY.name,
+      "Pinned messages",
+      "Saved messages",
+    ]);
+    act(() => actions[0]!.onPress());
+    expect(catchUp.start).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("offers the summary when the counts land after the channel opens", async () => {
+    // A cold launch opens the last channel while Chat home's read is still
+    // out: the screen's own observer of the counts is what catches them.
+    catchUp.surface = true;
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    // TanStack tells observers on its next tick.
+    await act(async () => {
+      arriveWith(60);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screenText(tree)).toContain(chatCatchUpOfferLine(60));
+    act(() => tree.unmount());
+  });
+
+  it("asks for no unread stretch on a channel opened cold", () => {
+    catchUp.surface = true;
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    openMuteMenu(tree);
+    act(() => menuActions(tree)![0]!.onPress());
+    expect(catchUp.start).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "channel", unread: null }),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("opens a reply's line in its thread, on that reply", () => {
+    catchUp.surface = true;
+    const tree = render();
+    act(() =>
+      catchUp.options!.onOpenPoint({
+        message_id: "r9",
+        thread_root_id: "m1",
+      }),
+    );
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: CHANNEL, threadRootId: "m1", focusMessageId: "r9" },
+    });
+    act(() => tree.unmount());
+  });
+
+  it("hands a thread the reply to open on", () => {
+    params = {
+      channelId: CHANNEL,
+      threadRootId: "m1",
+      focusMessageId: "r9",
+    } as typeof params;
+    const tree = render();
+    expect(
+      tree.root.findByType("MessageThreadScreen" as never).props,
+    ).toMatchObject({ rootId: "m1", focusMessageId: "r9" });
+    act(() => tree.unmount());
+  });
+
+  it("opens a channel on the message it was handed, once (#3926)", () => {
+    params = { channelId: CHANNEL, focusMessageId: "m1" } as typeof params;
+    const scrollToIndex = vi.fn();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<Screen />, {
+        createNodeMock: (element) =>
+          element.type === "FlatList"
+            ? { scrollToOffset: vi.fn(), scrollToIndex }
+            : null,
+      });
+    });
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+    rerender(tree);
+    expect(scrollToIndex).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("draws the open summary in the channel, under the header", () => {
+    catchUp.surface = true;
+    catchUp.active = true;
+    arriveWith(60);
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("Open summary block");
+    // The summary stands in for the offer while it is open.
+    expect(text).not.toContain(chatCatchUpOfferLine(60));
+    catchUp.active = false;
+    act(() => tree.unmount());
+  });
+
+  it("leads back to a summary left for one of its lines", () => {
+    catchUp.surface = true;
+    catchUp.waiting = true;
+    arriveWith(60);
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain(CHAT_CATCH_UP_COPY.resume_line);
+    expect(text).not.toContain(chatCatchUpOfferLine(60));
+    act(() =>
+      byLabel(
+        tree,
+        `${CHAT_CATCH_UP_COPY.resume_line} ${CHAT_CATCH_UP_COPY.resume_action}`,
+      ).props.onPress(),
+    );
+    expect(catchUp.resume).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * #4713: a message that names `@Frapp` is a question for Frapp, from a member
+ * with Ask. It is never posted; its answer is drawn in the thread for that
+ * member alone.
+ */
+describe("chat thread asks Frapp instead of posting (#4713)", () => {
+  const composer = (tree: ReactTestRenderer) =>
+    tree.root.findByType(ChatComposer);
+  const typingLine = (tree: ReactTestRenderer) =>
+    tree.root
+      .find(
+        (node) =>
+          node.type === ("View" as never) &&
+          node.props.testID === "typing-line",
+      )
+      .findByType("Text" as never).props.children as string;
+  const HINT = "Only you will see this question and Frapp's answer.";
+
+  function asking(
+    draft: string,
+    overrides: Partial<UseChatChannelResult> = {},
+    busy = false,
+  ) {
+    const send = vi.fn();
+    channelAsk.value = {
+      busy,
+      send,
+      turns: [],
+      renderTurn: () => null,
+      sheets: null,
+    };
+    channel = channelState({ draft, ...overrides });
+    return { send, tree: render() };
+  }
+
+  it("sends the question to Frapp under the newest message, posts nothing and clears the box", () => {
+    const { send, tree } = asking("@Frapp when is formal?");
+    act(() => composer(tree).props.onSend());
+    expect(send).toHaveBeenCalledWith("when is formal?", "c-m2");
+    expect(channel.send).not.toHaveBeenCalled();
+    expect(channel.setDraft).toHaveBeenCalledWith("");
+    expect(composer(tree).props.disabledHint).toBeNull();
+    act(() => tree.unmount());
+  });
+
+  it("says above the composer that only the member will see it, in the typing line's place", () => {
+    const { tree } = asking("@Frapp when is formal?");
+    expect(composer(tree).props.ask).toEqual({ naming: true });
+    expect(typingLine(tree)).toBe(HINT);
+    act(() => tree.unmount());
+
+    const plain = asking("when is formal?").tree;
+    expect(composer(plain).props.ask).toEqual({ naming: false });
+    expect(typingLine(plain)).not.toBe(HINT);
+    act(() => plain.unmount());
+  });
+
+  it("posts the same text as an ordinary message for a member without Ask", () => {
+    channel = channelState({ draft: "@Frapp when is formal?" });
+    const tree = render();
+    expect(composer(tree).props.ask).toBeNull();
+    expect(typingLine(tree)).not.toBe(HINT);
+    act(() => composer(tree).props.onSend());
+    expect(channel.send).toHaveBeenCalledWith(
+      "@Frapp when is formal?",
+      expect.anything(),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("tells nobody the member is typing while the draft is a question for Frapp", () => {
+    const emitTyping = vi.fn();
+    const { tree } = asking("", { emitTyping });
+    act(() => composer(tree).props.onChangeText("@Frapp when is"));
+    expect(emitTyping).not.toHaveBeenCalled();
+    act(() => composer(tree).props.onChangeText("see you at formal"));
+    expect(emitTyping).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it.each([
+    [
+      "nothing but the handle",
+      "@Frapp",
+      {},
+      false,
+      "Type your question after @Frapp.",
+    ],
+    [
+      "a question over the limit",
+      `@Frapp ${"a".repeat(1001)}`,
+      {},
+      false,
+      "That's too long for a question. Keep it under 1,000 characters.",
+    ],
+    [
+      "a second question while the first is being answered",
+      "@Frapp and the one after?",
+      {},
+      true,
+      "Frapp is still answering your last question.",
+    ],
+    [
+      "a question with a photo staged",
+      "@Frapp what is this?",
+      {
+        photos: [
+          {
+            key: "p1",
+            previewUri: "file:///a.jpg",
+            width: 10,
+            height: 10,
+            status: "ready",
+            attachment: null,
+            reason: null,
+          },
+        ],
+      } as unknown as Partial<UseChatChannelResult>,
+      false,
+      "Frapp can't read attachments. Remove them, or take @Frapp out to post this.",
+    ],
+  ])(
+    "refuses %s, says why above the box, and keeps the member's text",
+    (_, draft, overrides, busy, line) => {
+      const { send, tree } = asking(draft, overrides, busy);
+      act(() => composer(tree).props.onSend());
+      expect(send).not.toHaveBeenCalled();
+      expect(channel.send).not.toHaveBeenCalled();
+      expect(channel.setDraft).not.toHaveBeenCalled();
+      expect(composer(tree).props.disabledHint).toBe(line);
+      expect(composer(tree).props.hintTone).toBe("error");
+      // Changing the text takes the line away.
+      act(() => composer(tree).props.onChangeText(`${draft} `));
+      expect(composer(tree).props.disabledHint).toBeNull();
+      act(() => tree.unmount());
+    },
+  );
+
+  it("asks from the channel that is open, and from the next one once it is", () => {
+    // A stale or wrong id here would draw the answer in another channel.
+    const { tree } = asking("");
+    expect(channelAsk.channels.at(-1)).toBe(CHANNEL);
+    params = { channelId: OTHER_CHANNEL };
+    rerender(tree);
+    expect(channelAsk.channels.at(-1)).toBe(OTHER_CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("never asks while a message is being edited: Save saves the edit", () => {
+    // Send reads the channel's draft, not the edit's text. Without the
+    // guard a saved draft naming `@Frapp` would be asked and cleared, and
+    // the edit never saved.
+    const { send, tree } = asking("@Frapp when is formal?", {
+      messages: [message("m1", { sender_id: VIEWER, content: "first" })],
+    });
+    expect(composer(tree).props.ask).toEqual({ naming: true });
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onEdit as (id: string) => void)("m1"));
+    expect(composer(tree).props.context?.kind).toBe("edit");
+    // No Frapp in the `@` list, and no promise the edit will be private.
+    expect(composer(tree).props.ask).toBeNull();
+    expect(typingLine(tree)).not.toBe(HINT);
+    act(() => composer(tree).props.onSend());
+    expect(send).not.toHaveBeenCalled();
+    expect(channel.setDraft).not.toHaveBeenCalledWith("");
+    expect(composer(tree).props.disabledHint).toBeNull();
+    act(() => tree.unmount());
+  });
+
+  it("drops a staged reply, which was context for a message that is not sent", () => {
+    const { send, tree } = asking("@Frapp what did he mean?");
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    act(() => (sheet.props.onReply as (id: string) => void)("m1"));
+    expect(composer(tree).props.context?.kind).toBe("reply");
+    act(() => composer(tree).props.onSend());
+    expect(send).toHaveBeenCalledWith("what did he mean?", "c-m2");
+    // Or the next ordinary message would post as a reply to it.
+    expect(composer(tree).props.context ?? null).toBeNull();
+    act(() => tree.unmount());
+  });
+
+  it("holds the message while it is not yet known whether the member has Ask", () => {
+    // Posting it could put a question meant for Frapp in front of the
+    // channel, and that can't be taken back.
+    askAccess.value = "unknown";
+    channel = channelState({ draft: "@Frapp what do I owe?" });
+    const tree = render();
+    // Nothing is promised: no Frapp row, no "only you" line.
+    expect(composer(tree).props.ask).toBeNull();
+    expect(typingLine(tree)).not.toBe(HINT);
+    act(() => composer(tree).props.onSend());
+    expect(channel.send).not.toHaveBeenCalled();
+    expect(channel.setDraft).not.toHaveBeenCalled();
+    expect(composer(tree).props.disabledHint).toBe(
+      "Still checking Ask Frapp. Try again in a moment, or take @Frapp out to post this.",
+    );
+    expect(composer(tree).props.hintTone).toBe("error");
+    // The answer arrives: this member has no Ask. The line is no longer
+    // true, so it goes, and the same text posts as ordinary text.
+    askAccess.value = "no";
+    rerender(tree);
+    expect(composer(tree).props.disabledHint).toBeNull();
+    act(() => composer(tree).props.onSend());
+    expect(channel.send).toHaveBeenCalledWith(
+      "@Frapp what do I owe?",
+      expect.anything(),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("tells nobody the member is typing a question while Ask is not yet known", () => {
+    askAccess.value = "unknown";
+    const emitTyping = vi.fn();
+    channel = channelState({ draft: "", emitTyping });
+    const tree = render();
+    act(() => composer(tree).props.onChangeText("@Frapp what do"));
+    expect(emitTyping).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("takes a refusal away once what it was about is no longer so", () => {
+    // "Still answering" must not sit over the box after the answer landed.
+    const { tree } = asking("@Frapp and the one after?", {}, true);
+    act(() => composer(tree).props.onSend());
+    expect(composer(tree).props.disabledHint).toBe(
+      "Frapp is still answering your last question.",
+    );
+    channelAsk.value = { ...channelAsk.value!, busy: false };
+    rerender(tree);
+    expect(composer(tree).props.disabledHint).toBeNull();
+    act(() => tree.unmount());
+  });
+
+  it("draws each turn under the message it was asked under, and adds no row", () => {
+    asking("");
+    channelAsk.value!.turns = [
+      {
+        id: "t1",
+        origin: {
+          after: "c-m1",
+          at: new Date(2026, 8, 28, 17, 0, 30).toISOString(),
+        },
+      },
+      {
+        id: "t0",
+        origin: {
+          after: null,
+          at: new Date(2026, 8, 28, 16, 0).toISOString(),
+        },
+      },
+    ];
+    const tree = render();
+    expect(rows(tree)).toHaveLength(2);
+    const drawn = tree.root
+      .findAllByType("AskChannelTurn" as never)
+      .map((node) => [node.props.id, node.props.under]);
+    expect(drawn).toContainEqual(["t1", "c-m1"]);
+    // Older than every loaded message: above them all.
+    expect(drawn).toContainEqual(["t0", ""]);
+    expect(drawn).toHaveLength(2);
+    // In one view with its message, and that message alone. An inverted
+    // list lays a cell's children out bottom-up, so a turn that was the
+    // cell's second child would be drawn above the message, not under it.
+    let cell = tree.root
+      .findAllByType("AskChannelTurn" as never)
+      .find((node) => node.props.id === "t1")!.parent;
+    while (cell && typeof cell.type !== "string") cell = cell.parent;
+    expect(cell?.type).toBe("View");
+    expect(
+      cell
+        ?.findAllByType("ThreadMessageRow" as never)
+        .map((node) => node.props.row.message.client_message_id),
+    ).toEqual(["c-m1"]);
+    act(() => tree.unmount());
+  });
+});
+
+describe("The unread counts the screen observes (#4885)", () => {
+  it("passes their fetch, so no render logs TanStack's no-queryFn error", () => {
+    // In a development build TanStack console.errors on every render of a
+    // query with no `queryFn`, and Expo shows each one as a red toast.
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    queryClient.setQueryData(CHANNEL_UNREAD_COUNTS_KEY, [
+      { channel_id: CHANNEL, unread_count: 3 },
+    ]);
+    const tree = render();
+    const noQueryFn = errors.mock.calls.filter((args) =>
+      String(args[0]).includes("No queryFn was passed"),
+    );
+    errors.mockRestore();
+    expect(noQueryFn).toEqual([]);
+    // Observed, never asked for from here.
+    expect(unreadCountsFetch).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });

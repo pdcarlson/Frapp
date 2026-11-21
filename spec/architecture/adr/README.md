@@ -13,7 +13,7 @@ One file per ADR. [`spec/architecture/README.md`](../README.md) is the system ma
 | ADR-05: Dexie-backed offline queue + reconnect-with-backfill (Chunk 04) | Amended | [adr-05.md](adr-05.md) |
 | ADR-06: `chat_notification_preferences` is a new table, not a column on `notification_preferences` (Chunk 05) | Amended | [adr-06.md](adr-06.md) |
 | ADR-07: chat-react UPSERT semantics for poll vote-change (Chunk 05) | Amended | [adr-07.md](adr-07.md) |
-| ADR-08: Audit→chat bridge via NestJS Realtime subscriber (Chunk 05) | Amended: a failed subscription is retried and reported, not only logged (correction 2026-11-04) | [adr-08.md](adr-08.md) |
+| ADR-08: Audit→chat bridge via NestJS Realtime subscriber (Chunk 05) | Superseded 2026-11-21: `#chapter-audit` and the bridge were removed for the Logs page in Chapter settings. Amended earlier: a failed subscription is retried and reported, not only logged (correction 2026-11-04) | [adr-08.md](adr-08.md) |
 | ADR-09: Push worker host is the in-process NestJS API, with a documented scaling watermark (Chunk 05) | Amended | [adr-09.md](adr-09.md) |
 | ADR-10: Supabase Realtime Presence is the presence source — no custom broadcast topic (Chunk 05) | Amended | [adr-10.md](adr-10.md) |
 | ADR-11: Agent dev stack — chat hot path moves to in-process NestJS; PGlite for local DB validation (#401) | Amended | [adr-11.md](adr-11.md) |
@@ -34,3 +34,4 @@ One file per ADR. [`spec/architecture/README.md`](../README.md) is the system ma
 | ADR-26: Discord bot imports copy attachments inside Supabase, through an Edge Function (2026-09-29) | Amended | [adr-26.md](adr-26.md) |
 | ADR-27: Tenant-scoped URLs; the page's URL, not the token, names the chapter a request acts in (proposed 2026-11-11) | Proposed, pending Paul | [adr-27.md](adr-27.md) |
 | ADR-28: AI platform — two providers behind a port Frapp owns, one model per feature, a bake-off decides (2026-11-11) | Current | [adr-28.md](adr-28.md) |
+| ADR-29: Desktop app — an Electron shell around the hosted web app, sign-in through the system browser, updates from GitHub Releases (2026-11-13) | Current | [adr-29.md](adr-29.md) |

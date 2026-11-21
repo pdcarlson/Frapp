@@ -7,7 +7,12 @@ import type {
   TaskPayload,
 } from "./integrations/payloads";
 import type { ChatMessage } from "./types";
-import { checkInOpensMinutes } from "@repo/validation";
+import {
+  attendanceFieldsOf,
+  chapterLogPhrase,
+  checkInOpensMinutes,
+  keyAsWords,
+} from "@repo/validation";
 
 export type {
   EventPayload,
@@ -61,6 +66,8 @@ export function readEventPayload(message: ChatMessage): EventPayload | null {
   ) {
     return null;
   }
+  // The role fields read as the event sheet reads them (#4660).
+  const roles = attendanceFieldsOf(r);
   return {
     event_id: r.event_id,
     name: r.name,
@@ -69,9 +76,28 @@ export function readEventPayload(message: ChatMessage): EventPayload | null {
     location: typeof r.location === "string" ? r.location : null,
     point_value: finiteNumber(r.point_value) ?? 0,
     is_mandatory: r.is_mandatory === true,
+    ...presentRoleFields(roles),
+    ...(typeof r.viewer_required === "boolean"
+      ? { viewer_required: r.viewer_required }
+      : {}),
     check_in_opens_minutes: checkInOpensMinutes(r.check_in_opens_minutes),
     created_at: typeof r.created_at === "string" ? r.created_at : "",
   };
+}
+
+/**
+ * The role fields a card carries, leaving out any it doesn't, so a card posted
+ * before them reads as it always has (`is_mandatory` alone).
+ */
+function presentRoleFields(
+  roles: ReturnType<typeof attendanceFieldsOf>,
+): Partial<EventPayload> {
+  const out: Partial<EventPayload> = {};
+  if (roles.required_role_ids) out.required_role_ids = roles.required_role_ids;
+  if (roles.optional_role_ids) out.optional_role_ids = roles.optional_role_ids;
+  if (roles.excluded_role_ids) out.excluded_role_ids = roles.excluded_role_ids;
+  if (roles.others_invited !== null) out.others_invited = roles.others_invited;
+  return out;
 }
 
 /**
@@ -228,37 +254,6 @@ export function readSystemAuditPayload(
 }
 
 /**
- * What each audited action did, as the words after the actor's name in an
- * audit line ("Paul **updated the chapter profile**"). One copy so web's and
- * mobile's lines say the same. An action not listed here reads as its key
- * with the underscores taken out, so a new writer never draws a raw key.
- */
-const AUDIT_ACTION_PHRASES: Record<string, string> = {
-  chapter_config_updated: "updated chapter settings",
-  chapter_profile_updated: "updated the chapter profile",
-  chapter_logo_updated: "updated the chapter logo",
-  chapter_logo_removed: "removed the chapter logo",
-  chapter_custom_field_created: "added a profile field",
-  chapter_custom_field_updated: "edited a profile field",
-  chapter_custom_field_deleted: "removed a profile field",
-  chapter_custom_role_created: "added a role",
-  chapter_custom_role_updated: "edited a role",
-  chapter_custom_role_deleted: "removed a role",
-  role_created: "added a role",
-  role_updated: "edited a role",
-  role_deleted: "removed a role",
-  member_removed: "removed a member",
-  presidency_transferred: "handed over the presidency",
-  presidency_claimed: "claimed the presidency",
-  president_orphaned: "left the chapter without a president",
-};
-
-/** `accent_color` → `accent color`: a key as words, never as a key. */
-function keyAsWords(key: string): string {
-  return key.replace(/[_-]+/g, " ").trim();
-}
-
-/**
  * An audit line's words: what the actor did, and which fields it touched
  * (`null` when the row recorded none). The line draws them after the actor's
  * name, the detail muted: "Paul updated the chapter profile · accent color"
@@ -268,10 +263,30 @@ export function auditLineText(payload: SystemAuditPayload): {
   phrase: string;
   detail: string | null;
 } {
-  const phrase =
-    AUDIT_ACTION_PHRASES[payload.action] ?? keyAsWords(payload.action);
-  const fields = Object.keys(payload.diff).map(keyAsWords).filter(Boolean);
+  // One copy of the words, shared with the Logs page (`@repo/validation`).
+  const phrase = chapterLogPhrase(payload.action);
+  const fields = Object.entries(payload.diff)
+    .map(([key, change]) => renamedDetail(key, change) ?? keyAsWords(key))
+    .filter(Boolean);
   return { phrase, detail: fields.length > 0 ? fields.join(", ") : null };
+}
+
+/**
+ * A name change reads as the names themselves, "Ethan Smith to Paul", so the
+ * audit feed is the chapter's rename history (#5801): a member's own rename
+ * (`member_renamed`) and an officer's correction alike. Anything else, and a
+ * name diff that isn't two strings, reads as its field.
+ */
+function renamedDetail(key: string, change: unknown): string | null {
+  if (key !== "display_name" || !change || typeof change !== "object") {
+    return null;
+  }
+  const { from, to } = change as { from?: unknown; to?: unknown };
+  if (typeof from !== "string" || typeof to !== "string") return null;
+  const before = from.trim();
+  const after = to.trim();
+  if (!before || !after) return null;
+  return `${before} to ${after}`;
 }
 
 /**

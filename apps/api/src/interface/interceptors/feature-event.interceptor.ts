@@ -15,7 +15,7 @@ import {
   type FeatureEventInput,
   type FeatureEventMetadata,
 } from '../decorators/feature-event.decorator';
-import { requestApp } from '../http/request-app';
+import { requestApp, requestAppVersion } from '../http/request-app';
 import { signInMethodOf } from '../http/sign-in-method';
 import type { RequestContext } from '../types/request-context.types';
 
@@ -39,7 +39,8 @@ import type { RequestContext } from '../types/request-context.types';
  *    no event: there would be no opt-out to check.
  *  - Properties outside the event's allowlist are dropped and logged (the
  *    decorator's types already refuse them), and `feature` is added.
- *  - `app` comes from the request (`requestApp`).
+ *  - `app` comes from the request (`requestApp`), and so does the mobile
+ *    build (`requestAppVersion`), stamped as `$app_version` / `$app_build`.
  *  - The chapter's opt-out is `track`'s to check, read when the event is sent,
  *    after the handler: an action that opts the chapter out is not recorded,
  *    nor is one that finishes after another request opted it out.
@@ -83,7 +84,9 @@ export class FeatureEventInterceptor implements NestInterceptor {
         params: request.params ?? {},
         query: request.query ?? {},
         result,
-        signInMethod: signInMethodOf(request.supabaseUser),
+        // A read verified locally (#5043) has no Auth user, but its token
+        // carries the same `app_metadata.provider`.
+        signInMethod: signInMethodOf(request.supabaseUser ?? request.jwtClaims),
       };
       const described = metadata.describe ? metadata.describe(input) : {};
       if (described === null) return;
@@ -114,6 +117,7 @@ export class FeatureEventInterceptor implements NestInterceptor {
           chapterId,
           properties,
           app: requestApp(request),
+          appVersion: requestAppVersion(request),
         })
         .catch((error: unknown) => {
           reportCaughtFailure(this.logger, {

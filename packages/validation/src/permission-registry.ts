@@ -32,6 +32,7 @@ export const PERMISSION_MODULES = [
   { key: "announcements", label: "Announcements" },
   { key: "events", label: "Events" },
   { key: "tasks", label: "Tasks" },
+  { key: "meetings", label: "Meetings" },
   { key: "points", label: "Points" },
   { key: "hours", label: "Service hours" },
   { key: "polls", label: "Polls" },
@@ -76,7 +77,16 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "roles:manage",
     "chapter",
     "Manage roles",
-    "Create, edit and delete roles, give roles to members, and edit pledge classes.",
+    "Create, edit and delete roles, give roles to members, edit pledge classes, and fix the names and graduation years of members ranked below them.",
+  ),
+  // Paul, 2026-11-20 (#5725): a switch a chapter turns on for its top tier,
+  // so one cabinet officer can make another Stewardship Chair. Without it,
+  // the roles and the member must both rank below you (#4071).
+  chapterPermission(
+    "roles:assign_own_level",
+    "chapter",
+    "Give roles at your own level",
+    "With Manage roles, also give and take away roles for members at your own level, and roles at your own level, not only those below it. Nobody reaches anyone ranked above them.",
   ),
   chapterPermission(
     "chapter-config:view",
@@ -95,6 +105,22 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "chapter",
     "Start a new semester",
     "Close the current semester and start the next one.",
+  ),
+  // AI (ADR-28). The API leaves these two out of the catalog it serves while
+  // its AI switch is off, and the web role and tier pages, which draw from
+  // this registry, leave them out the same way (`isPermissionHidden` in
+  // `@repo/hooks`, which web and the phone share).
+  chapterPermission(
+    "ai:use",
+    "chapter",
+    "Use AI",
+    "Ask for AI drafts and answers, once the chapter has turned AI on.",
+  ),
+  chapterPermission(
+    "ai:act",
+    "chapter",
+    "Let AI take actions",
+    "Have AI carry out things the member could do themselves, after they confirm each one.",
   ),
 
   chapterPermission(
@@ -115,6 +141,14 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "Remove members",
     "Remove a member from the chapter.",
   ),
+  // Groups (#4076) carry no permissions, so keeping one current needs less
+  // trust than `roles:manage`: a house manager can keep "Third floor" right.
+  chapterPermission(
+    "groups:manage",
+    "members",
+    "Manage groups",
+    "Create, rename and delete groups like Third floor or Live-ins, choose who is in them, and choose which can be pinged.",
+  ),
 
   chapterPermission(
     "channels:create",
@@ -126,7 +160,7 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "channels:manage",
     "chat",
     "Manage channels and pins",
-    "Edit and delete channels, pin messages, and set who can use a channel.",
+    "Edit and delete channels, pin messages, close anyone's poll, and set who can use a channel.",
   ),
   chapterPermission(
     "alumni:post",
@@ -169,6 +203,25 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
   ),
 
   chapterPermission(
+    "meetings:record",
+    "meetings",
+    "Write meeting minutes",
+    "Start minutes for a meeting, and edit and post the ones they started.",
+  ),
+  chapterPermission(
+    "meetings:edit",
+    "meetings",
+    "Edit anyone's minutes",
+    "Edit and post minutes another officer started, before or after they are posted.",
+  ),
+  chapterPermission(
+    "meetings:delete",
+    "meetings",
+    "Delete minutes",
+    "Delete a meeting's minutes for good.",
+  ),
+
+  chapterPermission(
     "points:adjust",
     "points",
     "Add or remove points",
@@ -179,6 +232,18 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "points",
     "See every member's points",
     "See every member's point history, not only their own.",
+  ),
+  chapterPermission(
+    "predictions:create",
+    "points",
+    "Ask predictions",
+    "Ask a question members can stake points on.",
+  ),
+  chapterPermission(
+    "predictions:manage",
+    "points",
+    "Manage predictions",
+    "Confirm, settle again or void any prediction, including after it pays.",
   ),
 
   chapterPermission(
@@ -303,6 +368,25 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "Change the chapter's plan and create member invoices.",
   ),
 ];
+
+/**
+ * Permissions left off the role and tier pages, web and phone (through
+ * `isPermissionHidden` in `@repo/hooks`), and off a module page's "Who can"
+ * (`modulePermissions`), where both showed as switches captioned "No longer
+ * used" (#5728). They decide no channel's posters since #3722. The Discord
+ * import's read-gate picker, fed by the API catalog, still lists them.
+ *
+ * They stay in the registry, the API catalog and stored role data until
+ * #4286 retires them, because two readers remain: the Discord importer starts
+ * a read-only channel's posters from `announcements:post` holders, and the
+ * phone's Support the Chapter button shows to `alumni:post` holders. The
+ * seeded roles carry what those read. `alumni:post` also decides who may give
+ * the Alumni role, as any role's permissions do (#5729).
+ */
+export const RETIRED_PERMISSIONS: ReadonlySet<string> = new Set([
+  "alumni:post",
+  "announcements:post",
+]);
 
 const BY_PERMISSION: ReadonlyMap<string, PermissionDefinition> = new Map(
   PERMISSION_REGISTRY.map((entry) => [entry.permission, entry]),

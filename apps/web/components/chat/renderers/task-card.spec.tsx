@@ -1,5 +1,11 @@
-import { render, screen, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import { TaskCard } from "./task-card";
 import type { ChatMessage } from "@repo/chat-core/types";
@@ -17,6 +23,9 @@ const mockCurrentChapter = vi.fn();
 const updateStatus = vi.fn();
 const confirmTask = vi.fn();
 const rejectTask = vi.fn();
+// Send back awaits its write so its sheet can say why it failed (#4635).
+const rejectTaskAsync = vi.fn();
+const updateTask = vi.fn();
 
 const { mockOffline } = vi.hoisted(() => ({
   mockOffline: { value: false },
@@ -31,12 +40,30 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // The shared card rules (`taskCardControls`, `readLiveTask`, the labels) stay
   // real, so these cases test the rules the mobile card applies too.
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // Task photos (#4565): no photo reads or uploads in these cases.
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: vi.fn() }),
+  useTaskPhotoUrl: () => ({ data: undefined }),
   // The real hook is disabled on an empty id, so an empty id reads nothing and
   // never reaches `mockUseTask`: a case can assert the card didn't ask.
   useTask: (id: string) => (id ? mockUseTask(id) : { data: undefined }),
   useUpdateTaskStatus: () => ({ mutate: updateStatus, isPending: false }),
   useConfirmTask: () => ({ mutate: confirmTask, isPending: false }),
-  useRejectTask: () => ({ mutate: rejectTask, isPending: false }),
+  useRejectTask: () => ({
+    mutate: rejectTask,
+    mutateAsync: rejectTaskAsync,
+    isPending: false,
+  }),
+  // The edit form's writes and roster (#4512).
+  useUpdateTask: () => ({ mutateAsync: updateTask, isPending: false }),
+  useSetSubtaskDone: () => ({ mutate: vi.fn(), isPending: false }),
+  useAddSubtask: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteSubtask: () => ({ mutate: vi.fn(), isPending: false }),
+  useMembers: () => ({
+    data: [
+      { user_id: "assignee-1", display_name: "Bob" },
+      { user_id: "admin-1", display_name: "Alice" },
+    ],
+  }),
   // The card's task routes are paid-ops, so it now reads the chapter's
   // subscription (#841). Default every existing case to an active chapter so
   // they assert the same behaviour they always did.
@@ -48,6 +75,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
     isError: false,
   }),
+  // The edit form's Who picker reads these too (2026-11-18).
+  useRoles: () => ({ data: [] }),
+  useRoleTiers: () => ({ data: [] }),
+  useGroups: () => ({ data: [] }),
+  useCurrentUser: () => ({ data: undefined }),
+  useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -66,7 +99,13 @@ vi.mock("@/lib/hooks/use-toast", () => ({
 let canManage = false;
 const gateMounts: string[] = [];
 vi.mock("@/components/shared/can", () => ({
-  Can: ({ children, permission }: { children: ReactNode; permission: string }) => {
+  Can: ({
+    children,
+    permission,
+  }: {
+    children: ReactNode;
+    permission: string;
+  }) => {
     gateMounts.push(permission);
     return canManage ? <>{children}</> : null;
   },
@@ -82,6 +121,8 @@ function liveTask(overrides: Record<string, unknown> = {}) {
       status: "TODO",
       stored_status: "TODO",
       points_awarded: false,
+      // Points mean a completion waits on an officer's sign-off (#4635).
+      point_reward: 10,
       ...overrides,
     },
   };
@@ -148,6 +189,22 @@ describe("TaskCard", () => {
       { id: "task-1", body: { status: "IN_PROGRESS" } },
       expect.objectContaining({ onError: expect.any(Function) }),
     );
+  });
+
+  it("offers the assignee no Start while the chapter has Tasks turned off (#4136)", () => {
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        subscription_status: "active",
+        enabled_modules: { tasks: false },
+      },
+      isPending: false,
+      isError: false,
+    });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.queryByRole("button", { name: /start/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /mark done/i })).toBeNull();
   });
 
   it("hides assignee actions from a non-assignee", () => {
@@ -292,10 +349,15 @@ describe("TaskCard", () => {
     expect(screen.getByRole("button", { name: /start/i })).toBeInTheDocument();
   });
 
-  it("offers Confirm/Reject to an admin on a COMPLETED task", () => {
+  it("offers Confirm/Send back to an admin on a COMPLETED task", () => {
     canManage = true;
     mockUseTask.mockReturnValue({
-      data: { id: "task-1", status: "COMPLETED", points_awarded: false },
+      data: {
+        id: "task-1",
+        status: "COMPLETED",
+        points_awarded: false,
+        point_reward: 10,
+      },
     });
     render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
     fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
@@ -303,16 +365,46 @@ describe("TaskCard", () => {
       "task-1",
       expect.objectContaining({ onError: expect.any(Function) }),
     );
-    expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /send back/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers no lifecycle control while the chapter has Tasks turned off (#4136)", () => {
+    canManage = true;
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        subscription_status: "active",
+        enabled_modules: { tasks: false },
+      },
+      isPending: false,
+      isError: false,
+    });
+    mockUseTask.mockReturnValue({
+      data: {
+        id: "task-1",
+        status: "COMPLETED",
+        points_awarded: false,
+        point_reward: 10,
+      },
+    });
+    render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
+    expect(screen.queryByRole("button", { name: /confirm/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /send back/i })).toBeNull();
   });
 
   it("hides Confirm from a tasks:manage assignee on their own card (#1056)", () => {
     // The API refuses a self-confirmation, so the assignee gets no confirm
-    // affordance here even holding tasks:manage. Reject survives — it withholds
+    // affordance here even holding tasks:manage. Send back survives — it withholds
     // points rather than awarding them — so the card still shows an action.
     canManage = true;
     mockUseTask.mockReturnValue({
-      data: { id: "task-1", status: "COMPLETED", points_awarded: false },
+      data: {
+        id: "task-1",
+        status: "COMPLETED",
+        points_awarded: false,
+        point_reward: 10,
+      },
     });
     render(
       <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
@@ -321,7 +413,9 @@ describe("TaskCard", () => {
     expect(
       screen.queryByRole("button", { name: /confirm/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /reject/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /send back/i }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the disabled Confirmed indicator for an assignee-admin", () => {
@@ -333,7 +427,12 @@ describe("TaskCard", () => {
     chapter.incomplete();
     canManage = true;
     mockUseTask.mockReturnValue({
-      data: { id: "task-1", status: "COMPLETED", points_awarded: true },
+      data: {
+        id: "task-1",
+        status: "COMPLETED",
+        points_awarded: true,
+        point_reward: 10,
+      },
     });
     render(
       <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
@@ -342,16 +441,16 @@ describe("TaskCard", () => {
     const confirmed = screen.getByRole("button", { name: /confirmed/i });
     expect(confirmed).toBeInTheDocument();
     expect(confirmed).toBeDisabled();
-    // Reject is gone once points are awarded — that gate is pre-existing.
+    // Send back is gone once points are awarded — that gate is pre-existing.
     expect(
-      screen.queryByRole("button", { name: /reject/i }),
+      screen.queryByRole("button", { name: /send back/i }),
     ).not.toBeInTheDocument();
   });
 
   it("leaves the admin controls to the permission gate, not a plain denial", () => {
     // An assignee's task is read whatever their permissions, so when the check
     // can't run (offline, nothing cached) the gate must get the chance to say
-    // so with its offline chip, rather than the card dropping Reject unseen
+    // so with its offline chip, rather than the card dropping Send back unseen
     // (design-system README §4, §5 rule 4). Denied here: the row is left
     // empty, and `empty:hidden` keeps it from adding its margin. jsdom applies
     // no Tailwind, so the spec pins the class and the emptiness, not the CSS.
@@ -368,7 +467,7 @@ describe("TaskCard", () => {
 
     expect(gateMounts).toContain("tasks:manage");
     expect(
-      screen.queryByRole("button", { name: /reject/i }),
+      screen.queryByRole("button", { name: /send back/i }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     const row = container.querySelector('[class~="empty:hidden"]');
@@ -479,5 +578,307 @@ describe("TaskCard subscription gating", () => {
       expect(start).not.toHaveAttribute("aria-describedby");
     }
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+// #4133 / #4135: the badge is the phone's colour, never the chapter accent,
+// and the due line is the shared countdown, read off the live due date.
+describe("TaskCard status colour and due line", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    canManage = false;
+    chapter.active();
+    mockUseTask.mockReturnValue(liveTask());
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // Sat June 13, 2026, noon local: the snapshot's June 15 is two days out.
+    vi.setSystemTime(new Date(2026, 5, 13, 12));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ["TODO", false, "To do", "border-border"],
+    ["IN_PROGRESS", false, "In progress", "bg-info-tint"],
+    ["COMPLETED", false, "Waiting on an officer", "bg-warning-tint"],
+    ["COMPLETED", true, "Confirmed", "bg-success-tint"],
+    ["OVERDUE", false, "Overdue", "bg-destructive-tint"],
+  ])(
+    "draws %s (awarded %s) as %s in %s, never the accent",
+    (status, awarded, label, cls) => {
+      mockUseTask.mockReturnValue(
+        liveTask({ status, stored_status: status, points_awarded: awarded }),
+      );
+      render(
+        <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+      );
+      const badge = screen.getByText(label);
+      expect(badge).toHaveClass(cls);
+      expect(badge).not.toHaveClass("bg-accent-subtle");
+    },
+  );
+
+  it("counts down to the due date while the task is open", () => {
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.getByText("Due Monday")).toBeInTheDocument();
+  });
+
+  it("reads the live due date over the snapshot's, so a moved task isn't called late", () => {
+    vi.setSystemTime(new Date(2026, 5, 17, 12));
+    mockUseTask.mockReturnValue(liveTask({ due_date: "2026-06-25" }));
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.getByText("Due June 25")).toBeInTheDocument();
+    expect(screen.queryByText(/Overdue by/)).not.toBeInTheDocument();
+  });
+
+  it("draws an overdue due line in the lifted danger tone", () => {
+    vi.setSystemTime(new Date(2026, 5, 17, 12));
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.getByText("Overdue by 2 days")).toHaveClass(
+      "text-destructive-text",
+    );
+  });
+
+  it("gives a viewer who can't read the task the plain date", () => {
+    render(<TaskCard message={makeMessage()} viewerId="someone" isConfirmed />);
+    expect(screen.getByText("Due June 15")).toBeInTheDocument();
+  });
+});
+
+describe("TaskCard Edit (#4512)", () => {
+  /** The live task as the edit form needs it. */
+  const editable = (overrides: Record<string, unknown> = {}) =>
+    liveTask({
+      title: "Clean the house",
+      description: null,
+      assignee_id: ASSIGNEE,
+      due_date: "2026-06-15",
+      due_at: null,
+      point_reward: 10,
+      subtasks: [],
+      ...overrides,
+    });
+  const edit = () =>
+    screen.queryByRole("button", { name: "Edit Clean the house" });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    canManage = true;
+    mockUseTask.mockReturnValue(editable());
+    chapter.active();
+  });
+
+  it("opens the board's edit form in the card's place, and Cancel puts it back", () => {
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    fireEvent.click(edit()!);
+    expect(
+      screen.getByRole("group", { name: "Editing Clean the house" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toHaveValue("Clean the house");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("Clean the house")).toBeInTheDocument();
+    expect(edit()).toBeInTheDocument();
+  });
+
+  it("saves only what changed", async () => {
+    updateTask.mockResolvedValue({});
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    fireEvent.click(edit()!);
+    fireEvent.change(screen.getByLabelText("Title"), {
+      target: { value: "Clean the kitchen" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await vi.waitFor(() =>
+      expect(updateTask).toHaveBeenCalledWith({
+        id: "task-1",
+        body: { title: "Clean the kitchen" },
+      }),
+    );
+  });
+
+  it("isn't offered to a member without tasks:manage", () => {
+    canManage = false;
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(edit()).toBeNull();
+  });
+
+  it("puts the card back on Escape, and claims Escape from a panel around it", () => {
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    fireEvent.click(edit()!);
+    const form = screen.getByRole("group", { name: "Editing Clean the house" });
+    expect(form).toHaveAttribute("data-owns-escape");
+    fireEvent.keyDown(screen.getByLabelText("Title"), { key: "Escape" });
+    expect(screen.queryByRole("group", { name: /Editing/ })).toBeNull();
+    expect(edit()).toBeInTheDocument();
+  });
+
+  it("holds Edit until the card's message is acknowledged", () => {
+    render(
+      <TaskCard
+        message={makeMessage()}
+        viewerId="admin-1"
+        isConfirmed={false}
+      />,
+    );
+    expect(edit()).toBeDisabled();
+  });
+
+  it("isn't offered while the chapter has Tasks turned off", () => {
+    mockCurrentChapter.mockReturnValue({
+      data: {
+        subscription_status: "active",
+        enabled_modules: { tasks: false },
+      },
+      isPending: false,
+      isError: false,
+    });
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    expect(edit()).toBeNull();
+  });
+
+  it("isn't offered on a confirmed task", () => {
+    mockUseTask.mockReturnValue(
+      editable({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        points_awarded: true,
+      }),
+    );
+    render(<TaskCard message={makeMessage()} viewerId="admin-1" isConfirmed />);
+    expect(edit()).toBeNull();
+  });
+});
+
+// #4635: decision C, Send back's reason, and what the card shows of proof.
+describe("TaskCard proof and send back (#4635)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    canManage = false;
+    chapter.active();
+  });
+
+  it("shows a no-points, no-proof completion as Done, with only Send back to an officer", () => {
+    canManage = true;
+    mockUseTask.mockReturnValue(
+      liveTask({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        // Confirmed by the server as it was marked done (decision C),
+        // stamped with the completion's own time.
+        points_awarded: true,
+        point_reward: null,
+        proof_kind: "none",
+        completed_at: "2026-11-13T10:00:00.000Z",
+        confirmed_at: "2026-11-13T10:00:00.000Z",
+      }),
+    );
+    render(
+      <TaskCard
+        message={makeMessage({ point_reward: null })}
+        viewerId="other"
+        isConfirmed
+      />,
+    );
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(screen.queryByText("Confirmed")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /confirm/i })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /send back/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("still waits on an officer for a no-points task that asks for a photo", () => {
+    canManage = true;
+    mockUseTask.mockReturnValue(
+      liveTask({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        point_reward: null,
+        proof_kind: "photo",
+      }),
+    );
+    render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
+    expect(screen.getByText("Waiting on an officer")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^confirm$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("sends back only with a reason, through the awaited write", async () => {
+    canManage = true;
+    rejectTaskAsync.mockResolvedValue({});
+    mockUseTask.mockReturnValue(
+      liveTask({ status: "COMPLETED", stored_status: "COMPLETED" }),
+    );
+    render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
+    fireEvent.click(screen.getByRole("button", { name: /send back/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Send back" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send back" }));
+    expect(
+      await within(dialog).findByText("Say what needs to change."),
+    ).toBeInTheDocument();
+    expect(rejectTaskAsync).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText("What needs to change"), {
+      target: { value: "Missing the back porch" },
+    });
+    fireEvent.click(
+      within(dialog).getByRole("switch", { name: "Ask for a photo next time" }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send back" }));
+    await waitFor(() =>
+      expect(rejectTaskAsync).toHaveBeenCalledWith({
+        id: "task-1",
+        body: { comment: "Missing the back porch", require_photo: true },
+      }),
+    );
+    // The fire-and-forget write is no longer how a card sends back.
+    expect(rejectTask).not.toHaveBeenCalled();
+  });
+
+  it("offers no Ask for a photo on a task that already asks for one", async () => {
+    canManage = true;
+    mockUseTask.mockReturnValue(
+      liveTask({
+        status: "COMPLETED",
+        stored_status: "COMPLETED",
+        proof_kind: "photo",
+      }),
+    );
+    render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
+    fireEvent.click(screen.getByRole("button", { name: /send back/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Send back" });
+    expect(
+      within(dialog).queryByRole("switch", {
+        name: "Ask for a photo next time",
+      }),
+    ).toBeNull();
+  });
+
+  it("badges a sent-back task Needs changes and shows the reason to its assignee", () => {
+    mockUseTask.mockReturnValue(
+      liveTask({
+        status: "IN_PROGRESS",
+        stored_status: "IN_PROGRESS",
+        sent_back_at: "2026-06-14T00:00:00Z",
+        sent_back_reason: "Missing the back porch",
+      }),
+    );
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.getByText("Needs changes")).toBeInTheDocument();
+    expect(screen.getByText("Missing the back porch")).toBeInTheDocument();
   });
 });

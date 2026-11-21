@@ -27,10 +27,12 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { ChatSidebarDto, UpdateChatSidebarDto } from '../dtos/chat-sidebar.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
- * A member's own chat sidebar arrangement (#2877): pins, folded sections and
- * the two filters. Rule: `spec/behavior/chat/README.md` § Sidebar arrangement.
+ * A member's own chat sidebar arrangement (#2877): pins, folded sections,
+ * the two filters and the sort. Rule: `spec/behavior/chat/README.md` § Sidebar
+ * arrangement.
  *
  * **Its own root, like `/v1/bookmarks`,** rather than more routes on
  * `@Controller('channels')`, where a single-segment `GET /channels/sidebar`
@@ -54,6 +56,7 @@ export class ChatSidebarController {
   constructor(private readonly sidebarService: ChatSidebarService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({ summary: "The caller's own chat sidebar arrangement" })
   @ApiOkResponse({ type: ChatSidebarDto })
   async getSidebar(
@@ -66,7 +69,7 @@ export class ChatSidebarController {
   @Patch()
   @ApiOperation({
     summary:
-      'Switch the sidebar filters. A filter left out keeps its stored value.',
+      'Switch the sidebar filters or sort. A setting left out keeps its stored value.',
   })
   @ApiOkResponse({ type: ChatSidebarDto })
   async updateSidebar(

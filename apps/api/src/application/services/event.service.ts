@@ -3,8 +3,14 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
+import {
+  EVENT_CHECK_IN_SCREEN_REPOSITORY,
+  type IEventCheckInScreenRepository,
+} from '#domain/repositories/event-check-in-screen.repository.interface';
+import { screensRequireCode } from '#domain/utils/check-in-screen';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
@@ -18,19 +24,50 @@ import {
   eventChangeOf,
 } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { isEventVisibleTo, isInvited } from './event-role-targeting';
+import {
+  filterVisibleEvents,
+  isEventVisibleTo,
+  isEventVisibleWith,
+  type EventViewer,
+} from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
+  AGENDA_LOCKED_COPY,
+  agendaCheckOffOpen,
+  agendaItemsChanged,
+  checkInWindowBounds,
+  checkSeriesLength,
+  isRepeatRule,
   eventLimitsAudience,
+  eventOthersInvited,
 } from '@repo/validation';
-import { normalizeCheckInZone } from './event-input';
+import {
+  keepAgendaTabledFrom,
+  normalizeAgenda,
+  normalizeAttachments,
+  normalizeCheckInZone,
+} from './event-input';
+import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
+import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
+import {
+  EVENT_AGENDA_MAX,
+  type EventAgendaItem,
+  type EventAttachment,
+} from '@repo/validation';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
   CreateEventInput,
   CreateEventResult,
   EventMutationScope,
   UpdateEventInput,
+  SeriesUpdateInput,
 } from './event-input';
+
+/** Told when an event is created: its chapter and the event (a series' head). */
+export type EventCreatedListener = (
+  chapterId: string,
+  event: Event,
+) => Promise<void>;
 
 /**
  * Event reads and single-row writes. Recurring-series writes
@@ -40,6 +77,7 @@ import type {
 @Injectable()
 export class EventService {
   private readonly logger = new Logger(EventService.name);
+  private readonly createdListeners: EventCreatedListener[] = [];
 
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
@@ -48,7 +86,142 @@ export class EventService {
     private readonly series: EventSeriesService,
     private readonly announcements: EventAnnouncementService,
     private readonly eventTypes: EventTypeService,
+    @Inject(EVENT_CHECK_IN_SCREEN_REPOSITORY)
+    private readonly screenRepo: IEventCheckInScreenRepository,
+    @Inject(CHAPTER_DOCUMENT_REPOSITORY)
+    private readonly documentRepo: IChapterDocumentRepository,
   ) {}
+
+  /**
+   * A request's attachments, normalized, with every newly attached document
+   * one of this chapter's Chapter Files (#4934). A new document id from
+   * another chapter, or one already deleted, is a 400, so an event never
+   * starts pointing at a file its members can't open. A document the meeting
+   * already held (`stored`) passes unchecked: the list is sent whole, and a
+   * file deleted since it was attached must not block every later save
+   * (`spec/behavior/events.md` § Agenda and attachments).
+   */
+  private async attachmentsFor(
+    input: CreateEventInput['attachments'],
+    chapterId: string,
+    stored: readonly EventAttachment[] = [],
+  ): Promise<EventAttachment[] | undefined> {
+    const attachments = normalizeAttachments(input);
+    if (!attachments) return attachments;
+    const held = new Set(
+      stored.flatMap((a) => (a.kind === 'document' ? [a.document_id] : [])),
+    );
+    const documentIds = [
+      ...new Set(
+        attachments.flatMap((a) =>
+          a.kind === 'document' && !held.has(a.document_id)
+            ? [a.document_id]
+            : [],
+        ),
+      ),
+    ];
+    if (documentIds.length > 0) {
+      const found = await this.documentRepo.findByIds(documentIds, chapterId);
+      const known = new Set(found.map((doc) => doc.id));
+      const missing = attachments.find(
+        (a) =>
+          a.kind === 'document' &&
+          documentIds.includes(a.document_id) &&
+          !known.has(a.document_id),
+      );
+      if (missing) {
+        throw new BadRequestException(
+          `"${missing.title}" isn't one of this chapter's files any more. Remove it, or attach it again from Chapter Files.`,
+        );
+      }
+    }
+    return attachments;
+  }
+
+  /**
+   * Undo `update`'s early write of a meeting's agenda and attachments when
+   * the series edit after it refuses. A failed undo is reported rather than
+   * thrown, so the caller still hears the series edit's own error.
+   */
+  private async restoreMeetingOwn(
+    before: Event,
+    chapterId: string,
+    written: Partial<Event>,
+  ): Promise<void> {
+    const back: Partial<Event> = {};
+    if (written.agenda !== undefined) back.agenda = before.agenda;
+    if (written.attachments !== undefined) {
+      back.attachments = before.attachments;
+    }
+    try {
+      await this.eventRepo.update(before.id, chapterId, back);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'event-series-agenda-restore',
+        message: `A series edit of event ${before.id} was refused after its agenda or attachments were saved, and putting them back failed. Check that meeting's agenda and attachments.`,
+        error,
+      });
+    }
+  }
+
+  /**
+   * Whether a check-in without the code would be refused right now
+   * (`screensRequireCode`, the rule behind `AttendanceService.checkIn`'s
+   * `needs_code` refusal). Reads send it as `check_in_needs_code` so a client
+   * that never sends a code (web) says to scan instead of offering a
+   * check-in that fails (#4808). It can go stale the moment an officer opens
+   * the screen, so the refusal copy stays the fallback. No screen location
+   * leaves the server.
+   *
+   * Outside the check-in window no screen can be live (each row expires when
+   * check-in closes), so nothing is read. A failed read says no, and the
+   * event still reads: the field is advisory, and the server's refusal
+   * explains itself, as it did before the field existed.
+   *
+   * Per viewer (2026-11-17): the officer whose own screen is live checks
+   * themselves in with no code (`AttendanceService.checkIn`), so it is false
+   * for them, and web offers them a plain Check in.
+   */
+  async checkInNeedsCode(
+    event: Pick<
+      Event,
+      'id' | 'chapter_id' | 'start_time' | 'end_time' | 'check_in_opens_minutes'
+    >,
+    viewerId: string,
+    now: Date = new Date(),
+  ): Promise<boolean> {
+    const start = new Date(event.start_time);
+    const end = new Date(event.end_time);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return false;
+    }
+    const { opensAt, closesAt } = checkInWindowBounds(
+      start,
+      end,
+      event.check_in_opens_minutes,
+    );
+    if (now < opensAt || now > closesAt) return false;
+    try {
+      const screens = await this.screenRepo.findLive(
+        event.id,
+        event.chapter_id,
+        now.toISOString(),
+      );
+      if (screens.some((screen) => screen.reported_by === viewerId)) {
+        return false;
+      }
+      return screensRequireCode(screens);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'event-check-in-screen-read',
+        message: `Could not read check-in screens for event ${event.id}`,
+        error,
+      });
+      return false;
+    }
+  }
 
   /**
    * `spec/behavior/events.md` § Attendance by role: an event is visible only
@@ -105,6 +278,46 @@ export class EventService {
   }
 
   /**
+   * The events among `ids` that `viewerId` may read, by the same rule as the
+   * list. One read however many ids, so a caller holding rows that point at
+   * events (minutes) doesn't read the whole calendar to check a few.
+   */
+  async findVisibleByIds(
+    ids: readonly string[],
+    chapterId: string,
+    viewerId: string,
+  ): Promise<Event[]> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return [];
+    const events = await this.eventRepo.findByIds(unique, chapterId);
+    return this.visibleOf(events, chapterId, viewerId);
+  }
+
+  /**
+   * Of `ids`, the events every one of `viewers` may read, by the list's own
+   * rule (`isEventVisibleWith`). An id that names no event in this chapter is
+   * not in the answer. One read however many viewers: for a check made over
+   * a whole audience, such as who in a channel could open what an Ask Frapp
+   * answer drew on before it is posted there (#4713).
+   */
+  async visibleToAll(
+    ids: readonly string[],
+    chapterId: string,
+    viewers: readonly EventViewer[],
+  ): Promise<Set<string>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Set();
+    const events = await this.eventRepo.findByIds(unique, chapterId);
+    return new Set(
+      events
+        .filter((event) =>
+          viewers.every((viewer) => isEventVisibleWith(event, viewer)),
+        )
+        .map((event) => event.id),
+    );
+  }
+
+  /**
    * The events a member made that have not ended by `endsAfter`, earliest
    * start first, as many as `limit`. Narrowed by the same visibility rule as
    * the list: making an event grants no read of it, so a maker it leaves out
@@ -126,33 +339,36 @@ export class EventService {
   }
 
   /** `events` narrowed to those `viewerId` may read (see `isVisibleToViewer`). */
-  private async visibleOf(
+  private visibleOf(
     events: Event[],
     chapterId: string,
     viewerId: string,
   ): Promise<Event[]> {
-    // Skip the permission/member lookups entirely for the common case — a
-    // chapter with no role-targeted events — rather than paying for them on
-    // every list call.
-    const hasTargetedEvents = events.some(eventLimitsAudience);
-    if (!hasTargetedEvents) return events;
-    if (
-      await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
-        SystemPermissions.EVENTS_UPDATE,
-      ])
-    ) {
-      return events;
-    }
-    const member = await this.memberRepo.findByUserAndChapter(
-      viewerId,
-      chapterId,
-    );
-    const memberRoleIds = member?.role_ids ?? [];
-    return events.filter((event) => isInvited(event, memberRoleIds));
+    return filterVisibleEvents(events, chapterId, viewerId, {
+      rbac: this.rbac,
+      memberRepo: this.memberRepo,
+    });
   }
 
-  async create(input: CreateEventInput): Promise<CreateEventResult> {
-    const { start_time, end_time } = input;
+  /**
+   * Runs after an event (and, for a repeating one, its occurrences) is
+   * created. A listener's failure is reported and never fails the create.
+   * Used by Add to next meeting's agenda (#5790), whose waiting items go onto
+   * the next matching meeting when it is created.
+   */
+  onCreated(listener: EventCreatedListener): void {
+    this.createdListeners.push(listener);
+  }
+
+  /**
+   * `requestZone` is the creating request's `x-time-zone`: a legacy repeat
+   * token keeps that zone's wall clock (`EventSeriesService.legacyZoneFor`).
+   */
+  async create(
+    rawInput: CreateEventInput,
+    requestZone?: string | null,
+  ): Promise<CreateEventResult> {
+    const { start_time, end_time } = rawInput;
 
     const start = new Date(start_time);
     const end = new Date(end_time);
@@ -163,6 +379,17 @@ export class EventService {
     }
     if (end <= start) {
       throw new BadRequestException('end_time must be after start_time');
+    }
+
+    const setsRequirements = await this.canSetRequirements(rawInput);
+    const input = setsRequirements ? rawInput : withoutRequirements(rawInput);
+
+    // The DTO checks the rule's shape; whether it fits this first meeting (an
+    // UNTIL that leaves no second meeting, or one past the series cap) needs
+    // the start, so it is checked here, before anything is written.
+    if (input.recurrence_rule) {
+      const problem = checkSeriesLength(input.recurrence_rule, start);
+      if (problem) throw new BadRequestException(problem);
     }
 
     // An event that leaves anyone out must not be broadcast as a chat card. #1463 made
@@ -220,6 +447,9 @@ export class EventService {
     // Before the write, so a stray id is a 400 rather than the composite
     // foreign key's 500.
     await this.eventTypes.assertBelongs(input.event_type_id, input.chapter_id);
+    const agenda = normalizeAgenda(input.agenda) ?? [];
+    const attachments =
+      (await this.attachmentsFor(input.attachments, input.chapter_id)) ?? [];
 
     const parent = await this.eventRepo.create({
       chapter_id: input.chapter_id,
@@ -228,6 +458,7 @@ export class EventService {
       location: input.location ?? null,
       start_time: input.start_time,
       end_time: input.end_time,
+      // A member's is 0 already (`withoutRequirements`).
       point_value: input.point_value ?? 10,
       is_mandatory: input.is_mandatory ?? false,
       recurrence_rule: input.recurrence_rule ?? null,
@@ -237,6 +468,10 @@ export class EventService {
       excluded_role_ids: input.excluded_role_ids ?? null,
       others_invited,
       notes: input.notes ?? null,
+      // This first meeting's own; the series' other meetings start with
+      // none (#4934).
+      agenda,
+      attachments,
       check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
       check_in_zone_name: input.check_in_zone_name ?? null,
       check_in_opens_minutes:
@@ -256,7 +491,7 @@ export class EventService {
       // (`parent_event_id` is `on delete set null`). Occurrences go first, so a
       // failure partway leaves the series whole rather than orphaned.
       try {
-        await this.series.generateRecurringInstances(parent);
+        await this.series.generateRecurringInstances(parent, requestZone);
       } catch (error) {
         try {
           const landed = await this.eventRepo.findChildren(
@@ -282,11 +517,13 @@ export class EventService {
       }
     }
 
-    await this.announcements.notifyEventCreated(
-      input.chapter_id,
-      parent,
-      input.created_by,
-    );
+    if (!input.silent) {
+      await this.announcements.notifyEventCreated(
+        input.chapter_id,
+        parent,
+        input.created_by,
+      );
+    }
 
     // The `/event` slash command asks us to surface an interactive event card
     // in chat. The card is server-originated (a client cannot forge
@@ -299,9 +536,42 @@ export class EventService {
     // was ever due.
     const cardPosted = await this.announcements.tryPostEventCard(input, parent);
 
+    for (const listener of this.createdListeners) {
+      try {
+        await listener(input.chapter_id, parent);
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'event-created-listener',
+          message: `A listener failed after event ${parent.id} was created`,
+          error,
+        });
+      }
+    }
+
     return cardPosted === undefined
       ? parent
       : { ...parent, card_posted: cardPosted };
+  }
+
+  /**
+   * `spec/behavior/events.md` § Event Creation (#3709): any member with
+   * `events:create` makes an event, but only an `events:update` holder (the
+   * officers who edit any event and take attendance, and the President's
+   * `*`) makes anyone required or attaches points. Editing an event already
+   * takes `events:update`, so what a create may set never exceeds what its
+   * maker could later edit in.
+   *
+   * A create with no maker (no caller passes none today) is held to the
+   * member rule, so a new internal caller can't grant points by omission.
+   */
+  private async canSetRequirements(input: CreateEventInput): Promise<boolean> {
+    if (!input.created_by) return false;
+    return this.rbac.memberHasAnyPermission(
+      input.chapter_id,
+      input.created_by,
+      [SystemPermissions.EVENTS_UPDATE],
+    );
   }
 
   async update(
@@ -310,6 +580,7 @@ export class EventService {
     input: UpdateEventInput,
     scope: EventMutationScope = 'instance',
     actorId?: string,
+    requestZone?: string | null,
   ): Promise<Event> {
     let existing: Event | null = null;
     if (input.start_time || input.end_time) {
@@ -331,12 +602,71 @@ export class EventService {
 
     await this.eventTypes.assertBelongs(input.event_type_id, chapterId);
 
-    const patch: UpdateEventInput = input;
+    // A meeting's agenda and attachments are its own (#4934), validated here
+    // and kept apart from the rest of the patch so no series path ever
+    // copies them.
+    const { agenda: rawAgenda, attachments: rawAttachments, ...rest } = input;
+    const meetingOwn: Partial<Event> = {};
+    const agenda = normalizeAgenda(rawAgenda);
+    if (agenda !== undefined) {
+      // Where a tabled item came from is the server's to say (#5534): it is
+      // kept by the item's id from what is stored, never read from the
+      // client, so a phone build that drops the key keeps it and none can
+      // name another chapter's minutes.
+      existing ??= await this.findById(id, chapterId);
+      if (agendaItemsChanged(agenda, existing.agenda ?? [])) {
+        assertAgendaOpen(input.start_time ?? existing.start_time);
+      }
+      meetingOwn.agenda = keepAgendaTabledFrom(agenda, existing.agenda);
+    }
+    if (rawAttachments !== undefined) {
+      // The stored list says which documents were attached already.
+      existing ??= await this.findById(id, chapterId);
+      meetingOwn.attachments = await this.attachmentsFor(
+        rawAttachments,
+        chapterId,
+        existing.attachments,
+      );
+    }
+    const ownsSomething = Object.keys(meetingOwn).length > 0;
+    const patch: SeriesUpdateInput = rest;
 
     if (scope === 'series') {
       // Hand on the row already read rather than reading it twice.
       const target = existing ?? (await this.findById(id, chapterId));
-      return this.series.updateSeries(target, chapterId, patch, actorId);
+      if (!ownsSomething) {
+        return this.series.updateSeries(
+          target,
+          chapterId,
+          patch,
+          actorId,
+          requestZone,
+        );
+      }
+      // Written to the occurrence addressed, never across the series, and
+      // before the series edit so a rebuild carries it to the new meeting
+      // (`delete_replaced_occurrences`).
+      const withOwn = await this.eventRepo.update(
+        target.id,
+        chapterId,
+        meetingOwn,
+      );
+      if (Object.keys(patch).length === 0) return withOwn;
+      try {
+        // The series head comes back, as for any series save.
+        return await this.series.updateSeries(
+          withOwn,
+          chapterId,
+          patch,
+          actorId,
+          requestZone,
+        );
+      } catch (error) {
+        // The series edit refused (or failed) and wrote nothing, so neither
+        // does this request: put the meeting's own lists back.
+        await this.restoreMeetingOwn(target, chapterId, meetingOwn);
+        throw error;
+      }
     }
 
     // The row as it was, to tell a real move from a round-tripped save
@@ -347,8 +677,42 @@ export class EventService {
         ? await this.findById(id, chapterId)
         : null);
 
+    // An instance edit writes the rule onto this row as it stands, with no
+    // regenerate, so a rule that doesn't fit its start (an UNTIL before the
+    // second meeting, or past the series cap) is refused here as on create.
+    // Only when the rule or the start actually changes: a client that sends
+    // the stored rule back must not have a rename judged on a rule nobody
+    // touched. A start moved without the rule in the request is checked
+    // against the stored rule, so a series head can't be moved past its own
+    // end by a client that sends only what changed (#4515).
+    const row = before;
+    const ruleChanged =
+      !!row &&
+      input.recurrence_rule !== undefined &&
+      input.recurrence_rule !== row.recurrence_rule;
+    const startMoved =
+      !!row &&
+      input.start_time !== undefined &&
+      new Date(input.start_time).getTime() !==
+        new Date(row.start_time).getTime();
+    const rule =
+      input.recurrence_rule !== undefined
+        ? input.recurrence_rule
+        : (row?.recurrence_rule ?? null);
+    // A stored rule this build can't read is left alone, as the series path
+    // does: a row written before the format was checked must not refuse every
+    // move of its start. (A rule in the request has passed the DTO already.)
+    if (rule && isRepeatRule(rule) && row && (ruleChanged || startMoved)) {
+      const problem = checkSeriesLength(
+        rule,
+        input.start_time ?? row.start_time,
+      );
+      if (problem) throw new BadRequestException(problem);
+    }
+
     const updated = await this.eventRepo.update(id, chapterId, {
       ...patch,
+      ...meetingOwn,
       // Spread first, then overwrite: `normalizeCheckInZone` returns `undefined`
       // for an absent key, which the repository's partial update ignores, so an
       // update that never mentions the zone leaves it untouched.
@@ -365,6 +729,51 @@ export class EventService {
     );
 
     return updated;
+  }
+
+  /**
+   * Adds one item to the end of a meeting's agenda (#5534), as the API's own
+   * write: a suggestion added from the Suggested list, the only way an item
+   * gets its `tabled_from`. An item whose id the agenda already holds is not
+   * added twice (an Add sent again); a full agenda is a 409. The caller has
+   * checked the officer may edit the event. Returns the agenda as saved.
+   */
+  async appendAgendaItem(
+    id: string,
+    chapterId: string,
+    item: EventAgendaItem,
+    now: Date = new Date(),
+  ): Promise<EventAgendaItem[]> {
+    const event = await this.findById(id, chapterId);
+    const agenda = event.agenda ?? [];
+    if (agenda.some((entry) => entry.id === item.id)) return agenda;
+    assertAgendaOpen(event.start_time, now);
+    if (agenda.length >= EVENT_AGENDA_MAX) {
+      throw new ConflictException(
+        `An agenda holds at most ${EVENT_AGENDA_MAX} items.`,
+      );
+    }
+    const next = [...agenda, item];
+    await this.eventRepo.update(id, chapterId, { agenda: next });
+    return next;
+  }
+
+  /**
+   * Takes one item off an event's agenda by its id (Undo of Add to next
+   * meeting's agenda, #5790). Returns the agenda as saved; an item already
+   * gone changes nothing.
+   */
+  async removeAgendaItem(
+    id: string,
+    chapterId: string,
+    itemId: string,
+  ): Promise<EventAgendaItem[]> {
+    const event = await this.findById(id, chapterId);
+    const agenda = event.agenda ?? [];
+    if (!agenda.some((entry) => entry.id === itemId)) return agenda;
+    const next = agenda.filter((entry) => entry.id !== itemId);
+    await this.eventRepo.update(id, chapterId, { agenda: next });
+    return next;
   }
 
   async delete(
@@ -390,4 +799,57 @@ export class EventService {
 
     await this.eventRepo.delete(id, chapterId);
   }
+}
+
+/**
+ * A create by a member who can't make anyone required or attach points
+ * (#3709), as it is stored: worth 0 points, required for nobody, and open to
+ * exactly the members the request invited.
+ *
+ * Lowered rather than refused. Every client sends a point value (the forms
+ * and `/event` default to 10), and app builds already installed copy a
+ * type's "required for everyone" into the form, so a refusal would leave a
+ * member on one of them retrying a save that can never succeed. The current
+ * forms hide points and stop a required choice before it is sent, so only an
+ * older build or a hand-made request reaches this.
+ *
+ * - `is_mandatory` false: nobody is required by default.
+ * - A required role becomes an optional one: still invited, never marked
+ *   absent.
+ * - `others_invited` is written out as the request meant it
+ *   (`eventOthersInvited`), because a null with no required roles left would
+ *   read as "everyone", and an event meant for some roles would open to the
+ *   whole chapter.
+ */
+function withoutRequirements(input: CreateEventInput): CreateEventInput {
+  const required = input.required_role_ids ?? [];
+  const optional = [
+    ...new Set([...(input.optional_role_ids ?? []), ...required]),
+  ];
+  return {
+    ...input,
+    point_value: 0,
+    is_mandatory: false,
+    required_role_ids: null,
+    optional_role_ids: optional.length > 0 ? optional : null,
+    others_invited: eventOthersInvited({
+      others_invited: input.others_invited,
+      required_role_ids: input.required_role_ids,
+    }),
+  };
+}
+
+/**
+ * Once a meeting has started its agenda takes check-offs only (Paul
+ * 2026-11-20, "lock agenda edits once the meeting has started";
+ * `spec/behavior/events.md` § Agenda and attachments): adding, removing,
+ * moving or rewording an item is a 409. `start` is the meeting's start as
+ * this write leaves it, so a meeting moved later is open again.
+ */
+function assertAgendaOpen(start: string, now: Date = new Date()): void {
+  if (!agendaCheckOffOpen(start, now)) return;
+  throw new ConflictException({
+    code: 'event.agenda_locked',
+    message: AGENDA_LOCKED_COPY,
+  });
 }

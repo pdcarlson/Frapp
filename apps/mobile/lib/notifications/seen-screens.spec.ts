@@ -9,6 +9,10 @@ describe("notificationScreensForPathname", () => {
     expect(notificationScreensForPathname("/tasks")).toEqual(["tasks", "points"]);
     expect(notificationScreensForPathname("/dues")).toEqual(["billing"]);
     expect(notificationScreensForPathname("/directory")).toEqual(["members"]);
+    expect(notificationScreensForPathname("/activity")).toEqual([
+      "tasks",
+      "activity",
+    ]);
   });
 
   it("leaves chat to the channel read, and unknown routes alone", () => {
@@ -19,7 +23,16 @@ describe("notificationScreensForPathname", () => {
 
   it("covers every non-chat screen a notification tap can route to", () => {
     const params = { eventId: "e-1", taskId: "t-1" };
-    for (const screen of ["events", "tasks", "points", "billing", "service", "members"]) {
+    for (const screen of [
+      "events",
+      "tasks",
+      "points",
+      "billing",
+      "service",
+      "members",
+      // The weekly recap push (#4985).
+      "activity",
+    ]) {
       const { pathname } = resolveNotificationTarget({
         target: { screen, ...params },
       });

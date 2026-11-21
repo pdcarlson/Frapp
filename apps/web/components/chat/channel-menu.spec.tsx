@@ -109,12 +109,15 @@ vi.mock("./bookmarks-popover", () => ({
 vi.mock("./notification-level-popover", () => ({
   NotificationLevelPanel: ({
     onChange,
+    fromChapterLevel,
   }: {
     onChange: (level: "all" | "mentions" | "off") => void;
+    fromChapterLevel?: boolean;
   }) => (
     <button
       type="button"
       data-testid="notifications-panel"
+      data-from-chapter-level={String(Boolean(fromChapterLevel))}
       onClick={() => onChange("off")}
     >
       mute
@@ -317,6 +320,17 @@ describe("ChannelMenu (#2142)", () => {
     ).toHaveFocus();
   });
 
+  it("tells the panel when Settings decided the level (#4124)", async () => {
+    const user = userEvent.setup();
+    renderMenu({ notificationFromChapterLevel: true });
+    await openMenu(user);
+    await user.click(screen.getByRole("button", { name: /Notifications/ }));
+    expect(screen.getByTestId("notifications-panel")).toHaveAttribute(
+      "data-from-chapter-level",
+      "true",
+    );
+  });
+
   it("closes when a notification level is picked", async () => {
     // The deleted popover dismissed itself on change. Holding it open to watch
     // the write is what froze the old menu when TanStack paused the mutation
@@ -420,6 +434,32 @@ describe("ChannelMenu hide conversation", () => {
   });
 });
 
+describe("ChannelMenu catch me up (#3946)", () => {
+  it("offers no row without `catchUp`", async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await openMenu(user);
+
+    expect(
+      screen.queryByRole("button", { name: "Catch me up" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("starts the summary and closes the menu", async () => {
+    const user = userEvent.setup();
+    const onStart = vi.fn();
+    renderMenu({ catchUp: { onStart } });
+    await openMenu(user);
+
+    await user.click(screen.getByRole("button", { name: "Catch me up" }));
+
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "Catch me up" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("ChannelMenu pin to top (#2877)", () => {
   it("offers no row without `pinToTop`", async () => {
     const user = userEvent.setup();
@@ -450,9 +490,10 @@ describe("ChannelMenu pin to top (#2877)", () => {
     renderMenu({ pinToTop: { pinned: true, onToggle: vi.fn() } });
     await openMenu(user);
 
-    expect(
-      screen.getByRole("button", { name: "Unpin from top" }),
-    ).toBeInTheDocument();
+    const unpin = screen.getByRole("button", { name: "Unpin from top" });
+    expect(unpin).toBeInTheDocument();
+    // The pin reads as on: solid, not the outline (#4292).
+    expect(unpin.querySelector("svg path")).toHaveAttribute("fill-opacity", "1");
   });
 
   describe("search pickers (#3958)", () => {

@@ -31,7 +31,8 @@
  *
  * So the claim is treated as an optimization, not a requirement: when it is
  * absent the app proceeds and lets the API resolve context. The picker stays a
- * deliberate destination (reached from the More hub) rather than a forced one.
+ * deliberate destination (reached from the chapter menu on Chat home's title)
+ * rather than a forced one.
  *
  * ## First-run (s03) and join (s02)
  *
@@ -69,12 +70,7 @@
 import { needsFirstRun } from "./onboarding/membership";
 
 export type AuthGateDestination =
-  | "hold"
-  | "sign-in"
-  | "join"
-  | "terms"
-  | "welcome"
-  | "tabs";
+  "hold" | "sign-in" | "join" | "terms" | "welcome" | "tabs";
 
 export type AuthGateMembership = {
   chapter_id: string;
@@ -215,13 +211,13 @@ export function resolveAuthGate({
     return "sign-in";
   }
 
-  // A known chapter wins over an in-flight *claim* read, and the order matters.
-  // The claim is re-read on every token change — the hourly auto-refresh, every
-  // foreground, and every chapter switch — and `hold` renders nothing, so
-  // holding whenever a read is in flight would unmount the entire tab navigator
-  // roughly once an hour, dumping the member back on the Chat tab and losing
-  // composer text and scroll position. Resolving only ever *confirms* or
-  // *changes* a chapter we already have; it is not a reason to blank the app.
+  // A known chapter wins over an unsettled chapter, and the order matters.
+  // `hold` renders nothing, so holding whenever the chapter was being settled
+  // would unmount the entire tab navigator, dumping the member back on the
+  // Chat tab and losing composer text and scroll position. Since #5768 the
+  // claim is decoded from the token in hand, so `isChapterResolving` is true
+  // only for a signed-in session with no token yet; the order still keeps a
+  // known chapter from ever blanking the app.
   if (!chapterId && isChapterResolving) {
     return "hold";
   }
@@ -255,7 +251,10 @@ export function resolveAuthGate({
 
   // Only a fresh list sends anyone to first-run: after a failed refetch the
   // cached row may predate finishing it, so that fails open.
-  if (membershipsStatus === "success" && needsFirstRun(memberships, chapterId)) {
+  if (
+    membershipsStatus === "success" &&
+    needsFirstRun(memberships, chapterId)
+  ) {
     return "welcome";
   }
 

@@ -1,4 +1,9 @@
-import type { RecurrenceRule } from '@repo/validation';
+import { formatPoints } from '@repo/formatting';
+import {
+  describeRepeatPattern,
+  ordinal,
+  taskNeedsSignOff,
+} from '@repo/validation';
 
 /**
  * How a push names a time: what a member glancing at a lock screen needs, in
@@ -15,7 +20,7 @@ import type { RecurrenceRule } from '@repo/validation';
 export const DEFAULT_PUSH_TIME_ZONE = 'America/New_York';
 
 /** Separates the facts in a push body: "Required · Mon, Nov 9, 8–9 PM". */
-export const PUSH_SEPARATOR = ' · ';
+const PUSH_SEPARATOR = ' · ';
 
 interface ZonedParts {
   weekday: string;
@@ -94,21 +99,6 @@ function zoneLabel(at: Date, timeZone: string): string {
   return part?.value ?? timeZone;
 }
 
-function ordinal(n: number): string {
-  const tens = n % 100;
-  if (tens >= 11 && tens <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
-
 export interface EventWhenOptions {
   /** The zone to render in: the recipient's, or a fallback. */
   timeZone: string;
@@ -117,8 +107,11 @@ export interface EventWhenOptions {
    * fallback rather than the recipient's own, so a guess is never silent.
    */
   labelZone?: boolean;
-  /** A series renders as its pattern ("Every Mon, 8–9 PM, from Nov 9"). */
-  recurrence?: RecurrenceRule | null;
+  /**
+   * A series renders as its pattern ("Every Mon, 8–9 PM, from Nov 9"): a
+   * legacy token or a structured rule (`packages/validation/src/recurrence.ts`).
+   */
+  recurrence?: string | null;
   /** Injected for tests; decides only whether the year is shown. */
   now?: Date;
 }
@@ -158,6 +151,14 @@ export function formatEventWhen(
         return `Every other ${start.weekday}, ${hours}${zone}, from ${from}`;
       case 'MONTHLY':
         return `Monthly on the ${ordinal(start.day)}, ${hours}${zone}, from ${from}`;
+      default: {
+        // Said in the recipient's zone like the rest of the line, so a
+        // Monday 11 PM series in New York reads as Tuesday in Berlin.
+        const pattern = describeRepeatPattern(options.recurrence, startAt, {
+          timeZone,
+        });
+        if (pattern) return `${pattern}, ${hours}${zone}, from ${from}`;
+      }
     }
   }
 
@@ -208,4 +209,96 @@ export function joinFacts(
   ...facts: (string | null | undefined | false)[]
 ): string {
   return facts.filter((fact): fact is string => !!fact).join(PUSH_SEPARATOR);
+}
+
+/**
+ * The iOS stack every "submitted a task" push joins (`aps.thread-id`), so a
+ * night of submissions is one pile on the officer's lock screen.
+ */
+export const TASK_REVIEW_PUSH_THREAD = 'tasks:review';
+
+/** The longest reply a submitted push quotes before it is cut. */
+const SUBMITTED_REPLY_MAX = 60;
+
+/**
+ * A task a member's group follows was marked done (#5473): what they hear
+ * when they can't confirm it. It tells them, and asks nothing: "Sam
+ * finished: Book the venue" / "From Exec board · Waiting on an officer".
+ */
+export function taskFollowedFinishedCopy(
+  name: string,
+  task: {
+    title: string;
+    point_reward?: number | null;
+    proof_kind?: string | null;
+  },
+  followerName: string | null,
+): { title: string; body: string } {
+  return {
+    title: `${name} finished: ${task.title}`,
+    body: joinFacts(
+      followerName && `From ${followerName}`,
+      taskNeedsSignOff(task) ? 'Waiting on an officer' : 'Done',
+    ),
+  };
+}
+
+/**
+ * What the officer who assigned a task reads when it is marked done (#4635
+ * proof): the person and the action lead, because their action is the news,
+ * then what came with it. "Shawn Klein submitted: Clean his room" / "1 photo ·
+ * 10 points".
+ *
+ * Facts only, never an instruction (Paul, 2026-11-20, #5732: "Please stop
+ * narrating like directions"): the verb already says whether it waits on
+ * them, "submitted" for one that does and "finished" for one that was Done
+ * as marked, so the body names no next step. A send-back's second try
+ * "resubmitted" and quotes the reply, the thing that changed. A finished one
+ * ends in "Done", its state, so the body is never blank (#3846).
+ */
+export function taskSubmittedCopy(
+  name: string,
+  task: {
+    title: string;
+    point_reward?: number | null;
+    proof_kind?: string | null;
+    proof_link?: string | null;
+    completion_note?: string | null;
+  },
+  submitted: { photoCount: number; resubmitted: boolean },
+): { title: string; body: string } {
+  const needsSignOff = taskNeedsSignOff(task);
+  const verb = !needsSignOff
+    ? 'finished'
+    : submitted.resubmitted
+      ? 'resubmitted'
+      : 'submitted';
+  const note = task.completion_note?.trim() || null;
+  // Cut by character, not UTF-16 unit, so the cut never splits an emoji
+  // (as `chat-push-preview.ts` cuts).
+  const chars = note ? Array.from(note) : [];
+  const quoted = note
+    ? `"${
+        chars.length > SUBMITTED_REPLY_MAX
+          ? `${chars
+              .slice(0, SUBMITTED_REPLY_MAX - 1)
+              .join('')
+              .trimEnd()}…`
+          : note
+      }"`
+    : null;
+  const points = task.point_reward ?? 0;
+  return {
+    title: `${name} ${verb}: ${task.title}`,
+    body: joinFacts(
+      quoted && (submitted.resubmitted ? `Replied ${quoted}` : quoted),
+      submitted.photoCount > 0 &&
+        `${submitted.photoCount} ${submitted.photoCount === 1 ? 'photo' : 'photos'}`,
+      task.proof_link && 'Link attached',
+      points > 0 && formatPoints(points),
+      // A completion with nothing else to say still says its state: the
+      // push never goes out blank (#3846).
+      !needsSignOff && 'Done',
+    ),
+  };
 }

@@ -10,10 +10,10 @@
 // `option || infoPlist[key] || <the plugin's default string>`. So a guard that
 // reads app.json can't see three things that each ship a real defect:
 //
-//   - An omitted option. Delete expo-camera's `"microphonePermission": false`
-//     and the binary ships "Allow $(PRODUCT_NAME) to access your microphone", a
-//     Guideline 5.1.1(i) purpose string for a feature that doesn't exist. The
-//     string is never written into app.json.
+//   - An omitted option. Delete expo-camera's `microphonePermission` and the
+//     binary ships the plugin's default, "Allow $(PRODUCT_NAME) to access your
+//     microphone", in place of the text that says what the recorder is for
+//     (Guideline 5.1.1(i)). The default is never written into app.json.
 //   - A vendor option spelled some other way (`cameraPermissionText`, say),
 //     which no `*Permission` scan matches.
 //   - A native dependency that uses a required-reason API. The categories
@@ -105,6 +105,12 @@ import { dirname, join, relative } from "node:path";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 const MOBILE_DIR = "apps/mobile";
+/** Where the meeting recorder asks for the microphone and starts recording. */
+const RECORDER_DEVICE = "apps/mobile/lib/minutes/recorder/device.ts";
+/** Where Ask's dictation asks for the microphone and speech recognition. */
+const DICTATION_SPEECH = "apps/mobile/lib/dictation/speech.ts";
+/** Where s18's Scan code asks for the camera. */
+const CHECK_IN_SCANNER = "apps/mobile/components/check-in/check-in-scanner.tsx";
 
 /**
  * Every iOS purpose string the binary ships, keyed by its Info.plist key.
@@ -116,52 +122,84 @@ const MOBILE_DIR = "apps/mobile";
  * anyway. Its upload scan flags some APIs a linked library references and
  * rejects the binary without their key (ITMS-90683), whether or not anything
  * calls them. Such an entry has `requestedBy: null` and a `linkedBy`: the
- * linked pod and native symbol that make Apple ask, and the JS call that
+ * linked pod and native symbol that make Apple ask, and the JS calls that
  * would make the app ask too (which the app must not make, because the text
  * says it never does). Declining one with `false` is what got iOS 0.9.1 (8)
  * rejected on 2026-11-05. Not every linked API is flagged: the same upload
  * named only the motion key, though expo-camera links microphone access and
- * expo-secure-store links Face ID, both declined below. So an entry is added
- * when Apple names the key, not for every symbol a library links.
+ * expo-secure-store links Face ID, both declined then (Face ID still is; the
+ * microphone key is now requested by the meeting recorder). So an entry is
+ * added when Apple names the key, not for every symbol a library links.
  *
- * Two plugin options that write no string here are load-bearing, and the
- * checks below catch either one changing:
- *   - expo-camera's and expo-image-picker's `microphonePermission: false`.
- *     Omitting either ships the plugin's default microphone string (check 1),
- *     and omitting image-picker's also stops it from declaring RECORD_AUDIO
- *     removed (check 3).
- *   - expo-image-picker has no `cameraPermission` key at all. `false` compiles
- *     to `withBlockedPermissions(['android.permission.CAMERA'])`, which broke QR
- *     check-in on every Android build (#2296); check 2 fails on it. Omitting it
- *     is safe because expo-camera writes NSCameraUsageDescription explicitly and
- *     `applyPermissions` keeps a value already written.
+ * Plugin options that are load-bearing, which the checks below catch changing:
+ *   - Four plugins write NSMicrophoneUsageDescription: expo-audio (the meeting
+ *     recorder), expo-speech-recognition (Ask's dictation), expo-camera and
+ *     expo-image-picker. All four carry the same text in app.json. Omitting
+ *     one ships that plugin's default string, and `false` on expo-camera's
+ *     deletes the key the recorder needs, either of which check 1 fails;
+ *     `false` on image-picker's compiles to a blocked RECORD_AUDIO, which
+ *     would strip the recorder's permission on Android (check 2).
+ *   - Two plugins write NSCameraUsageDescription: expo-camera (the in-app
+ *     scanner) and expo-image-picker, both with the scanner's text. Omitting
+ *     image-picker's keeps expo-camera's, since `applyPermissions` keeps a value
+ *     already written, but only while expo-camera runs first; the copy makes
+ *     the order not matter. `false` on image-picker's deletes the key and
+ *     compiles to `withBlockedPermissions(['android.permission.CAMERA'])`, which
+ *     broke QR check-in on every Android build once (#2296); check 2 fails on
+ *     the removal.
  */
 export const IOS_PURPOSE_STRINGS = new Map([
   [
+    // The in-app scanner on s18 (Scan code, 0.13.0). The phone's own camera
+    // app reads the same code as a link (#4762); the scanner is for a member
+    // already in the app. Photos still come from the library, never the camera.
     "NSCameraUsageDescription",
     {
-      text: "Frapp uses the camera to scan the check-in code at chapter events.",
-      requestedBy: { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(" },
+      text: "Frapp uses the camera to scan an event's check-in code when you tap Scan code.",
+      requestedBy: { file: CHECK_IN_SCANNER, call: "useCameraPermissions(" },
     },
   ],
   [
     "NSLocationWhenInUseUsageDescription",
     {
-      text: "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
+      text: "Frapp confirms you are inside a chapter study zone while you track study hours and that you are at the event when you scan a check-in code. When you show a check-in code, Frapp uses your location so members near you can check in.",
       requestedBy: { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" },
     },
   ],
   [
     // Chat photos, the s15 profile photo, the chapter logo, s21's document
-    // photo (#3399) and s20's service-hour proof all pick through this call,
-    // and the text names all five (widened 2026-11-05 for the 0.9.1 build).
+    // photo (#3399), s20's service-hour proof and a task's photos (#4565) all
+    // pick through this call, and the text names all six (widened 2026-11-05
+    // for the 0.9.1 build; tasks added 2026-11-16, #4611).
     "NSPhotoLibraryUsageDescription",
     {
-      text: "Frapp uses your photo library so you can set your profile photo, add your chapter's logo, send photos in chapter chat, add photos to your chapter's documents, and attach photo proof to service hours.",
+      text: "Frapp uses your photo library so you can set your profile photo, add your chapter's logo, send photos in chapter chat, add photos to your chapter's documents and to tasks, and attach photo proof to service hours.",
       requestedBy: {
         file: "apps/mobile/lib/chat/attachment-upload.ts",
         call: "requestMediaLibraryPermissionsAsync(",
       },
+    },
+  ],
+  [
+    // Two microphone surfaces: the meeting recorder (spec/behavior/meetings.md
+    // § Recording in the app) and Ask's dictation (#5276). Paul approved this
+    // text on 2026-11-17; chat's dictation (#5772, 2026-11-21) added "a message
+    // or a question to", pending his approval in that PR. The recorder's request is the one pinned; dictation's
+    // `requestPermissionsAsync(` asks for the microphone and speech together.
+    "NSMicrophoneUsageDescription",
+    {
+      text: "Frapp uses the microphone when you tap the mic to dictate a message or a question to Ask Frapp, and when an officer records a chapter meeting to write its minutes. It listens only after you tap.",
+      requestedBy: { file: RECORDER_DEVICE, call: "requestRecordingPermissionsAsync(" },
+    },
+  ],
+  [
+    // Ask's dictation (#5276): the phone's own speech recogniser, on-device
+    // where it can be. Paul approved this text on 2026-11-17; "in a chat or"
+    // came with chat's dictation (#5772, 2026-11-21), pending his approval.
+    "NSSpeechRecognitionUsageDescription",
+    {
+      text: "Frapp turns what you say into text when you tap the mic in a chat or in Ask Frapp. On most phones this happens on the phone itself.",
+      requestedBy: { file: DICTATION_SPEECH, call: "requestPermissionsAsync(" },
     },
   ],
   [
@@ -182,16 +220,32 @@ export const IOS_PURPOSE_STRINGS = new Map([
 ]);
 
 /**
- * The iOS background modes the binary declares. None: location is foreground
- * only (expo-location's `isIosBackgroundLocationEnabled: false`), and push
- * needs no mode while expo-notifications' `enableBackgroundRemoteNotifications`
- * is off. A mode for work the app doesn't do is a Guideline 2.5.4 finding.
+ * The iOS background modes the binary declares. `audio` is the meeting
+ * recorder's (expo-audio's `enableBackgroundRecording`): a secretary records a
+ * two-hour meeting with the phone locked on the table. Nothing else: location
+ * is foreground only (expo-location's `isIosBackgroundLocationEnabled: false`),
+ * push needs no mode while expo-notifications'
+ * `enableBackgroundRemoteNotifications` is off, and expo-audio's
+ * `enableBackgroundPlayback` is off because the app plays no audio. A mode for
+ * work the app doesn't do is a Guideline 2.5.4 finding.
  */
-export const IOS_BACKGROUND_MODES = [];
+export const IOS_BACKGROUND_MODES = ["audio"];
 
-/** Android permissions a screen requests at runtime, which a config plugin adds. */
+/**
+ * Android permissions a config plugin adds for a feature, each with the call
+ * that puts it to use: a runtime request, or for the recorder's
+ * foreground-service set, the call that starts the service. expo-audio's
+ * `enableBackgroundRecording` adds the last four; POST_NOTIFICATIONS is there
+ * because Android refuses a foreground service whose notification it can't
+ * show, so the recorder asks for it before it records.
+ */
 export const ANDROID_RUNTIME_PERMISSIONS = new Map([
-  ["android.permission.CAMERA", { file: "apps/mobile/app/(app)/check-in.tsx", call: "useCameraPermissions(" }],
+  ["android.permission.RECORD_AUDIO", { file: RECORDER_DEVICE, call: "requestRecordingPermissionsAsync(" }],
+  ["android.permission.MODIFY_AUDIO_SETTINGS", { file: RECORDER_DEVICE, call: "setAudioModeAsync(" }],
+  ["android.permission.POST_NOTIFICATIONS", { file: RECORDER_DEVICE, call: "requestNotificationPermissionsAsync(" }],
+  ["android.permission.FOREGROUND_SERVICE", { file: RECORDER_DEVICE, call: "allowsBackgroundRecording" }],
+  ["android.permission.FOREGROUND_SERVICE_MICROPHONE", { file: RECORDER_DEVICE, call: "allowsBackgroundRecording" }],
+  ["android.permission.CAMERA", { file: CHECK_IN_SCANNER, call: "useCameraPermissions(" }],
   ["android.permission.ACCESS_FINE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
   ["android.permission.ACCESS_COARSE_LOCATION", { file: "apps/mobile/lib/location.ts", call: "requestForegroundPermissionsAsync(" }],
 ]);
@@ -217,12 +271,7 @@ export const ANDROID_TEMPLATE_PERMISSIONS = new Map([
  * Permissions the app manifest strips with `tools:node="remove"`, each with the
  * reason nothing in the app needs it.
  */
-export const ANDROID_REMOVED_PERMISSIONS = new Map([
-  [
-    "android.permission.RECORD_AUDIO",
-    "expo-image-picker's `microphonePermission: false`. Nothing records audio, and expo-camera's `recordAudioAndroid: false` keeps it from adding the permission. A slice that adds a microphone surface removes this entry and both declines",
-  ],
-]);
+export const ANDROID_REMOVED_PERMISSIONS = new Map();
 
 /**
  * Required-reason API symbols per privacy-manifest category, from Apple's
@@ -264,6 +313,7 @@ export const REQUIRED_REASON_APIS = {
  */
 export const MANIFESTLESS_REQUIRED_REASON_USERS = new Map([
   ["@stripe/stripe-react-native", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
+  ["expo-document-picker", ["NSPrivacyAccessedAPICategoryFileTimestamp"]],
   ["expo-eas-client", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
   ["expo-sharing", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
   ["expo-updates", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
@@ -449,10 +499,13 @@ export function linkedApiProblems({ pods, sources }, roster = IOS_PURPOSE_STRING
       );
     }
     for (const { file, text } of sources) {
-      if (withoutComments(text).includes(requestCall)) {
-        problems.push(
-          `${key}: ${file} calls ${requestCall.replace(/\($/, "")}, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy`,
-        );
+      const code = withoutComments(text);
+      for (const call of [requestCall].flat()) {
+        if (code.includes(call)) {
+          problems.push(
+            `${key}: ${file} calls ${call.replace(/\($/, "")}, but the purpose string says Frapp never asks. Write a real purpose for the feature and give the entry a requestedBy instead of linkedBy`,
+          );
+        }
       }
     }
   }

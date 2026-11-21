@@ -294,6 +294,18 @@ export class PointsConfigDto {
   @Min(1)
   @Max(POINTS_ADJUSTMENT_MAX)
   anomaly_threshold?: number;
+
+  @ApiPropertyOptional({
+    description: `Most one member may stake in total on one prediction (default 25). Must be between 1 and ${POINTS_ADJUSTMENT_MAX}.`,
+    minimum: 1,
+    maximum: POINTS_ADJUSTMENT_MAX,
+    example: 25,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(POINTS_ADJUSTMENT_MAX)
+  prediction_max_stake?: number;
 }
 
 export class PatchChapterConfigDto {
@@ -392,10 +404,30 @@ export class PatchChapterConfigDto {
     format: 'uuid',
     nullable: true,
     description:
-      'Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Member role. Must belong to this chapter (400 otherwise).',
+      'Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role, the floor every member holds (#5802). Must belong to this chapter (400 otherwise).',
   })
   @ValidateIf((_object, value) => value !== null)
   @IsOptional()
   @IsUUID()
   default_invite_role_id?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      "The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived or the audit log (400 otherwise).",
+  })
+  @ValidateIf((_object, value) => value !== null)
+  @IsOptional()
+  @IsUUID()
+  birthday_channel_id?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether settled members (finished the welcome screen, or joined over a day ago) may change their own name (#5801). False, the default, locks it: PATCH /v1/users/me refuses a changed display_name unless the member holds roles:manage here. Officers fix names through PATCH /v1/members/{id}/profile; a member of two or more chapters is never locked, since that route refuses them.',
+  })
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsStrictBoolean()
+  members_can_change_name?: boolean;
 }

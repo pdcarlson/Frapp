@@ -9,6 +9,20 @@ import {
 import { deriveSignetPalette } from '@repo/chapter-theme';
 import * as chapterTheme from '@repo/chapter-theme';
 import { ChapterService } from './chapter.service';
+
+// Drives `CHAPTER_BILLING_BETA_OFF` per test, so the billing-on branch of
+// `create` runs too and turning billing back on stays a one-line change.
+let mockChapterBillingOff = true;
+jest.mock('@repo/validation', () => {
+  const actual: Record<string, unknown> =
+    jest.requireActual('@repo/validation');
+  return {
+    ...actual,
+    get CHAPTER_BILLING_BETA_OFF() {
+      return mockChapterBillingOff;
+    },
+  };
+});
 import { toChapterMemberView } from './chapter-member-view';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import {
@@ -107,7 +121,10 @@ describe('ChapterService', () => {
     mockChapterRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
+      findStartedAtByUserSince: jest.fn().mockResolvedValue([]),
       isAnalyticsOptedOut: jest.fn(),
+      findWithBirthdayChannel: jest.fn(),
+      findForRecapPush: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
@@ -141,14 +158,20 @@ describe('ChapterService', () => {
             position: tier.position!,
             name: tier.name!,
             permissions: tier.permissions ?? [],
+            mentionable: true,
             created_at: '2026-11-10T00:00:00.000Z',
             updated_at: '2026-11-10T00:00:00.000Z',
           })),
         ),
       ),
+      create: jest.fn(),
+      update: jest.fn(),
+      reorder: jest.fn(),
+      delete: jest.fn(),
     };
 
     mockMemberRepo = {
+      completeOnboarding: jest.fn(),
       findById: jest.fn(),
       findByUser: jest.fn(),
       findByUserAndChapter: jest.fn(),
@@ -159,6 +182,9 @@ describe('ChapterService', () => {
       findChapterMemberIdentities: jest.fn(),
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
+      setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
+      countByChapter: jest.fn(),
     };
 
     mockUserRepo = {
@@ -166,6 +192,7 @@ describe('ChapterService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
+      findSharedBirthdaysByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -232,6 +259,7 @@ describe('ChapterService', () => {
       has_completed_onboarding: true,
       pledge_class_id: null,
       order_number: null,
+      joined_via_invite_id: null,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
     };
@@ -463,6 +491,7 @@ describe('ChapterService', () => {
     expect(mockChapterRepo.create).toHaveBeenCalledWith({
       name: 'Alpha',
       university: 'State U',
+      subscription_status: 'active',
     });
     expect(mockRoleRepo.createMany).toHaveBeenCalledTimes(1);
     const expectedRolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
@@ -480,8 +509,24 @@ describe('ChapterService', () => {
       is_system: roleDef.is_system,
       display_order: roleDef.display_order,
       color: roleDef.color ?? null,
+      // Every seeded role can be pinged but Everyone and Actives, which only
+      // officers may use until the chapter opens them.
+      mentionable:
+        roleDef.system_key !== SystemRoleKeys.EVERYONE &&
+        roleDef.system_key !== SystemRoleKeys.MEMBER,
     }));
     expect(mockRoleRepo.createMany).toHaveBeenCalledWith(expectedRolesData);
+    const byKey = (key: string) =>
+      expectedRolesData.find((r) => r.system_key === key);
+    // The base role is Actives (Paul, 2026-11-21); Everyone is the floor,
+    // outside the tiers, with the directory and nothing private.
+    expect(byKey(SystemRoleKeys.MEMBER)?.name).toBe('Actives');
+    expect(byKey(SystemRoleKeys.MEMBER)?.tier_id).toBe('tier-3');
+    expect(byKey(SystemRoleKeys.EVERYONE)).toMatchObject({
+      name: 'Everyone',
+      tier_id: null,
+      permissions: ['members:view'],
+    });
     expect(result).toEqual(chapter);
   });
 
@@ -533,6 +578,52 @@ describe('ChapterService', () => {
       expect(vicePresident.permissions).toEqual([
         ...STARTING_ROLE_TIERS[0].permissions,
       ]);
+    });
+
+    // #4071 acceptance check (Paul, 2026-11-10): a chapter created after the
+    // officer defaults landed has a Vice President who can approve service
+    // hours and manage roles, from the tier. Chapters that existed before are
+    // untouched: STARTING_ROLE_TIERS is seed data that no migration reads.
+    it("gives a new chapter's Vice President the officer defaults", async () => {
+      const { role } = await createChapter();
+      const vicePresident = role(SystemRoleKeys.VICE_PRESIDENT);
+
+      expect(vicePresident.permissions).toEqual(
+        expect.arrayContaining([
+          SystemPermissions.SERVICE_APPROVE,
+          SystemPermissions.ROLES_MANAGE,
+          SystemPermissions.CHAPTER_CONFIG_MANAGE,
+        ]),
+      );
+      expect(role(SystemRoleKeys.MEMBER).permissions).not.toContain(
+        SystemPermissions.SERVICE_APPROVE,
+      );
+    });
+
+    // #3709 (Paul's tester): a Vice President invited straight into the role
+    // could not create an event. Every member can now, officers included.
+    it('lets every seeded role but New Member and Alumni create events', async () => {
+      const { role } = await createChapter();
+
+      for (const key of [
+        SystemRoleKeys.VICE_PRESIDENT,
+        SystemRoleKeys.SECRETARY,
+        SystemRoleKeys.TREASURER,
+        SystemRoleKeys.MEMBER,
+      ]) {
+        expect(role(key).permissions).toEqual(
+          expect.arrayContaining([
+            SystemPermissions.EVENTS_CREATE,
+            SystemPermissions.BACKWORK_UPLOAD,
+          ]),
+        );
+      }
+      expect(role(SystemRoleKeys.NEW_MEMBER).permissions).not.toContain(
+        SystemPermissions.EVENTS_CREATE,
+      );
+      expect(role(SystemRoleKeys.MEMBER).permissions).not.toContain(
+        SystemPermissions.EVENTS_UPDATE,
+      );
     });
 
     it('keeps what a seeded role held before tiers as overrides on that role', async () => {
@@ -616,7 +707,55 @@ describe('ChapterService', () => {
       org_archetype: 'nphc',
       enabled_modules: { chat: true },
       directory_id: 'dir-1',
+      subscription_status: 'active',
     });
+  });
+
+  // Chapter billing is off for the beta (CHAPTER_BILLING_BETA_OFF, Paul
+  // 2026-11-15): a new chapter starts active, whatever the config carries,
+  // instead of the schema's `incomplete` that refuses every paid-ops write.
+  it('starts a new chapter active while chapter billing is off for the beta', async () => {
+    const chapter = chapterFixture();
+    mockChapterRepo.create.mockResolvedValue(chapter);
+    mockRoleRepo.createMany.mockResolvedValueOnce(
+      mockSystemRolesForChapter(chapter.id),
+    );
+
+    await service.create('user-1', {
+      name: 'Alpha',
+      university: 'State U',
+      config: { subscription_status: 'incomplete' },
+    });
+
+    expect(mockChapterRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ subscription_status: 'active' }),
+    );
+  });
+
+  it('leaves a new chapter to the schema default once chapter billing is back', async () => {
+    mockChapterBillingOff = false;
+    try {
+      const chapter = chapterFixture();
+      mockChapterRepo.create.mockResolvedValue(chapter);
+      mockRoleRepo.createMany.mockResolvedValueOnce(
+        mockSystemRolesForChapter(chapter.id),
+      );
+
+      await service.create('user-1', {
+        name: 'Alpha',
+        university: 'State U',
+        config: {},
+      });
+
+      // No status at all: the column's `incomplete` default applies, and the
+      // web wizard then lands the founder on checkout (#2297).
+      expect(mockChapterRepo.create).toHaveBeenCalledWith({
+        name: 'Alpha',
+        university: 'State U',
+      });
+    } finally {
+      mockChapterBillingOff = true;
+    }
   });
 
   it('should assign creator as President on chapter creation', async () => {
@@ -643,10 +782,11 @@ describe('ChapterService', () => {
       config: {},
     });
 
+    // The founder is an active too (#5802); the database appends Everyone.
     expect(mockMemberRepo.create).toHaveBeenCalledWith({
       user_id: 'user-1',
       chapter_id: chapter.id,
-      role_ids: [presidentRole.id],
+      role_ids: [presidentRole.id, 'role-actives'],
       has_completed_onboarding: true,
     });
   });
@@ -689,8 +829,8 @@ describe('ChapterService', () => {
 
     expect(mockChannelRepo.createMany).toHaveBeenCalledTimes(1);
     // Spelled out rather than read off `DEFAULT_CHANNELS`, so the test pins
-    // who can see and post in each seeded channel (#3722) and which one the
-    // seeder flags as the audit log (#3909), instead of echoing the constant.
+    // who can see and post in each seeded channel (#3722), instead of echoing
+    // the constant. No `#chapter-audit` since the Logs page (2026-11-21).
     const alumni = `role:${mockRoleIdForName('Alumni').toLowerCase()}`;
     const base = { chapter_id: chapter.id };
     expect(mockChannelRepo.createMany).toHaveBeenCalledWith([
@@ -701,7 +841,6 @@ describe('ChapterService', () => {
         who_can_see: null,
         who_can_post: null,
         is_read_only: false,
-        is_audit_log: false,
       }),
       expect.objectContaining({
         ...base,
@@ -711,16 +850,6 @@ describe('ChapterService', () => {
         // The top two starting tiers: officers announce, everyone reads.
         who_can_post: ['tier:tier-1', 'tier:tier-2'],
         is_read_only: true,
-        is_audit_log: false,
-      }),
-      expect.objectContaining({
-        ...base,
-        name: 'chapter-audit',
-        type: 'PUBLIC',
-        who_can_see: null,
-        who_can_post: [],
-        is_read_only: true,
-        is_audit_log: true,
       }),
       expect.objectContaining({
         ...base,
@@ -737,7 +866,6 @@ describe('ChapterService', () => {
         ].sort(),
         who_can_post: null,
         is_read_only: false,
-        is_audit_log: false,
       }),
     ]);
     for (const row of mockChannelRepo.createMany.mock.calls[0][0]) {

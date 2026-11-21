@@ -7,7 +7,7 @@ import {
   HOUSE_SEED,
   signetAccentSemanticVars,
 } from "@repo/chapter-theme";
-import { signetDarkTokens } from "@repo/theme/signet";
+import { ACCENT_SUBTLE_HOVER_MIX, signetDarkTokens } from "@repo/theme/signet";
 
 /**
  * Shared fixtures for the Signet contrast guards.
@@ -122,6 +122,7 @@ function cssToken(name: string): string {
 }
 
 export const DESTRUCTIVE_TEXT = cssToken("--destructive-text");
+export const INFO_TEXT = cssToken("--info-text");
 
 /** A card-filled control's hover (components.md §3), an opaque literal. */
 export const CARD_HOVER = cssToken("--card-hover");
@@ -163,6 +164,7 @@ export const STATUS_TINT = {
   warning: parseStatusTint("--warning-tint"),
   destructive: parseStatusTint("--destructive-tint"),
   destructiveHover: parseStatusTint("--destructive-tint-hover"),
+  info: parseStatusTint("--info-tint"),
 } as const;
 
 /** The hairline's alpha, parsed from the token so the two cannot disagree. */
@@ -238,6 +240,15 @@ export const AA_NON_TEXT = 3;
  */
 export const INDISTINGUISHABLE = 1.15;
 
+/**
+ * The least an adjacent step of the surface ladder may rise (foundations §2).
+ * The 2026-11-19 ladder steps 1.08 / 1.10 / 1.15 on purpose, under
+ * `INDISTINGUISHABLE`, because the owner wanted softer steps than the
+ * 2026-11-12 ladder's; the hairline carries the separation. This floor keeps a
+ * step from collapsing back to the 2026-11-05 ladder's 1.05.
+ */
+export const LADDER_STEP_FLOOR = 1.075;
+
 export const ratio = (fg: string, bg: string) =>
   contrastRatio(parseHex(fg)!, parseHex(bg)!);
 
@@ -272,10 +283,15 @@ export function accentRolesFor(seed: string) {
 }
 
 /**
- * `--accent-subtle-hover` is a `color-mix(in srgb, var(--accent-border) 22%,
- * var(--accent-subtle))` in `signet.css`. CSS resolves it at paint time; here it
- * is recomputed from the same two roles and the same 22%, so a change to the mix
- * in the stylesheet has to be mirrored here to keep the guards green.
+ * `--accent-subtle-hover` is a `color-mix(in srgb, var(--accent-border) 14%,
+ * var(--accent-subtle))` in `signet.css` (22% until #3826). CSS resolves it at
+ * paint time; here it is recomputed from the same two roles and the same 14%,
+ * so a change to the mix in the stylesheet has to be mirrored here to keep the
+ * guards green.
  */
 export const accentFour = (roles: Record<string, string>) =>
-  mixHex(roles["--accent-subtle"]!, roles["--accent-border"]!, 0.22);
+  mixHex(
+    roles["--accent-subtle"]!,
+    roles["--accent-border"]!,
+    ACCENT_SUBTLE_HOVER_MIX,
+  );

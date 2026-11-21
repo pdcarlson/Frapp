@@ -1,24 +1,19 @@
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
-import {
-  NavigationContext,
-  NavigationRouteContext,
-} from "expo-router/react-navigation";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   activityEventMessage,
   activityHoursMessage,
-  activityTaskMessage,
 } from "@repo/chat-core/activity-cards";
-import {
-  readEventPayload,
-  readHoursPayload,
-  readTaskPayload,
-} from "@repo/chat-core/cards";
+import { readEventPayload, readHoursPayload } from "@repo/chat-core/cards";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useReviewServiceEntry, type ActivityRow } from "@repo/hooks";
-import { errorCopy } from "@repo/hooks/error-copy";
+import {
+  MESSAGE_REMINDER_PRESETS,
+  messageReminderPresetTime,
+  type MessageReminderPresetId,
+} from "@repo/hooks/use-message-reminders";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   CardActions,
@@ -27,9 +22,9 @@ import {
   type ChatCardFrameProps,
 } from "@/components/chat/chat-card";
 import { EventCard } from "@/components/chat/event-card";
+import { ListRow, ListSection } from "@/components/list-section";
 import { HoursCard } from "@/components/chat/hours-card";
 import { PollCard } from "@/components/chat/poll-card";
-import { TaskCard } from "@/components/chat/task-card";
 import {
   SheetBackToClose,
   SheetGrabber,
@@ -40,15 +35,19 @@ import {
   useSheetClose,
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
+import {
+  hoursReviewFailure,
+  type ActivityRowActionState,
+} from "@/lib/activity/row-action";
 import { useActivityPoll } from "@/lib/activity/use-activity-poll";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
-import { useConnection } from "@/lib/connection/use-connection";
-import { MODULE_REFUSAL_COPY, moduleRefusalOf } from "@/lib/module-refusal";
 import {
-  SUBSCRIPTION_REFUSAL_COPY,
-  subscriptionRefusalOf,
-} from "@/lib/subscription-refusal";
+  reminderAtLabel,
+  reminderPresetValue,
+} from "@/lib/chat/message-reminder";
+import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 type RowOf<K extends ActivityRow["kind"]> = Extract<ActivityRow, { kind: K }>;
 
@@ -64,6 +63,17 @@ export interface LinkSheetActions {
   hide: (row: RowOf<"link">) => void;
   openInChat: (row: RowOf<"link">) => void;
   remove: (row: RowOf<"link">) => void;
+}
+
+/**
+ * What a message reminder's sheet can do (#4957), the screen's as a link's
+ * are: Done takes the row off the list at once, and opening the message
+ * leaves the screen.
+ */
+export interface ReminderSheetActions {
+  open: (row: RowOf<"reminder">) => void;
+  snooze: (row: RowOf<"reminder">, preset: MessageReminderPresetId) => void;
+  done: (row: RowOf<"reminder">) => void;
 }
 
 const noop = () => {};
@@ -87,9 +97,12 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
 
 /**
  * The sheet an Activity row opens: the record, drawn with the card chat draws
- * for it, so a member votes, marks a task done, confirms it or checks in here
- * with the controls they already know from chat (#3897). Web's twin is
- * `apps/web/components/activity/activity-panel.tsx`.
+ * for it, so a member votes or checks in here with the controls they already
+ * know from chat (#3897). Web's twin is
+ * `apps/web/components/activity/activity-panel.tsx`. Every task row pushes
+ * the task's own screen instead (#5492; Paul, 2026-11-18: the sheet is
+ * "lazy"), a completion waiting on the viewer's sign-off too, since the
+ * screen has Confirm and Send back (#5513).
  *
  * The cards are chat's own components, unchanged. Each reads its record's
  * live state by id and its buttons call the same routes they call in chat.
@@ -102,13 +115,10 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
  * and the screen's own actions for it (`LinkSheetActions`).
  *
  * A tall sheet, as `spec/ui/mobile/patterns.md` § Bottom sheets gives a sheet
- * that holds a whole record. A sheet is drawn outside the screen's
- * navigator, so the screen's navigation context is handed down to the cards:
- * their refusals clear when the member comes back to this screen
- * (`useCardWrite`), as they do in a thread.
+ * that holds a whole record.
  *
  * `onActed` runs after an action this sheet makes itself (a vote, a review),
- * so the row can leave "Needs you"; `onClosed` runs when the sheet has gone,
+ * so the row can leave its list; `onClosed` runs when the sheet has gone,
  * which is when the screen re-reads for what the cards' own buttons changed
  * and lets go of `row`. Until then the screen keeps handing the row down, so
  * the card stays drawn while the sheet slides away.
@@ -116,15 +126,23 @@ function frameFor(message: ChatMessage, viewerId: string): ChatCardFrameProps {
 export function ActivitySheet({
   row,
   viewerId,
+  rowActionState = "idle",
   onClosed,
   onActed,
   linkActions,
+  reminderActions,
 }: {
   row: ActivityRow | null;
   viewerId: string | null;
+  /**
+   * Where the row's own Confirm, Approve or Check in stands (#4437, #4427), so the sheet
+   * opened from that row doesn't offer the same approval a second time.
+   */
+  rowActionState?: ActivityRowActionState;
   onClosed: () => void;
   onActed: () => void;
   linkActions: LinkSheetActions;
+  reminderActions: ReminderSheetActions;
 }) {
   const sheet = useRef<BottomSheetModal>(null);
   const closeSheet = useSheetClose(sheet);
@@ -132,8 +150,6 @@ export function ActivitySheet({
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const tallSheet = useTallSheetProps();
-  const navigation = useContext(NavigationContext);
-  const route = useContext(NavigationRouteContext);
 
   // Presented once per row opened, not on every re-read that hands the same
   // row down as a new object.
@@ -162,25 +178,23 @@ export function ActivitySheet({
         <View style={styles.stickyHeader}>
           <TallSheetHeader onClose={closeSheet} />
         </View>
-        <NavigationContext.Provider value={navigation}>
-          <NavigationRouteContext.Provider value={route}>
-            {row && viewerId ? (
-              <SheetCard
-                // A different row is a different card: no state carries over.
-                key={row.key}
-                row={row}
-                viewerId={viewerId}
-                onActed={onActed}
-                onNavigate={closeSheet}
-                linkActions={linkActions}
-              />
-            ) : row ? (
-              // The cards decide whose controls to show from the viewer's id;
-              // without it they would show none, or the wrong ones.
-              <CardNote text="Loading your account…" />
-            ) : null}
-          </NavigationRouteContext.Provider>
-        </NavigationContext.Provider>
+        {row && viewerId ? (
+          <SheetCard
+            // A different row is a different card: no state carries over.
+            key={row.key}
+            row={row}
+            viewerId={viewerId}
+            rowActionState={rowActionState}
+            onActed={onActed}
+            onNavigate={closeSheet}
+            linkActions={linkActions}
+            reminderActions={reminderActions}
+          />
+        ) : row ? (
+          // The cards decide whose controls to show from the viewer's id;
+          // without it they would show none, or the wrong ones.
+          <CardNote text="Loading your account…" />
+        ) : null}
       </BottomSheetScrollView>
     </BottomSheetModal>
   );
@@ -189,20 +203,27 @@ export function ActivitySheet({
 function SheetCard({
   row,
   viewerId,
+  rowActionState,
   onActed,
   onNavigate,
   linkActions,
+  reminderActions,
 }: {
   row: ActivityRow;
   viewerId: string;
+  rowActionState: ActivityRowActionState;
   onActed: () => void;
   /** Closes the sheet before leaving this screen for another. */
   onNavigate: () => void;
   linkActions: LinkSheetActions;
+  reminderActions: ReminderSheetActions;
 }) {
   switch (row.kind) {
     case "task":
-      return <TaskSheet row={row} viewerId={viewerId} />;
+    case "task-group":
+      // Every task pushes the task's own screen, a review too (#5492,
+      // #5513), never this sheet.
+      return null;
     case "event":
       return (
         <EventSheet row={row} viewerId={viewerId} onNavigate={onNavigate} />
@@ -212,12 +233,115 @@ function SheetCard({
         <PollSheet row={row} viewerId={viewerId} onNavigate={onNavigate} />
       );
     case "hours":
-      return <HoursSheet row={row} viewerId={viewerId} onActed={onActed} />;
+      return (
+        <HoursSheet
+          row={row}
+          viewerId={viewerId}
+          rowActionState={rowActionState}
+          onActed={onActed}
+        />
+      );
     case "link":
       return (
         <LinkSheet row={row} actions={linkActions} onNavigate={onNavigate} />
       );
+    case "reminder":
+      return (
+        <ReminderSheet
+          row={row}
+          actions={reminderActions}
+          onNavigate={onNavigate}
+        />
+      );
+    case "card":
+      // A sign-up or form row opens its message in chat, never this sheet.
+      return null;
   }
+}
+
+/** Said where a reminder's message can't be opened any more. */
+const REMINDER_UNAVAILABLE_NOTE =
+  "You can't see this conversation any more, so the message can't be opened.";
+
+/**
+ * A reminder on a chat message (#4957): the message's words, who wrote it,
+ * where and when it was for, as the row says, then what Slack's Later list
+ * offers on one: open the message, Done, or Snooze to a preset (the same ones
+ * the message menu sets it with). Every button closes the sheet first. A
+ * message the member can no longer read is only cleared.
+ */
+function ReminderSheet({
+  row,
+  actions,
+  onNavigate,
+}: {
+  row: RowOf<"reminder">;
+  actions: ReminderSheetActions;
+  onNavigate: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createLinkStyles(tokens);
+  // Read once per sheet: the presets' times as they stood when it opened.
+  const [now] = useState(() => new Date());
+  const then = (action: () => void) => () => {
+    onNavigate();
+    action();
+  };
+  const available = row.reminder.message_available;
+  return (
+    <>
+      <View style={styles.head}>
+        <Text style={styles.title} accessibilityRole="header">
+          {row.title}
+        </Text>
+        {row.detail ? <Text style={styles.detail}>{row.detail}</Text> : null}
+      </View>
+      {available ? null : <CardNote text={REMINDER_UNAVAILABLE_NOTE} />}
+      <CardActions>
+        {available ? (
+          <CardButton
+            label="Open message"
+            variant="primary"
+            accessibilityHint={
+              row.reminder.thread_root_id
+                ? "Opens the thread, at the message."
+                : "Opens the conversation, at the message."
+            }
+            onPress={then(() => actions.open(row))}
+          />
+        ) : null}
+        <CardButton
+          label="Done"
+          accessibilityHint="Clears the reminder and takes it off your Activity."
+          onPress={then(() => actions.done(row))}
+        />
+      </CardActions>
+      {available ? (
+        <View style={styles.head}>
+          {/* Slack's word for a reminder whose time came; one still to
+              come is only moved. */}
+          <Text style={styles.detail}>
+            {row.reminder.due ? "Snooze" : "Change the time"}
+          </Text>
+          <ListSection>
+            {MESSAGE_REMINDER_PRESETS.map((preset) => {
+              const at = messageReminderPresetTime(preset.id, now);
+              return (
+                <ListRow
+                  key={preset.id}
+                  label={preset.label}
+                  value={reminderPresetValue(at, now)}
+                  action
+                  accessibilityHint={`Reminds you ${reminderAtLabel(at, now)}.`}
+                  onPress={then(() => actions.snooze(row, preset.id))}
+                />
+              );
+            })}
+          </ListSection>
+        </View>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -317,20 +441,6 @@ function createLinkStyles(tokens: SignetTokens) {
   });
 }
 
-function TaskSheet({
-  row,
-  viewerId,
-}: {
-  row: RowOf<"task">;
-  viewerId: string;
-}) {
-  const message = useMemo(() => activityTaskMessage(row.task), [row.task]);
-  const payload = readTaskPayload(message);
-  return payload ? (
-    <TaskCard {...frameFor(message, viewerId)} payload={payload} />
-  ) : null;
-}
-
 function EventSheet({
   row,
   viewerId,
@@ -346,7 +456,11 @@ function EventSheet({
   if (!payload) return null;
   return (
     <>
-      <EventCard {...frameFor(message, viewerId)} payload={payload} />
+      <EventCard
+        {...frameFor(message, viewerId)}
+        payload={payload}
+        onNavigate={onNavigate}
+      />
       <CardActions>
         <CardButton
           label="Open event"
@@ -401,14 +515,17 @@ function PollSheet({
       <CardActions>
         <CardButton
           label="Open in chat"
-          accessibilityHint="Opens the channel this poll was posted in."
+          accessibilityHint="Opens the poll in the channel it was posted in."
           onPress={() => {
             onNavigate();
             // Object form: the shape `lib/routes.spec.ts` matches when a
             // param is involved.
             router.push({
               pathname: "/chat-thread",
-              params: { channelId: row.poll.channel_id },
+              params: {
+                channelId: row.poll.channel_id,
+                focusMessageId: row.poll.message_id,
+              },
             });
           }}
         />
@@ -426,10 +543,13 @@ const REVIEWED_NOTE = {
 function HoursSheet({
   row,
   viewerId,
+  rowActionState,
   onActed,
 }: {
   row: RowOf<"hours">;
   viewerId: string;
+  /** The row's own Approve (#4437): sending holds these buttons, landed records it. */
+  rowActionState: ActivityRowActionState;
   onActed: () => void;
 }) {
   const message = useMemo(() => activityHoursMessage(row.entry), [row.entry]);
@@ -458,37 +578,30 @@ function HoursSheet({
       setReviewed(status);
       onActed();
     } catch (error) {
-      // The two refusals a retry can't win, in a member's words, as the
-      // phone's other paid-ops writes say them.
-      const gate = subscriptionRefusalOf(error)
-        ? SUBSCRIPTION_REFUSAL_COPY.serviceReview
-        : moduleRefusalOf(error)
-          ? MODULE_REFUSAL_COPY.serviceReview
-          : null;
-      setFailure(
-        gate ??
-          errorCopy(
-            error,
-            status === "APPROVED"
-              ? "Only a pending entry someone else submitted can be approved."
-              : "Couldn't reject this entry. Try again in a moment.",
-          ),
-      );
+      setFailure(hoursReviewFailure(error, status));
     } finally {
       inFlight.current = false;
     }
   };
 
-  const disabled = reviewEntry.isPending || writeBlockedReason !== null;
+  const disabled =
+    reviewEntry.isPending ||
+    rowActionState === "busy" ||
+    writeBlockedReason !== null;
   const hint = writeBlockedReason ?? undefined;
+  // Approved from its row while the list hadn't re-read yet: the same line
+  // the sheet's own Approve leaves, rather than a second Approve the server
+  // would refuse.
+  const shownReview =
+    reviewed ?? (rowActionState === "done" ? "APPROVED" : null);
 
   return (
     <>
       {payload ? (
         <HoursCard {...frameFor(message, viewerId)} payload={payload} />
       ) : null}
-      {reviewed ? (
-        <CardNote tone="success" text={REVIEWED_NOTE[reviewed]} />
+      {shownReview ? (
+        <CardNote tone="success" text={REVIEWED_NOTE[shownReview]} />
       ) : (
         <CardActions>
           <CardButton

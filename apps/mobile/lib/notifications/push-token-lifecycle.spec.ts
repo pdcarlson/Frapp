@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   deregisterStoredPushToken,
+  lastReportedNotificationsEnabled,
   notifyPushPermissionGranted,
   onPushPermissionGranted,
   registerCurrentPushToken,
   sessionOwnsPushRegistration,
+  shouldReportOnForeground,
 } from "./push-token-lifecycle";
 import type { PushTokenRow } from "./push-registration";
 
@@ -33,6 +35,19 @@ function deps(initial: PushTokenRow | null = null) {
   };
 }
 
+describe("shouldReportOnForeground", () => {
+  it("re-registers only when the phone now reads differently from the answer sent", () => {
+    expect(shouldReportOnForeground(false, true)).toBe(true);
+    expect(shouldReportOnForeground(true, false)).toBe(true);
+    expect(shouldReportOnForeground(true, true)).toBe(false);
+  });
+
+  it("does nothing before any answer was sent, or when the phone can't tell", () => {
+    expect(shouldReportOnForeground(true, undefined)).toBe(false);
+    expect(shouldReportOnForeground(undefined, true)).toBe(false);
+  });
+});
+
 describe("sessionOwnsPushRegistration", () => {
   it("is true only on the authenticated edge the sign-out race documents", () => {
     expect(sessionOwnsPushRegistration(true, "authenticated")).toBe(true);
@@ -50,14 +65,66 @@ describe("registerCurrentPushToken", () => {
       token: "ExponentPushToken[new]",
     });
     await registerCurrentPushToken(d);
-    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
     expect(d.remove).not.toHaveBeenCalled();
+  });
+
+  it("sends the device label with the token when there is one (#4563)", async () => {
+    const d = { ...deps(null), getDeviceName: () => "ios 26.1 · iPhone 16" };
+    await registerCurrentPushToken(d);
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+      device_name: "ios 26.1 · iPhone 16",
+    });
+  });
+
+  it("sends whether notifications are on, and remembers the answer it sent", async () => {
+    const d = { ...deps(null), getNotificationsEnabled: async () => false };
+    await registerCurrentPushToken(d);
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+      notifications_enabled: false,
+    });
+    expect(lastReportedNotificationsEnabled()).toBe(false);
+  });
+
+  it("leaves the answer out when the phone can't read it, so the server keeps its own", async () => {
+    const d = {
+      ...deps(null),
+      getNotificationsEnabled: async () => {
+        throw new Error("module unavailable");
+      },
+    };
+    await registerCurrentPushToken(d);
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
+  });
+
+  it("forgets the answer on sign-out", async () => {
+    const d = { ...deps(null), getNotificationsEnabled: async () => true };
+    await registerCurrentPushToken(d);
+    expect(lastReportedNotificationsEnabled()).toBe(true);
+    await deregisterStoredPushToken(d);
+    expect(lastReportedNotificationsEnabled()).toBe(undefined);
+  });
+
+  it("sends the token alone when there is no device label", async () => {
+    const d = { ...deps(null), getDeviceName: () => undefined };
+    await registerCurrentPushToken(d);
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
   });
 
   it("POSTs a first token and does not DELETE", async () => {
     const d = deps(null);
     await registerCurrentPushToken(d);
-    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
     expect(d.stored.current).toEqual({
       id: "row-ExponentPushToken[new]",
       token: "ExponentPushToken[new]",
@@ -78,7 +145,9 @@ describe("registerCurrentPushToken", () => {
 
     await registerCurrentPushToken(d);
 
-    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
     expect(d.remove).toHaveBeenCalledWith("row-old");
     expect(d.stored.current).toEqual({
       id: "row-new",
@@ -168,7 +237,9 @@ describe("registerCurrentPushToken overlap", () => {
     await first;
 
     expect(d.register).toHaveBeenCalledTimes(1);
-    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
   });
 });
 

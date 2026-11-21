@@ -33,6 +33,8 @@ export interface BurstBundlerOptions {
 interface BurstEntry {
   count: number;
   firstAt: number;
+  /** A message past the threshold already pushed for mentioning the recipient. */
+  mentionPushed: boolean;
 }
 
 const DEFAULT_THRESHOLD = 3;
@@ -58,23 +60,34 @@ export class BurstBundler {
    * - First 1..threshold-1 messages in a window: `push` (count = 1, 2, …)
    * - threshold-th message in a window: `bundle` (count = threshold).
    *   The worker should fire ONE bundled push covering all prior messages.
-   * - Subsequent messages in the same window: `skip` (already bundled).
+   * - Subsequent messages in the same window: `skip` (already bundled),
+   *   except the first of them that mentions the recipient, which is `push`
+   *   (#4359). The bundle was written before it and says nothing of it, so
+   *   skipping it would lose the mention. Only the first: a sender who
+   *   mentions in every message (a role ping, a run of quote-replies) would
+   *   otherwise get one push per message past the cap the bundle exists for,
+   *   and the recipient already has a push that says they were mentioned.
    * - Messages outside the window: window resets, returns `push`.
    */
-  record(key: string): BurstDecision {
+  record(key: string, mentioned = false): BurstDecision {
     const now = this.now();
     const prior = this.entries.get(key);
     if (!prior || now - prior.firstAt > this.windowMs) {
-      this.entries.set(key, { count: 1, firstAt: now });
+      this.entries.set(key, { count: 1, firstAt: now, mentionPushed: false });
       return { action: 'push', count: 1 };
     }
     const nextCount = prior.count + 1;
-    this.entries.set(key, { count: nextCount, firstAt: prior.firstAt });
+    const entry = { ...prior, count: nextCount };
+    this.entries.set(key, entry);
     if (nextCount < this.threshold) {
       return { action: 'push', count: nextCount };
     }
     if (nextCount === this.threshold) {
       return { action: 'bundle', count: nextCount, firstAt: prior.firstAt };
+    }
+    if (mentioned && !prior.mentionPushed) {
+      entry.mentionPushed = true;
+      return { action: 'push', count: nextCount };
     }
     return { action: 'skip' };
   }

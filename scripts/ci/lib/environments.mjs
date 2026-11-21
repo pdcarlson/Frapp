@@ -125,13 +125,65 @@ export function loadEnvironments(options = {}) {
 }
 
 // ── Provider ids (#2806) ─────────────────────────────────────────────────────
-// The Render API service per environment, and the Vercel team and the two
-// projects both environments deploy to (preview for staging, production for
-// production). Workflows used to carry these as literals, in several files, with
-// comments asking humans to keep them in step. They live here now, and a
-// workflow reads them through `scripts/ci/provider-ids.mjs`.
+// The Google Cloud project the API runs in per environment (#5228), and the
+// Vercel team and the two projects both environments deploy to (preview for
+// staging, production for production). Workflows used to carry these as
+// literals, in several files, with comments asking humans to keep them in
+// step. They live here now, and a workflow reads them through
+// `scripts/ci/provider-ids.mjs`.
 
-export const RENDER_SERVICE_ID_PATTERN = /^srv-[a-z0-9]+$/;
+/** The Google Cloud project id and number, and the Cloud Run region (#5228). */
+const GCP_PROJECT_ID_PATTERN = /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/;
+const GCP_PROJECT_NUMBER_PATTERN = /^[0-9]{6,20}$/;
+const GCP_REGION_PATTERN = /^[a-z]+-[a-z]+[0-9]$/;
+/**
+ * What `scripts/gcp/bootstrap.sh` names in every project. The deploy derives
+ * each one from the project here rather than carrying a second copy of it.
+ */
+const CLOUD_RUN_SERVICE = "frapp-api";
+const ARTIFACT_REPOSITORY = "frapp";
+const WORKLOAD_IDENTITY_POOL = "github";
+const WORKLOAD_IDENTITY_PROVIDER = "frapplive-frapp";
+
+/**
+ * One environment's `cloudRun` block, checked, with the names the setup script
+ * gives each project filled in. Required: the API runs nowhere else.
+ */
+function cloudRunIds(block, name, source) {
+  if (!block || typeof block !== "object") {
+    throw new Error(`${source}: "${name}" has no cloudRun block, and the API runs on Cloud Run (#5228).`);
+  }
+  const check = (value, pattern, what) => {
+    if (typeof value !== "string" || !pattern.test(value)) {
+      throw new Error(`${source}: "${name}".cloudRun.${what} must match ${pattern} (got ${JSON.stringify(value)}).`);
+    }
+    return value;
+  };
+  const projectId = check(block.projectId, GCP_PROJECT_ID_PATTERN, "projectId");
+  const projectNumber = check(block.projectNumber, GCP_PROJECT_NUMBER_PATTERN, "projectNumber");
+  const region = check(block.region, GCP_REGION_PATTERN, "region");
+  const { minInstances, maxInstances } = block;
+  if (!Number.isInteger(minInstances) || !Number.isInteger(maxInstances) || minInstances < 0 || maxInstances < 1) {
+    throw new Error(`${source}: "${name}".cloudRun needs whole minInstances (0 or more) and maxInstances (1 or more).`);
+  }
+  if (minInstances > maxInstances) {
+    throw new Error(`${source}: "${name}".cloudRun.minInstances is above maxInstances.`);
+  }
+  return {
+    gcpProjectId: projectId,
+    gcpRegion: region,
+    cloudRunService: CLOUD_RUN_SERVICE,
+    cloudRunImage: `${region}-docker.pkg.dev/${projectId}/${ARTIFACT_REPOSITORY}/api`,
+    cloudRunDeployer: `frapp-deployer@${projectId}.iam.gserviceaccount.com`,
+    cloudRunRuntime: `frapp-api-runtime@${projectId}.iam.gserviceaccount.com`,
+    cloudRunProvider:
+      `projects/${projectNumber}/locations/global/workloadIdentityPools/${WORKLOAD_IDENTITY_POOL}` +
+      `/providers/${WORKLOAD_IDENTITY_PROVIDER}`,
+    cloudRunMinInstances: String(minInstances),
+    cloudRunMaxInstances: String(maxInstances),
+  };
+}
+
 export const VERCEL_TEAM_ID_PATTERN = /^team_[A-Za-z0-9]+$/;
 export const VERCEL_PROJECT_ID_PATTERN = /^prj_[A-Za-z0-9]+$/;
 
@@ -152,13 +204,12 @@ export function parseProviderIds(text, name, { source = CONFIG_PATH } = {}) {
     }
     return value;
   };
-  const services = ENVIRONMENTS.map((env) =>
-    check(parsed.environments[env].renderServiceId, RENDER_SERVICE_ID_PATTERN, `"${env}".renderServiceId`),
-  );
-  // Two environments on one Render service would let a staging deploy ship
-  // production's API, with every check here reading green.
-  if (new Set(services).size !== services.length) {
-    throw new Error(`${source}: two environments share a renderServiceId.`);
+  const cloudRun = cloudRunIds(parsed.environments[name].cloudRun, name, source);
+  // Two environments in one project would let a staging deploy replace
+  // production's service.
+  const projects = ENVIRONMENTS.map((env) => parsed.environments[env].cloudRun?.projectId);
+  if (new Set(projects).size !== projects.length) {
+    throw new Error(`${source}: two environments share a cloudRun.projectId.`);
   }
   const vercel = parsed.vercel ?? {};
   const web = check(vercel.webProjectId, VERCEL_PROJECT_ID_PATTERN, "vercel.webProjectId");
@@ -166,7 +217,7 @@ export function parseProviderIds(text, name, { source = CONFIG_PATH } = {}) {
   if (web === landing) throw new Error(`${source}: vercel.webProjectId and vercel.landingProjectId are the same project.`);
   return {
     environment: name,
-    renderServiceId: services[ENVIRONMENTS.indexOf(name)],
+    ...cloudRun,
     vercelTeamId: check(vercel.teamId, VERCEL_TEAM_ID_PATTERN, "vercel.teamId"),
     vercelWebProjectId: web,
     vercelLandingProjectId: landing,

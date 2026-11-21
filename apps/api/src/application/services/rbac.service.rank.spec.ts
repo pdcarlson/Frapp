@@ -1,0 +1,288 @@
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import type { RbacService } from './rbac.service';
+import type { Role, RoleTier } from '#domain/entities/role.entity';
+import {
+  createTieredRbacHarness,
+  type TieredMemberRepoMock,
+  type TieredRoleRepoMock,
+} from '#test/helpers/rbac-service.harness';
+import type { AuditLogServiceMock } from '#test/helpers/audit-log.mock';
+import {
+  CHAPTER_ID,
+  ROLE,
+  TIER,
+  USER,
+} from '#test/helpers/tiered-chapter.fixture';
+
+/**
+ * The rank rules on `POST`, `PATCH` and `DELETE /v1/roles` (#4071), walked as
+ * a chapter with a President, exec officers, a dozen chairs and brothers. The
+ * case they exist for: a chair holding `roles:manage` must not be able to
+ * promote themselves.
+ */
+describe('RbacService rank rules (#4071)', () => {
+  let service: RbacService;
+  let roles: Role[];
+  let tiers: RoleTier[];
+  let audit: AuditLogServiceMock;
+  let roleRepo: TieredRoleRepoMock;
+  let memberRepo: TieredMemberRepoMock;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    ({ service, roles, tiers, audit, roleRepo, memberRepo } =
+      await createTieredRbacHarness());
+  });
+
+  describe('a chair holding roles:manage', () => {
+    it('cannot edit their own role, so cannot grant themselves anything', async () => {
+      await expect(
+        service.updateAsMember(ROLE.riskChair, CHAPTER_ID, USER.riskChair, {
+          permissions: [
+            ...roles.find((r) => r.id === ROLE.riskChair)!.permissions,
+            'chapter-config:manage',
+          ],
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(roleRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('cannot move their own role into the exec tier', async () => {
+      await expect(
+        service.updateAsMember(ROLE.riskChair, CHAPTER_ID, USER.riskChair, {
+          tier_id: TIER.board,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("cannot edit another chair's role, which ranks level with theirs", async () => {
+      await expect(
+        service.updateAsMember(ROLE.socialChair, CHAPTER_ID, USER.riskChair, {
+          name: 'Party chair',
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('cannot move a role below them up into their own tier', async () => {
+      await expect(
+        service.updateAsMember(ROLE.brother, CHAPTER_ID, USER.riskChair, {
+          tier_id: TIER.chairs,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('edits a role below them with permissions they hold', async () => {
+      const updated = await service.updateAsMember(
+        ROLE.brother,
+        CHAPTER_ID,
+        USER.riskChair,
+        { permission_overrides: { 'tasks:manage': true } },
+      );
+      expect(updated.permissions).toContain('tasks:manage');
+      expect(roleRepo.update).toHaveBeenCalledWith(ROLE.brother, {
+        permission_overrides: { 'tasks:manage': true },
+      });
+    });
+
+    it('cannot grant a role below them a permission they lack, by list or by override', async () => {
+      await expect(
+        service.updateAsMember(ROLE.brother, CHAPTER_ID, USER.riskChair, {
+          permissions: ['members:view', 'service:log', 'billing:manage'],
+        }),
+      ).rejects.toThrow(/billing:manage/);
+      await expect(
+        service.updateAsMember(ROLE.brother, CHAPTER_ID, USER.riskChair, {
+          permission_overrides: { 'billing:manage': true },
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('cannot switch on an override for a permission they lack, even one the tier already grants', async () => {
+      // The override would outlive the tier's grant, so it is a grant too.
+      tiers
+        .find((tier) => tier.id === TIER.pledges)!
+        .permissions.push('billing:view');
+      const pledge = roles.find((role) => role.id === ROLE.pledge)!;
+      pledge.permissions = ['billing:view', 'members:view'];
+      await expect(
+        service.updateAsMember(ROLE.pledge, CHAPTER_ID, USER.riskChair, {
+          permission_overrides: { 'billing:view': true },
+        }),
+      ).rejects.toThrow(/billing:view/);
+      expect(roleRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('takes permissions away from a role below them, even ones they lack', async () => {
+      await service.updateAsMember(
+        ROLE.treasuryAssistant,
+        CHAPTER_ID,
+        USER.riskChair,
+        { permission_overrides: { 'billing:view': null } },
+      );
+      expect(roleRepo.update).toHaveBeenCalledWith(ROLE.treasuryAssistant, {
+        permission_overrides: {},
+      });
+    });
+
+    it('creates roles only below them, holding only what they hold', async () => {
+      await expect(
+        service.createAsMember(CHAPTER_ID, USER.riskChair, {
+          name: 'Philanthropy chair',
+          permissions: [],
+          tier_id: TIER.chairs,
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.createAsMember(CHAPTER_ID, USER.riskChair, {
+          name: 'Bookkeeper',
+          permissions: ['billing:view'],
+        }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await service.createAsMember(CHAPTER_ID, USER.riskChair, {
+        name: 'House manager',
+        permissions: [],
+        tier_id: TIER.brothers,
+      });
+      expect(roleRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ tier_id: TIER.brothers }),
+      );
+    });
+
+    it('deletes only roles below them', async () => {
+      await expect(
+        service.deleteAsMember(ROLE.socialChair, CHAPTER_ID, USER.riskChair),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await service.deleteAsMember(ROLE.pledge, CHAPTER_ID, USER.riskChair);
+      expect(roleRepo.delete).toHaveBeenCalledWith(CHAPTER_ID, ROLE.pledge);
+    });
+  });
+
+  describe('an exec officer', () => {
+    it("cannot edit the President's role or a fellow officer's", async () => {
+      for (const roleId of [ROLE.president, ROLE.treasurer]) {
+        await expect(
+          service.updateAsMember(roleId, CHAPTER_ID, USER.vicePresident, {
+            color: null,
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+    });
+
+    it("moves a chair's role between the tiers below them, and records it", async () => {
+      await service.updateAsMember(
+        ROLE.socialChair,
+        CHAPTER_ID,
+        USER.vicePresident,
+        { tier_id: TIER.brothers },
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'role_updated',
+          targetId: ROLE.socialChair,
+          diff: expect.objectContaining({
+            tier_id: { from: TIER.chairs, to: TIER.brothers },
+          }),
+        }),
+      );
+    });
+
+    it('cannot move a role up into their own tier', async () => {
+      await expect(
+        service.updateAsMember(
+          ROLE.socialChair,
+          CHAPTER_ID,
+          USER.vicePresident,
+          { tier_id: TIER.board },
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('the President', () => {
+    it('edits any role, their own tier included', async () => {
+      await service.updateAsMember(
+        ROLE.vicePresident,
+        CHAPTER_ID,
+        USER.president,
+        { tier_id: TIER.chairs },
+      );
+      expect(roleRepo.update).toHaveBeenCalledWith(ROLE.vicePresident, {
+        tier_id: TIER.chairs,
+      });
+    });
+
+    it('still cannot set or clear the wildcard as an override', async () => {
+      await expect(
+        service.updateAsMember(ROLE.president, CHAPTER_ID, USER.president, {
+          permission_overrides: { '*': null },
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.updateAsMember(ROLE.vicePresident, CHAPTER_ID, USER.president, {
+          permission_overrides: { '*': true },
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  it("records an override change in the role's audit row, even when its permissions don't move", async () => {
+    // The Brothers tier already grants service:log, so nothing is added.
+    await service.updateAsMember(ROLE.brother, CHAPTER_ID, USER.president, {
+      permission_overrides: { 'service:log': true },
+    });
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'role_updated',
+        diff: {
+          permission_overrides: { from: {}, to: { 'service:log': true } },
+        },
+      }),
+    );
+  });
+
+  it('refuses a member whose roles all sit outside the tiers, even for a role outside them', async () => {
+    memberRepo.findByUserAndChapter.mockResolvedValue({
+      id: 'member-alumnus',
+      user_id: 'user-alumnus',
+      chapter_id: CHAPTER_ID,
+      role_ids: [ROLE.alumni],
+    });
+    await expect(
+      service.createAsMember(CHAPTER_ID, 'user-alumnus', {
+        name: 'Alumni board',
+        permissions: [],
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(roleRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a request that sends a list and a tier change together', async () => {
+    await expect(
+      service.updateAsMember(ROLE.brother, CHAPTER_ID, USER.president, {
+        permissions: ['members:view'],
+        tier_id: TIER.pledges,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it("refuses another chapter's tier and an override that is not a switch", async () => {
+    await expect(
+      service.updateAsMember(ROLE.brother, CHAPTER_ID, USER.president, {
+        tier_id: 'tier-of-another-chapter',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.updateAsMember(ROLE.brother, CHAPTER_ID, USER.president, {
+        permission_overrides: { 'tasks:manage': 'yes' as unknown as boolean },
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('refuses a member with no role in the chapter', async () => {
+    await expect(
+      service.updateAsMember(ROLE.pledge, CHAPTER_ID, 'user-stranger', {
+        name: 'x',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});

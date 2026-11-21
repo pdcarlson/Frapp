@@ -35,20 +35,51 @@ describe('Write payload ordering — server-decided keys survive a DTO collision
       create,
     } as unknown as EventService);
 
-    await controller.create(CHAPTER_ID, USER_ID, {
-      name: 'Chapter Meeting',
-      start_time: '2026-09-01T18:00:00.000Z',
-      end_time: '2026-09-01T19:00:00.000Z',
-      // A DTO that grew these properties, or a pipe that stopped stripping them.
-      chapter_id: HOSTILE_CHAPTER_ID,
-      created_by: HOSTILE_USER_ID,
-    } as never);
+    await controller.create(
+      CHAPTER_ID,
+      USER_ID,
+      {
+        name: 'Chapter Meeting',
+        start_time: '2026-09-01T18:00:00.000Z',
+        end_time: '2026-09-01T19:00:00.000Z',
+        // A DTO that grew these properties, or a pipe that stopped stripping them.
+        chapter_id: HOSTILE_CHAPTER_ID,
+        created_by: HOSTILE_USER_ID,
+      } as never,
+      'America/New_York',
+    );
 
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({
         chapter_id: CHAPTER_ID,
         created_by: USER_ID,
       }),
+      'America/New_York',
+    );
+  });
+
+  // #4746: a series edit regenerates a legacy token in the request's zone.
+  it('EventController.update hands on the scope, the actor and the request zone', async () => {
+    const update = jest.fn().mockResolvedValue({ id: 'evt-1' });
+    const controller = new EventController({
+      update,
+    } as unknown as EventService);
+
+    await controller.update(
+      CHAPTER_ID,
+      USER_ID,
+      'evt-1',
+      { name: 'Renamed', scope: 'series' } as never,
+      'America/New_York',
+    );
+
+    expect(update).toHaveBeenCalledWith(
+      'evt-1',
+      CHAPTER_ID,
+      { name: 'Renamed' },
+      'series',
+      USER_ID,
+      'America/New_York',
     );
   });
 

@@ -17,12 +17,22 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { randomClientId } from "@repo/api-sdk";
+import { randomClientId, statusOf } from "@repo/api-sdk";
+import type { MentionPick } from "@repo/validation";
+import { firstName } from "./channel-preview";
+import { replyPreviewText } from "./reply-preview";
+import { TOMBSTONE_TEXT } from "./block-copy";
 import {
   chatThreadKey,
   chatThreadRepliesKey,
+  gifRequestBody,
+  normalizeRow,
   optimisticMessage,
   type ChannelCache,
+  type ChatMessage,
+  type MessageGif,
+  type OutgoingGif,
+  type ThreadLastReply,
   type RawChatMessage,
   type RawChatMessageAction,
 } from "./types";
@@ -48,7 +58,7 @@ import { IncompleteActionsError, readMessageActions } from "./history";
 export { chatThreadKey, chatThreadRepliesKey };
 
 /** How many replies one read brings: the newest page, then older on demand. */
-export const THREAD_PAGE_LIMIT = 50;
+const THREAD_PAGE_LIMIT = 50;
 
 export type ThreadFollowState = "following" | "muted";
 export type ThreadFollowChoice = ThreadFollowState | "none";
@@ -91,7 +101,7 @@ async function readActions(
  * the timeline's newest-page read puts its rows right
  * (`reconcileNewestPage`). Replies outside `ids` keep theirs.
  */
-export function reconcileReplyActions(
+function reconcileReplyActions(
   cache: ChannelCache,
   ids: ReadonlySet<string>,
   actions: readonly RawChatMessageAction[],
@@ -133,7 +143,12 @@ function apiError(error: unknown, fallback: string): Error {
     error && typeof error === "object" && "message" in error
       ? String((error as { message: unknown }).message)
       : fallback;
-  return Object.assign(new Error(message), { cause: error });
+  // The status rides along where `classifyChatError` reads it, so a 429 or a
+  // busy server's 429 is worded as one.
+  return Object.assign(new Error(message), {
+    cause: error,
+    statusCode: statusOf(error),
+  });
 }
 
 export async function fetchThread(
@@ -306,8 +321,15 @@ export interface SendThreadReplyArgs {
   rootId: string;
   senderId: string;
   content: string;
+  /** The members the `@` picker wrote into `content` (#3835). */
+  mentionPicks?: readonly MentionPick[] | null;
   /** Reuse the failed row's id for Retry, so the server dedupes. */
   clientMessageId?: string;
+  /**
+   * A GIF from the picker (#4657): the reply is the GIF alone, so `content`
+   * is empty, as a channel GIF send's is (#4631).
+   */
+  gif?: OutgoingGif | null;
 }
 
 /**
@@ -328,6 +350,7 @@ export async function sendThreadReply(
       channelId: args.channelId,
       senderId: args.senderId,
       content: args.content,
+      gif: args.gif ?? null,
     }),
     thread_root_id: args.rootId,
   };
@@ -342,6 +365,10 @@ export async function sendThreadReply(
         content: args.content,
         kind: "text",
         thread_root_id: args.rootId,
+        mention_picks: args.mentionPicks?.length
+          ? [...args.mentionPicks]
+          : undefined,
+        gif: args.gif ? gifRequestBody(args.gif) : undefined,
       },
     });
     if (error || !data) throw apiError(error, "Couldn't send reply");
@@ -354,12 +381,27 @@ export async function sendThreadReply(
   } catch (err) {
     const classified = classifyChatError(err);
     const reason =
-      classified.status === 429 ? RATE_LIMITED_COPY : classified.message;
+      classified.status === 429 && !classified.busy
+        ? RATE_LIMITED_COPY
+        : classified.message;
     queryClient.setQueryData<ChannelCache>(key, (prev) =>
       markFailed(prev ?? emptyCache(), clientId, reason),
     );
     return { error: reason };
   }
+}
+
+/**
+ * The picker's GIF a failed reply still holds, token and all, so its Retry
+ * sends the GIF again (#4657); `null` for a text reply. The optimistic row
+ * keeps what `sendThreadReply` was given, and only an unsent row has it.
+ */
+export function outgoingGifOf(
+  gif: MessageGif | null | undefined,
+): OutgoingGif | null {
+  if (!gif) return null;
+  const token = (gif as Partial<OutgoingGif>).token;
+  return typeof token === "string" && token ? { ...gif, token } : null;
 }
 
 /** Removes a failed reply the member chose not to retry. */
@@ -433,6 +475,202 @@ export async function fetchThreadUnread(
     if (row.unread_count > 0) unread[row.thread_root_id] = row.unread_count;
   }
   return unread;
+}
+
+/**
+ * One string that changes when a loaded parent's thread gains a reply: the
+ * latest reply among them, left out the open thread's. "-" when the only
+ * loaded thread is the open one, empty when no loaded message has a thread,
+ * so nothing is read.
+ */
+export function threadVersion(
+  messages: readonly ChatMessage[],
+  openThreadId: string | null = null,
+): string {
+  let any = false;
+  let latest = "";
+  for (const message of messages) {
+    if (!message.thread) continue;
+    any = true;
+    if (message.id === openThreadId) continue;
+    const at = message.thread.last_reply_at;
+    if (at && at > latest) latest = at;
+  }
+  if (!any) return "";
+  return latest || "-";
+}
+
+/**
+ * How the thread card names a preview's replier (#4297). Callers bind
+ * `@repo/hooks`' helpers to their roster, as for the Chat home preview
+ * (`PreviewNames`): `nameOf` is the replier's resolved name or `null`
+ * (`resolveAuthorName`), `fallbackLabel` what the timeline prints without one
+ * (`resolveAuthorLabel` with no viewer: "Member 2f4a1c").
+ */
+export interface ThreadPreviewNames {
+  nameOf: (senderId: string) => string | null;
+  fallbackLabel: (senderId: string) => string;
+}
+
+/**
+ * The thread card's preview line (#4297), one rule for web and the phone:
+ * the replier's first name ("You" for the viewer's own, the fallback label
+ * for someone the roster can't name, none for an unlinked import) and the
+ * reply's one-line text (`replyPreviewText`: "Attachment", "2 attachments",
+ * a card's kind). `fullName` is for the face's initials.
+ */
+export function threadPreviewParts(
+  preview: ThreadLastReply,
+  viewerId: string | null,
+  names: ThreadPreviewNames,
+): { name: string | null; fullName: string | null; text: string } {
+  const sender = preview.sender_id;
+  const fullName = sender ? names.nameOf(sender) : null;
+  const name =
+    sender === null
+      ? null
+      : sender === viewerId
+        ? "You"
+        : fullName
+          ? firstName(fullName)
+          : names.fallbackLabel(sender);
+  return { name, fullName, text: replyPreviewText(preview) };
+}
+
+/**
+ * One All threads row's two lines (#4960) on web, and the phone's thread row
+ * under its channel (#5277), which reads the parent's line alone:
+ * the parent and its latest reply, read the way the channel draws them. The
+ * API serves the raw parent, so it is normalized first (a GIF or a file-only
+ * message reads "GIF" or "Attachment", not "Message"), and the latest reply
+ * is the parent's own `thread_last_reply`, as the thread card's preview is.
+ * A message from a member the viewer blocked reads as the tombstone with no
+ * name, as it does in the channel.
+ */
+export function memberThreadPreview(
+  rawRoot: RawChatMessage,
+  viewerId: string | null,
+  names: ThreadPreviewNames,
+): {
+  root: ChatMessage;
+  rootText: string;
+  reply: { name: string | null; text: string } | null;
+} {
+  const root = normalizeRow(rawRoot);
+  const last = root.thread?.last_reply ?? null;
+  const reply = !last
+    ? null
+    : last.sender_blocked
+      ? { name: null, text: TOMBSTONE_TEXT }
+      : (({ name, text }) => ({ name, text }))(
+          threadPreviewParts(last, viewerId, names),
+        );
+  return {
+    root,
+    rootText: root.sender_blocked ? TOMBSTONE_TEXT : replyPreviewText(root),
+    reply,
+  };
+}
+
+/**
+ * How long a read thread stays under its channel after its last activity
+ * (the newest reply, else the parent). Discord drops a thread from the
+ * channel list when it auto-archives, three days quiet by default; Frapp
+ * never archives a thread, so the list applies the same quiet window.
+ */
+export const SIDEBAR_THREAD_QUIET_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** At most this many threads sit under one channel, newest first. */
+export const SIDEBAR_THREADS_PER_CHANNEL = 5;
+
+/** The fields of a `GET /v1/threads` row the channel list reads. */
+export interface SidebarThreadInput {
+  channel_id: string;
+  unread_count: number;
+  last_reply_at: string | null;
+  root: { created_at: string };
+}
+
+/**
+ * Which of the member's threads sit under each channel in the channel list
+ * (#5277, Paul 2026-11-17, after Discord's): every listed thread with
+ * replies new to the member, uncapped, then read ones active within
+ * {@link SIDEBAR_THREAD_QUIET_MS}, up to {@link SIDEBAR_THREADS_PER_CHANNEL}
+ * a channel in all; newest activity first. "Listed" is `GET /v1/threads`'s
+ * newest 50. A channel with none is absent from the map, so it draws nothing
+ * under it: no empty state. A thread that drops off is still one tap away on
+ * its parent's thread card.
+ */
+export function sidebarThreadsByChannel<T extends SidebarThreadInput>(
+  threads: readonly T[] | undefined,
+  now: number,
+): Map<string, T[]> {
+  const activityOf = (thread: T) =>
+    Date.parse(thread.last_reply_at ?? thread.root.created_at);
+  const byChannel = new Map<string, T[]>();
+  const kept = (threads ?? [])
+    .filter(
+      (thread) =>
+        thread.unread_count > 0 ||
+        now - activityOf(thread) <= SIDEBAR_THREAD_QUIET_MS,
+    )
+    .sort((a, b) => activityOf(b) - activityOf(a));
+  for (const thread of kept) {
+    const rows = byChannel.get(thread.channel_id) ?? [];
+    // A thread with new replies is never cut: it is the only place on the
+    // phone that says so, since its replies don't count toward the channel.
+    if (thread.unread_count === 0 && rows.length >= SIDEBAR_THREADS_PER_CHANNEL)
+      continue;
+    rows.push(thread);
+    byChannel.set(thread.channel_id, rows);
+  }
+  return byChannel;
+}
+
+/**
+ * What a screen reader hears for a thread row under its channel (#5277,
+ * #5300), on web and the phone alike: "Thread: grill is in my garage, in
+ * #general, 2 new", with "muted" while muted.
+ */
+export function sidebarThreadRowLabel(parts: {
+  rootText: string;
+  channelLabel: string;
+  muted: boolean;
+  unreadCount: number;
+}): string {
+  const { rootText, channelLabel, muted, unreadCount } = parts;
+  return [
+    `Thread: ${rootText}`,
+    `in ${channelLabel}`,
+    muted ? "muted" : null,
+    unreadCount > 0 ? `${unreadCount} new` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+/**
+ * What a screen reader hears for the thread card (#4297), on web and the
+ * phone alike: "3 replies, 2 new, last reply 5m ago, latest from Devin: grill
+ * is in my garage", without the parts the card doesn't draw.
+ */
+export function threadCardLabel(parts: {
+  replies: string;
+  fresh: string | null;
+  lastReply: string | null;
+  preview: { name: string | null; text: string } | null;
+}): string {
+  const { replies, fresh, lastReply, preview } = parts;
+  return [
+    replies,
+    fresh,
+    lastReply,
+    preview
+      ? `latest${preview.name ? ` from ${preview.name}` : ""}: ${preview.text}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 /**

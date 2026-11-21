@@ -82,11 +82,11 @@ describe("OnboardingPrimaryButton", () => {
 });
 
 describe("OnboardingSecondaryButton", () => {
-  it("is components.md's Secondary: a card fill under the input border, never gold", () => {
+  it("is components.md's Secondary: a card fill under the control edge, never gold", () => {
     const { pressable, tokens } = renderButton({}, OnboardingSecondaryButton);
     const style = flatStyle(pressable.props.style);
     expect(style.backgroundColor).toBe(tokens.color.surface.card);
-    expect(style.borderColor).toBe(tokens.color.border.input);
+    expect(style.borderColor).toBe(tokens.color.border.control);
     const label = pressable.findByType("Text" as never) as Node;
     expect(flatStyle(label.props.style).color).toBe(
       tokens.color.text.foreground,

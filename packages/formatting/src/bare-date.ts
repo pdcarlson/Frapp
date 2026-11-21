@@ -81,16 +81,16 @@ export function formatBareDate(
 }
 
 /**
- * {@link formatBareDate} with the month spelled short: `"Nov 4, 2026"` in an
+ * {@link formatBareDate} with the month written out: `"November 4, 2026"` in an
  * English locale. For a date that stands in a sentence rather than a column,
- * such as a chat hours card's "logged 2h on Nov 4, 2026", where web's and
+ * such as a chat hours card's "logged 2h on November 4, 2026", where web's and
  * mobile's cards must read the same.
  */
 export function formatBareDateMedium(
   value: string | null | undefined,
 ): string {
   return formatParsed(value, {
-    month: "short",
+    month: "long",
     day: "numeric",
     year: "numeric",
   });

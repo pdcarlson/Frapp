@@ -19,7 +19,8 @@ const test = base.extend({
  * `spec/ui/web-dashboard/README.md` § Responsive contract: at `lg` and up the
  * nav column fits a 1024×768 window for every seeded role without scrolling.
  * Before #2946 a President's 17 rows needed an 828px-tall window and scrolled
- * by 60px at 768. The fix folded the six-row Admin group into one row, now named Chapter settings.
+ * by 60px at 768. The fix folded the six-row Admin group into one row, Chapter
+ * settings, which moved into the chapter menu atop the nav on 2026-11-19.
  * This test is what stops the list growing back past the budget one "just one
  * more row" at a time. Each row costs 36px.
  *
@@ -69,13 +70,16 @@ test("the sidebar fits a 1024×768 window with every row showing", async ({
   const nav = page.getByRole("navigation", { name: "Primary" });
   await expect(nav).toBeVisible();
   // If either stub above ever stops reaching the nav, rows go missing and the
-  // test says so instead of passing on a shorter list. Chapter settings, the
-  // last row, needs the permissions stub. Backwork needs both: its permission,
+  // test says so instead of passing on a shorter list. Directory, the last
+  // row, needs the permissions stub. Backwork needs both: its permission,
   // and its module, which a failed chapter read would switch off with every
   // other module row.
-  await expect(nav.getByRole("link", { name: "Chapter settings" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Directory" })).toBeVisible();
   await expect(nav.getByRole("link", { name: "Backwork" })).toBeVisible();
 
+  // This sessionless page has no Ask Frapp. A member with Ask gets the same
+  // nav region: the bar shares the collapse toggle's 34px row at the foot
+  // (#5560), so it costs no height. A second foot row would not fit here.
   const measured = await nav.evaluate((el) => ({
     scrollHeight: el.scrollHeight,
     clientHeight: el.clientHeight,

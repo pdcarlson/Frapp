@@ -1,0 +1,440 @@
+#!/usr/bin/env node
+// Merge main into the current branch, and redo the parts of the merge a person
+// shouldn't have to.
+//
+//   npm run merge:main                 fetch and merge origin/main
+//   npm run merge:main -- --continue   after resolving the conflicts it left you
+//   npm run merge:main -- --base <ref> merge another ref (default origin/main)
+//
+// Why this exists. `apps/api/openapi.json` and `packages/api-sdk/src/types.ts`
+// are regenerated whole from the API source, so nearly every API PR conflicts in
+// them when it merges main, and the conflict is meaningless: the right answer is
+// neither side but a fresh export of the merged source. Resolving it by hand
+// costs a session a long read of a generated file. This script:
+//
+//   1. fetches the base and merges it, without committing;
+//   2. resolves a conflict in those generated files by taking main's side;
+//   3. settles each other conflicted file whose every conflict is one where both
+//      sides only added lines, keeping both, main's first: the rule PR base sync
+//      applies on the server (scripts/ci/resolve-added-lines-conflict.mjs), but
+//      file by file, and stages it without committing;
+//   4. stops there if any file still conflicts or was kept-both, for the session
+//      to resolve or read, then picks up again at `--continue`. Base sync
+//      refuses keep-both on an auto-merge PR so that a person reads it; stopping
+//      keeps that true here;
+//   5. regenerates the contract when both sides changed something it is built
+//      from (a clean textual merge of two exports is not an export either),
+//      running `npm ci` first if the merge changed the lockfile, and commits the
+//      merge;
+//   6. runs `migration:renumber` against the commit it merged, which does
+//      nothing unless the branch adds a migration that main's now sort after.
+//      Its renames are left uncommitted, for the session to read and commit.
+//
+// Stacked branches. A branch that merged another PR's branch (part 3 built on
+// part 2) holds that PR's own commits, but `main` holds only its squash, so git
+// sees no common history for that work: every line both changed conflicts, and
+// a file both added conflicts whole. Before merging, the script finds the
+// squash commits on the base whose PR the branch already holds and, for the
+// length of the `git merge` call only, grafts the PR's head on as each squash's
+// second parent (`git replace --graft`). The merge base then moves up to the
+// version of that work the branch already has, and only lines the branch
+// changed since conflict. The grafts are deleted as soon as the merge returns,
+// so the commit records the real parents and nothing is pushed.
+//
+// CI's `check:api-contract` still checks the result against the source, so a
+// mistake here fails a check instead of merging.
+
+import { execFileSync } from "node:child_process";
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { CONTRACT_ARTIFACTS, isApiRelated, regenerateContract } from "./check-api-contract-drift.mjs";
+import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
+import { isRefusedPath, mergeFile } from "./ci/resolve-added-lines-conflict.mjs";
+
+const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+const CONTINUE_HINT = "npm run merge:main -- --continue";
+const LOCKFILE = "package-lock.json";
+
+function gitIn(cwd) {
+  return (args, { allowFail = false } = {}) => {
+    try {
+      const out = execFileSync("git", args, {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      return { ok: true, out: (out ?? "").trim() };
+    } catch (error) {
+      if (!allowFail) throw error;
+      return { ok: false, out: `${error.stdout ?? ""}${error.stderr ?? ""}`.trim() };
+    }
+  };
+}
+
+const lines = (s) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+
+/**
+ * Split the merge's unmerged paths into the generated contract files, which this
+ * script resolves, and everything else, which the session does.
+ */
+export function partitionConflicts(unmerged, generated = CONTRACT_ARTIFACTS) {
+  const set = new Set(generated);
+  return {
+    generated: unmerged.filter((f) => set.has(f)),
+    other: unmerged.filter((f) => !set.has(f)),
+  };
+}
+
+/**
+ * Whether the merged contract needs a fresh export: both sides changed a file it
+ * is built from, or the contract itself (`isApiRelated` covers both). One side
+ * alone carries a contract that already matches its own source; two sides can
+ * each be right and still merge into a contract neither export would write.
+ */
+export function needsRegeneration(oursChanged, theirsChanged, related = isApiRelated) {
+  return oursChanged.some(related) && theirsChanged.some(related);
+}
+
+/** The PR number a squash merge names last in its subject: "Fix it (#12) (#34)" is 34. */
+export function squashedPrNumber(subject) {
+  const match = /\(#(\d+)\)\s*$/.exec(subject);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Grafts each squash commit on `base` whose PR the branch already holds onto
+ * that PR's head, so the merge base sees the branch's copy of the work. Fetches
+ * the heads from `refs/pull/<n>/head` in one call. Each graft is also recorded
+ * under `refs/merge-main/graft/`, so `dropGrafts` removes one an interrupted
+ * run left behind. Returns how many it made; none when there is nothing to
+ * graft or the fetch fails (the merge then runs as plain `git merge` would).
+ */
+export function graftSquashedPrs(git, { remote, base, log }) {
+  const range = git(["log", "--first-parent", "--format=%H %s", `HEAD..${base}`], { allowFail: true });
+  if (!range.ok || !remote) return 0; // an unknown base: `git merge` refuses it next
+  const squashes = lines(range.out)
+    .map((line) => ({ sha: line.slice(0, line.indexOf(" ")), pr: squashedPrNumber(line.slice(line.indexOf(" ") + 1)) }))
+    .filter((c) => c.pr !== null);
+  if (squashes.length === 0) return 0;
+  const refspec = (pr) => `+refs/pull/${pr}/head:refs/merge-main/pull/${pr}`;
+  let fetched = git(["fetch", "--quiet", "--no-tags", remote, ...squashes.map((c) => refspec(c.pr))], {
+    allowFail: true,
+  });
+  if (!fetched.ok) {
+    // One missing ref fails the whole fetch (a subject's "(#n)" that names an
+    // issue, or a remote with no pull refs): list what exists, fetch only that.
+    const listed = git(["ls-remote", remote, "refs/pull/*/head"], { allowFail: true });
+    const exists = new Set(listed.ok ? lines(listed.out).map((l) => l.split(/\s+/)[1]) : []);
+    const present = squashes.filter((c) => exists.has(`refs/pull/${c.pr}/head`));
+    fetched =
+      present.length > 0
+        ? git(["fetch", "--quiet", "--no-tags", remote, ...present.map((c) => refspec(c.pr))], { allowFail: true })
+        : fetched;
+    if (!fetched.ok) {
+      log(`Could not fetch the merged PRs' heads, so stacked work merges without grafts.\n${fetched.out}`);
+      return 0;
+    }
+  }
+  let count = 0;
+  for (const { sha, pr } of squashes) {
+    const head = git(["rev-parse", "-q", "--verify", `refs/merge-main/pull/${pr}^{commit}`], { allowFail: true });
+    if (!head.ok) continue;
+    // The branch holds this PR's work if it has any of the PR's commits that
+    // the base doesn't (the base has only the squash). Counted rather than
+    // read off `git merge-base`, which names one base of several, often a
+    // main commit, once both branches have merged main since they split.
+    const commits = (...args) => Number(git(["rev-list", "--count", head.out, "--not", base, ...args]).out);
+    const own = commits();
+    if (own === 0 || commits("HEAD") === own) continue;
+    // A head pushed after the squash landed (the PR branch merged main later)
+    // descends from it, and grafting it on would make a cycle.
+    if (git(["merge-base", "--is-ancestor", sha, head.out], { allowFail: true }).ok) continue;
+    const parents = git(["rev-list", "--parents", "-n", "1", sha]).out.split(" ").slice(1);
+    if (parents.length !== 1) continue; // not a squash
+    // Fails, and is skipped, when someone already replaced this commit by hand.
+    if (git(["replace", "--graft", sha, parents[0], head.out], { allowFail: true }).ok) {
+      git(["update-ref", `refs/merge-main/graft/${sha}`, sha]);
+      count += 1;
+      log(`#${pr} is already in this branch from its own commits; merging against that copy of it.`);
+    }
+  }
+  return count;
+}
+
+/**
+ * Deletes the grafts this script made, including any an interrupted run left,
+ * and the fetched PR heads. A replace ref someone made by hand isn't recorded
+ * under `refs/merge-main/graft/`, so it stays.
+ */
+function dropGrafts(git) {
+  const refs = lines(git(["for-each-ref", "--format=%(refname)", "refs/merge-main/"]).out);
+  for (const ref of refs) {
+    const graft = /^refs\/merge-main\/graft\/([0-9a-f]+)$/.exec(ref);
+    if (graft) git(["replace", "-d", graft[1]], { allowFail: true });
+    git(["update-ref", "-d", ref], { allowFail: true });
+  }
+}
+
+const PLAIN_FILE = /^100(644|755)$/;
+
+/**
+ * Settle the conflicted files where both sides only added lines, as PR base sync
+ * would (mergeFile's rules: no duplicate line or name, balanced blocks, one
+ * unambiguous place), write and stage each, and return their paths. A file with
+ * any other kind of conflict, a generated file, a lockfile, a migration, a file
+ * missing from a side, or one that isn't UTF-8 text is left for the session.
+ */
+export function settleAddedLines(cwd, paths) {
+  const settled = [];
+  for (const path of paths) {
+    if (isRefusedPath(path)) continue;
+    const stages = new Map();
+    const listed = execFileSync("git", ["ls-files", "-u", "-z", "--", path], { cwd, encoding: "utf8" });
+    for (const entry of listed.split("\0").filter(Boolean)) {
+      const [meta] = entry.split("\t");
+      const [mode, sha, stage] = meta.split(" ");
+      stages.set(stage, { mode, sha });
+    }
+    const [base, ours, theirs] = ["1", "2", "3"].map((n) => stages.get(n));
+    if (!base || !ours || !theirs) continue;
+    // One plain-file mode on all three: a mode change, a symlink or a submodule is the session's.
+    if (!PLAIN_FILE.test(base.mode) || base.mode !== ours.mode || ours.mode !== theirs.mode) continue;
+    let texts;
+    try {
+      const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }); // keep a BOM, as base sync does
+      texts = [base, ours, theirs].map((s) =>
+        decoder.decode(execFileSync("git", ["cat-file", "blob", s.sha], { cwd, maxBuffer: 64 * 1024 * 1024 })),
+      );
+    } catch {
+      continue; // not UTF-8, or unreadable: the session's
+    }
+    const merged = mergeFile({ path, base: texts[0], ours: texts[1], theirs: texts[2] });
+    // No conflict found where git found one: the two disagree, so a person looks.
+    if (!merged.ok || merged.hunks === 0) continue;
+    writeFileSync(join(cwd, path), merged.text);
+    execFileSync("git", ["add", "--", path], { cwd });
+    settled.push(path);
+  }
+  return settled;
+}
+
+function mergeInProgress(git) {
+  return git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], { allowFail: true }).ok;
+}
+
+function unmergedPaths(git) {
+  return lines(git(["diff", "--name-only", "--diff-filter=U"]).out);
+}
+
+/** Runs the renumber step, and turns a failure into an outcome rather than a stack trace. */
+function renumberAfter(sha, { renumber, log }) {
+  try {
+    renumber(sha);
+    return true;
+  } catch (error) {
+    log(
+      "\nThe merge is done, but `migration:renumber` failed. Run `npm run migration:renumber` " +
+        "yourself before pushing, or `migration-order` fails in CI.",
+    );
+    log(String(error?.message ?? error));
+    return false;
+  }
+}
+
+/**
+ * Finish a merge whose conflicts are all resolved: regenerate the contract when
+ * both sides changed what it is built from, stage it, and commit. Returns the
+ * outcome name.
+ */
+function finish(git, { regenerate, install, generated, related, log }) {
+  const ours = git(["rev-parse", "HEAD"]).out;
+  const theirs = git(["rev-parse", "MERGE_HEAD"]).out;
+  const base = git(["merge-base", ours, theirs]).out;
+  const since = (tip) => lines(git(["diff", "--name-only", base, tip]).out);
+
+  if (needsRegeneration(since(ours), since(theirs), related)) {
+    log("Both sides changed the API or its contract; regenerating the contract from the merged source.");
+    try {
+      // The export runs on node_modules, so it has to match the merged lockfile
+      // (a generator bump on main changes the output), as CI's `npm ci` makes it.
+      if (git(["diff", "--cached", "--name-only", ours, "--", LOCKFILE]).out) {
+        log("The merge changed package-lock.json; installing it first.");
+        install();
+      }
+      regenerate();
+    } catch (error) {
+      log(
+        "\nRegenerating the contract failed. Usually the merged source doesn't compile; if main " +
+          "changed dependencies, `npm ci` may be what's missing. The merge is still in progress: " +
+          `fix it, \`git add\` the fix, then run \`${CONTINUE_HINT}\`.`,
+      );
+      log(String(error?.message ?? error));
+      return "regenerate-failed";
+    }
+    git(["add", "--", ...generated]);
+  }
+
+  // Runs the pre-commit hook (the secret scan), which a clean `git merge` would not.
+  const committed = git(["commit", "--no-edit"], { allowFail: true });
+  if (!committed.ok) {
+    log(
+      "\n`git commit` failed, so the merge is still in progress with everything staged. " +
+        `Fix what it reports, then run \`${CONTINUE_HINT}\`.`,
+    );
+    log(committed.out);
+    return "commit-failed";
+  }
+  log(`Committed the merge of ${theirs.slice(0, 12)}.`);
+  return "merged";
+}
+
+/**
+ * The whole command, with its side effects injectable for the test.
+ *
+ * @param {object} options
+ * @param {string} options.cwd the repository
+ * @param {string} options.base the ref to merge, e.g. origin/main
+ * @param {boolean} options.resume `--continue`: finish a merge this script stopped
+ * @param {() => void} options.regenerate rewrites the generated files from source
+ * @param {() => void} options.install brings node_modules in line with the lockfile
+ * @param {(sha: string) => void} options.renumber moves the branch's migrations
+ *   after those of the commit just merged
+ * @returns {string} what happened: up-to-date, fast-forward, merged, conflicts,
+ *   regenerate-failed, commit-failed, renumber-failed, or refused
+ */
+export function mergeMain({
+  cwd,
+  base = "origin/main",
+  resume = false,
+  regenerate,
+  install,
+  renumber,
+  generated = CONTRACT_ARTIFACTS,
+  related = isApiRelated,
+  log = console.log,
+}) {
+  const git = gitIn(cwd);
+
+  if (resume) {
+    if (!mergeInProgress(git)) {
+      log("No merge in progress, so there is nothing to continue. Run `npm run merge:main`.");
+      return "refused";
+    }
+    const left = unmergedPaths(git);
+    if (left.length > 0) {
+      log("These files still conflict. Resolve each and `git add` it, then run this again:");
+      for (const f of left) log(`  ${f}`);
+      return "conflicts";
+    }
+  } else {
+    if (mergeInProgress(git)) {
+      log(
+        `A merge is already in progress. Resolve it and run \`${CONTINUE_HINT}\`, ` +
+          "or abandon it with `git merge --abort`.",
+      );
+      return "refused";
+    }
+    const dirty = git(["status", "--porcelain", "--untracked-files=no"]).out;
+    if (dirty) {
+      log("Commit or stash your changes first; a merge on top of them is hard to undo.");
+      log(dirty);
+      return "refused";
+    }
+
+    const [remote, ...rest] = base.split("/");
+    if (rest.length > 0) {
+      const fetched = git(["fetch", "--quiet", remote, rest.join("/")], { allowFail: true });
+      if (!fetched.ok) log(`Could not fetch ${base}; merging the local ref.\n${fetched.out}`);
+    }
+
+    const before = git(["rev-parse", "HEAD"]).out;
+    let merged;
+    try {
+      dropGrafts(git); // any an interrupted run left
+      const grafted = graftSquashedPrs(git, { remote: rest.length > 0 ? remote : null, base, log });
+      // Under the grafts the branch can look like an ancestor of the base (its
+      // tip is the lower PR's head), and a fast-forward would drop its history
+      // for real: always make the merge commit then.
+      const noFf = grafted > 0 ? ["--no-ff"] : [];
+      merged = git(["merge", "--no-commit", "--no-edit", ...noFf, base], { allowFail: true });
+    } finally {
+      dropGrafts(git);
+    }
+    const after = git(["rev-parse", "HEAD"]).out;
+
+    if (!mergeInProgress(git)) {
+      if (!merged.ok) {
+        // Refused before starting: an untracked file in the way, an unknown ref.
+        log(`git merge refused:\n${merged.out}`);
+        return "refused";
+      }
+      if (before === after) {
+        log(`Already up to date with ${base}.`);
+        return "up-to-date";
+      }
+      log(`Fast-forwarded to ${base}.`);
+      return renumberAfter(after, { renumber, log }) ? "fast-forward" : "renumber-failed";
+    }
+
+    const { generated: contract, other } = partitionConflicts(unmergedPaths(git), generated);
+    for (const file of contract) {
+      git(["checkout", "--theirs", "--", file]);
+      git(["add", "--", file]);
+    }
+    if (contract.length > 0) {
+      log(`Took ${base}'s side of ${contract.join(", ")}; it is regenerated before the commit.`);
+    }
+    const settled = settleAddedLines(cwd, other);
+    if (settled.length > 0) {
+      log(`\nKept both sides' added lines (${base}'s first, then yours) and staged them. Read each:`);
+      for (const f of settled) log(`  ${f}`);
+    }
+    const left = other.filter((f) => !settled.includes(f));
+    if (left.length > 0) {
+      log("\nThese files conflict. Resolve each and `git add` it:");
+      for (const f of left) log(`  ${f}`);
+    }
+    if (other.length > 0) {
+      log(
+        `\nThen run \`${CONTINUE_HINT}\`, not \`git commit\`: it regenerates the API ` +
+          "contract from the resolved source before committing.",
+      );
+      return "conflicts";
+    }
+  }
+
+  // Read before the commit consumes it: renumber against the commit actually
+  // merged, so it neither re-fetches a base that moved meanwhile nor, after
+  // `--continue`, guesses which ref the first run merged.
+  const merging = git(["rev-parse", "MERGE_HEAD"]).out;
+  const outcome = finish(git, { regenerate, install, generated, related, log });
+  if (outcome !== "merged") return outcome;
+  return renumberAfter(merging, { renumber, log }) ? "merged" : "renumber-failed";
+}
+
+function getArg(name) {
+  const i = process.argv.indexOf(name);
+  return i === -1 ? undefined : process.argv[i + 1];
+}
+
+if (isInvokedDirectly(import.meta.url)) {
+  const outcome = mergeMain({
+    cwd: REPO_ROOT,
+    base: getArg("--base") ?? "origin/main",
+    resume: process.argv.includes("--continue"),
+    regenerate: regenerateContract,
+    install: () => execFileSync("npm", ["ci"], { cwd: REPO_ROOT, stdio: "inherit" }),
+    renumber: (sha) => {
+      // A bare SHA is never fetched. Prints "This branch adds no migrations." and
+      // stops when there is nothing to move.
+      if (!existsSync(join(REPO_ROOT, "supabase/migrations"))) return;
+      execFileSync(process.execPath, [join(REPO_ROOT, "scripts/migration.mjs"), "renumber", "--base", sha], {
+        cwd: REPO_ROOT,
+        stdio: "inherit",
+      });
+    },
+  });
+  process.exit(["up-to-date", "fast-forward", "merged"].includes(outcome) ? 0 : 1);
+}

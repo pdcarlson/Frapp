@@ -33,6 +33,7 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
 import {
   isNotificationCategoryKey,
   isSupportedTimeZone,
+  withoutObjectReplacement,
 } from '@repo/validation';
 import { ChatBlockService } from './chat-block.service';
 
@@ -51,6 +52,7 @@ const USER_SETTINGS_DEFAULTS: UserSettingsValues = {
   status_expires_at: null,
   custom_status: null,
   custom_status_expires_at: null,
+  read_receipts: true,
 };
 
 /** True when `expiresAt` is set and is not later than `now`. */
@@ -82,6 +84,7 @@ function toUserSettingsValues(
     custom_status_expires_at: customExpired
       ? null
       : (row.custom_status_expires_at ?? null),
+    read_receipts: row.read_receipts ?? true,
   };
 }
 
@@ -154,6 +157,14 @@ export type NotifyPayload = {
   category?: string;
   /** The push's iOS stack (`PushPayload.threadId`). Not stored on the in-app row. */
   threadId?: string;
+  /** The push's action buttons (`PushPayload.categoryId`). Not stored on the in-app row. */
+  categoryId?: string;
+  /**
+   * The one chat message this notification quotes (#4418): stored as the
+   * row's `chat_message_id`, so deleting the message deletes the row and an
+   * edit rewrites its body, and sent in the push's data as `messageId`.
+   */
+  chatMessageId?: string;
   /**
    * Per-recipient wording. When set, it replaces `title` and `body` for each
    * recipient, in both the in-app row and the push, so a push can name a time
@@ -218,18 +229,40 @@ function isWithheldChatRow(
   return typeof senderId !== 'string' || blocked.includes(senderId);
 }
 
+/**
+ * The payload with U+FFFC cleaned out of its title and body (#4346). Both
+ * carry text a member typed (a task's title, an event's name, a group DM's
+ * name, a message), and a phone keyboard can leave the placeholder in any of
+ * it, which the push and the in-app list both drew as a broken "OBJ" box.
+ * Cleaned once here, at the door every notification comes through.
+ */
+function cleanText(payload: NotifyPayload): NotifyPayload {
+  if (!`${payload.title}${payload.body}`.includes('\uFFFC')) return payload;
+  return {
+    ...payload,
+    title: withoutObjectReplacement(payload.title).trim(),
+    body: withoutObjectReplacement(payload.body).trim(),
+  };
+}
+
 /** In-app insert shape shared by `notifyUser` and the batched chapter path. */
 function inAppRow(
   userId: string,
   chapterId: string,
   payload: NotifyPayload,
-): Pick<Notification, 'chapter_id' | 'user_id' | 'title' | 'body' | 'data'> {
+): Pick<
+  Notification,
+  'chapter_id' | 'user_id' | 'title' | 'body' | 'data' | 'chat_message_id'
+> {
   return {
     chapter_id: chapterId,
     user_id: userId,
     title: payload.title,
     body: payload.body,
     data: payload.data ?? {},
+    ...(payload.chatMessageId
+      ? { chat_message_id: payload.chatMessageId }
+      : {}),
   };
 }
 
@@ -245,6 +278,9 @@ function inAppRow(
 function isMemberSwitchable(category: string, priority: string): boolean {
   return priority !== 'URGENT' && isNotificationCategoryKey(category);
 }
+
+/** Devices one member keeps push tokens for (L4 of the 2026-11 API audit). */
+export const MAX_PUSH_TOKENS_PER_USER = 10;
 
 @Injectable()
 export class NotificationService {
@@ -277,8 +313,9 @@ export class NotificationService {
   async notifyUser(
     userId: string,
     chapterId: string,
-    payload: NotifyPayload,
+    sent: NotifyPayload,
   ): Promise<void> {
+    let payload = cleanText(sent);
     const category = payload.category ?? 'default';
     const priority = payload.priority ?? 'NORMAL';
 
@@ -315,6 +352,9 @@ export class NotificationService {
     const notification = await this.notificationRepo.create(
       inAppRow(userId, chapterId, payload),
     );
+    // The message this row quotes was deleted while it was being sent (#4418):
+    // the database dropped the row, and the push would carry the same words.
+    if (!notification) return;
 
     // Push is best-effort, and the token lookup is part of it. Once the
     // notification row above is committed the user *has* been notified in
@@ -347,17 +387,79 @@ export class NotificationService {
   }
 
   /**
+   * After an edit, give the in-app rows that quote the message its new text
+   * (#4418), for the members in `readerIds` (who can read the channel now).
+   * A row the push worker writes after this takes the edited text from the
+   * database (`notifications_skip_deleted_message`).
+   * Best-effort: the edit is the source of truth and has already landed, so a
+   * failure here is reported, never thrown. A delete needs no call: a trigger
+   * removes the rows with the message.
+   */
+  async rewriteChatMessagePreview(
+    chapterId: string,
+    messageId: string,
+    preview: string,
+    readerIds: readonly string[],
+  ): Promise<void> {
+    if (readerIds.length === 0) return;
+    try {
+      await this.notificationRepo.rewriteChatMessageBody(
+        chapterId,
+        messageId,
+        preview,
+        readerIds,
+      );
+    } catch (err) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'notification-rewrite-edited-chat-message',
+        message: `Could not rewrite the notifications for edited message ${messageId}`,
+        error: err,
+      });
+    }
+  }
+
+  /**
    * The zone `userId`'s clock reads in (see {@link recipientTimeZone}), or null
    * when they have none or the read fails. For a sender whose zone stands in
    * for a recipient who has never reported one: chapter members share a
    * campus, so the person who scheduled an event is the best guess for it.
+   *
+   * A failed read is reported, not only swallowed: a recurring series' legacy
+   * token saved by a request with no usable `x-time-zone` is stepped in this
+   * zone and its meetings are stored (#4505, #4746), so a read that failed
+   * leaves rows a DST change moves, and the report says why.
    */
   async timeZoneFor(userId: string): Promise<string | null> {
     try {
       return recipientTimeZone(await this.settingsRepo.findByUser(userId));
-    } catch {
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'notification-time-zone-read',
+        message: `Reading the time zone of ${userId} failed; carrying on without one.`,
+        error,
+      });
       return null;
     }
+  }
+
+  /**
+   * The zone each of `userIds` reads their clock in ({@link recipientTimeZone}),
+   * from one batched settings read. A member with no settings row, or none
+   * reported, maps to null. A failed read throws: the daily reminder sweeps
+   * (#4788) would rather skip a tick, and retry on the next hourly one, than
+   * guess a zone and wake a member at the wrong hour.
+   */
+  async timeZonesFor(
+    userIds: readonly string[],
+  ): Promise<Map<string, string | null>> {
+    const unique = [...new Set(userIds)];
+    const rows = await this.settingsRepo.findByUserIds(unique);
+    const byUser = new Map(rows.map((row) => [row.user_id, row]));
+    return new Map(
+      unique.map((id) => [id, recipientTimeZone(byUser.get(id) ?? null)]),
+    );
   }
 
   /**
@@ -392,8 +494,9 @@ export class NotificationService {
   async notifyMembers(
     chapterId: string,
     memberUserIds: readonly string[],
-    payload: NotifyPayload,
+    sent: NotifyPayload,
   ): Promise<void> {
+    const payload = cleanText(sent);
     const userIds = [...new Set(memberUserIds)];
     if (userIds.length === 0) return;
 
@@ -572,12 +675,19 @@ export class NotificationService {
       {
         title: payload.title,
         body: payload.body,
-        data: { ...payload.data, notificationId },
+        data: {
+          ...payload.data,
+          notificationId,
+          ...(payload.chatMessageId
+            ? { messageId: payload.chatMessageId }
+            : {}),
+        },
         priority,
         // Forwarded for delivery telemetry only — lets `push_delivery`
         // records be sliced by category (see the Expo provider).
         category,
         threadId: payload.threadId,
+        categoryId: payload.categoryId,
       },
     );
 
@@ -832,46 +942,167 @@ export class NotificationService {
   /**
    * Mark the member's unread notifications in this chapter read in one write
    * (#3929): all of them for "Mark all read", or only the rows that point at
-   * `screens` once the member has opened one of those screens. Rows created
+   * `screens` once the member has opened one of those screens, or only the
+   * rows `ids` names: one inbox entry's, when it is opened (#3948). Rows created
    * after this call began stay unread. Answers with the stamp it wrote, so a
    * client can put the same instant in its cache.
    */
   async markNotificationsRead(
     userId: string,
     chapterId: string,
-    options?: { screens?: readonly string[] },
+    options?: { screens?: readonly string[]; ids?: readonly string[] },
   ): Promise<{ read_at: string; updated: number }> {
     const readAt = new Date().toISOString();
     const screens = options?.screens?.length
       ? [...new Set(options.screens)]
       : undefined;
+    const ids = options?.ids?.length ? [...new Set(options.ids)] : undefined;
     const updated = await this.notificationRepo.markAllRead(
       userId,
       chapterId,
       readAt,
       screens,
+      ids,
     );
     return { read_at: readAt, updated };
+  }
+
+  /**
+   * Take back what a task's Mark done told members (#5732): the completion
+   * was reopened (taken back, sent back, or handed to someone else), so the
+   * review row its creator got and the "finished" rows its followers got go
+   * from their lists. A push already on a lock screen can't be recalled; the
+   * row it opens can. Never throws: the write it follows has already landed.
+   */
+  async retractTaskCompletion(
+    chapterId: string,
+    taskId: string,
+  ): Promise<void> {
+    try {
+      await this.notificationRepo.deleteTaskCompletionRows(chapterId, taskId);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-completion-retract',
+        message: `could not clear the completion rows for task ${taskId}`,
+        error,
+      });
+    }
+  }
+
+  /**
+   * Clear notifications from the member's list (#3948): the rows named, if
+   * they are the caller's in this chapter, and with `conversation` the rest
+   * of that conversation's rows up to now too, so a cleared entry doesn't
+   * come back with rows past the page the client listed or read rows its
+   * Unread filter hid. A clear is a delete, with no archive to restore from.
+   */
+  async clearNotifications(
+    userId: string,
+    chapterId: string,
+    ids: readonly string[],
+    conversation?: { channelId: string; threadRootId?: string },
+  ): Promise<{ cleared: number }> {
+    const through = new Date().toISOString();
+    let cleared = await this.notificationRepo.deleteMany(userId, chapterId, [
+      ...new Set(ids),
+    ]);
+    if (conversation) {
+      cleared += await this.notificationRepo.deleteConversation(
+        userId,
+        chapterId,
+        conversation,
+        through,
+      );
+    }
+    return { cleared };
   }
 
   async registerPushToken(
     userId: string,
     token: string,
     deviceName?: string,
+    notificationsEnabled?: boolean,
   ): Promise<PushToken> {
     const existing = await this.pushTokenRepo.findByToken(token);
     if (existing) {
       if (existing.user_id === userId) {
-        return existing;
+        // A phone re-registers its unchanged token on every launch, so each
+        // one stamps `last_registered_at`, which the cap below ranks by. The
+        // phone also sends its platform label every time (#4563), so a row
+        // stored before it did gets one, and an OS update refreshes it. An
+        // absent label never clears a stored one, and a row deleted since
+        // the read above returns as read, as it did before labels.
+        const updated = await this.pushTokenRepo.markRegistered(
+          existing.id,
+          userId,
+          new Date().toISOString(),
+          deviceName && existing.device_name !== deviceName
+            ? deviceName
+            : undefined,
+          // What the phone's push switch reads now (officers' Directory
+          // "Phone app" filter). Absent from an older build, which leaves the
+          // stored value as it was.
+          notificationsEnabled,
+        );
+        return updated ?? existing;
       }
+      // The same phone signed in to another account: the token follows
+      // whoever registered it last. Logged (no token, no device name) so a
+      // move nobody made on purpose can be traced.
+      this.logger.warn(
+        JSON.stringify({
+          event: 'push_token_moved',
+          from_user_id: existing.user_id,
+          to_user_id: userId,
+        }),
+      );
       await this.pushTokenRepo.deleteByToken(token);
     }
 
-    return this.pushTokenRepo.create({
+    const created = await this.pushTokenRepo.create({
       user_id: userId,
       token,
       device_name: deviceName ?? null,
+      notifications_enabled: notificationsEnabled ?? null,
     });
+    try {
+      await this.dropOldestPushTokens(userId);
+    } catch (err) {
+      // The new row is stored and will receive pushes; a failed trim leaves
+      // the member over the cap until their next register, which is no reason
+      // to tell the phone its registration failed. No token in the log.
+      this.logger.warn(
+        JSON.stringify({
+          event: 'push_token_cap_failed',
+          user_id: userId,
+          error: err instanceof Error ? err.name : 'unknown',
+        }),
+      );
+    }
+    return created;
+  }
+
+  /**
+   * A member keeps at most `MAX_PUSH_TOKENS_PER_USER` devices. A reinstall or
+   * a new phone registers a new token while the old one lingers until Expo
+   * reports it gone, so past the cap the ones registered longest ago go: every
+   * push fans out to each stored token, and an account can't pile up rows
+   * without end. A phone in use re-registers on every launch, so it ranks by
+   * its last launch, not by when its token was first stored.
+   */
+  private async dropOldestPushTokens(userId: string): Promise<void> {
+    const tokens = await this.pushTokenRepo.findByUser(userId);
+    if (tokens.length <= MAX_PUSH_TOKENS_PER_USER) return;
+    const oldest = [...tokens]
+      .sort(
+        (a, b) =>
+          Date.parse(b.last_registered_at) - Date.parse(a.last_registered_at),
+      )
+      .slice(MAX_PUSH_TOKENS_PER_USER);
+    for (const row of oldest) {
+      await this.pushTokenRepo.delete(row.id, userId);
+    }
   }
 
   async removePushToken(id: string, userId: string): Promise<void> {
@@ -949,6 +1180,7 @@ export class NotificationService {
         | 'status_expires_at'
         | 'custom_status'
         | 'custom_status_expires_at'
+        | 'read_receipts'
       >
     >,
   ): Promise<UserSettingsValues> {
@@ -973,6 +1205,8 @@ export class NotificationService {
     // `!= null`: the DTO's `@IsOptional` lets `theme: null` through, and the
     // column is NOT NULL, so null means "not supplied" here, never a clear.
     if (data.theme != null) write.theme = data.theme;
+    // The same for the read-receipts switch: NOT NULL, so null is not a clear.
+    if (data.read_receipts != null) write.read_receipts = data.read_receipts;
 
     // A status and its end time are one choice: picking a status replaces the
     // old end time, so switching from "DND for 1 hour" to Invisible does not

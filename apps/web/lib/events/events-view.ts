@@ -1,78 +1,65 @@
 import {
-  parseCalendarLayers,
-  type CalendarLayer,
+  parseHiddenCalendarKinds,
+  serializeHiddenCalendarKinds,
+  type CalendarKind,
 } from "@repo/hooks/calendar-tasks";
 
-export type EventsView = "list" | "calendar";
+/** Where an hour-grid event starts when no hour was pressed. */
+const CALENDAR_DEFAULT_START_HOUR = 18;
 
 /**
- * The Events page's last view (List or Calendar) on this browser, per user
- * (#3822): the page opens where this person left it. Not on the server: a
- * phone and a laptop each keep their own, like the last chat channel
- * (`lib/chat/last-channel.ts`).
+ * The start a calendar press hands the editor: the day at `startHour`, which
+ * an hour of the hour grid passes, else 6 PM (most chapter events are
+ * evening ones).
+ */
+export function calendarCreateStart(
+  day: Date,
+  startHour: number = CALENDAR_DEFAULT_START_HOUR,
+): Date {
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), startHour);
+}
+
+/**
+ * The kinds the Events colour key has switched off (#5560), on this browser,
+ * per user: a member who turns birthdays off finds them off next time. Not on
+ * the server: a phone and a laptop each keep their own, like the last chat
+ * channel (`lib/chat/last-channel.ts`).
+ *
+ * The key replaced the calendar's layer toggles, whose stored choice
+ * (`frapp.events.calendar-layers.*`) is left unread: it switched My tasks and
+ * Assigned by me apart, which the key no longer does.
  *
  * localStorage, best-effort: a private window, blocked site data or a full
- * quota throws or reads empty, and the page then opens by its first-load rule
- * (the calendar for a chapter with no events, else the list).
+ * quota throws or reads empty, and every kind then shows.
  */
-export function eventsViewStorageKey(userId: string): string {
-  return `frapp.events.view.${userId}`;
+function hiddenKindsStorageKey(userId: string): string {
+  return `frapp.events.hidden-kinds.${userId}`;
 }
 
-export function readEventsView(
+export function readHiddenKinds(
   userId: string | null | undefined,
-): EventsView | null {
+): Set<CalendarKind> | null {
   if (!userId || typeof window === "undefined") return null;
   try {
-    const stored = window.localStorage.getItem(eventsViewStorageKey(userId));
-    return stored === "list" || stored === "calendar" ? stored : null;
-  } catch {
-    return null;
-  }
-}
-
-export function writeEventsView(
-  userId: string | null | undefined,
-  view: EventsView,
-): void {
-  if (!userId || typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(eventsViewStorageKey(userId), view);
-  } catch {
-    /* Best-effort: the choice holds for this page's life. */
-  }
-}
-
-/**
- * What the calendar shows (#4144): events, the viewer's tasks, the tasks they
- * assigned. Kept the same way and for the same reason as the view: a member
- * who turns their tasks off finds them off next time. `null` when nothing is
- * stored, which means everything on.
- */
-export function readCalendarLayers(
-  userId: string | null | undefined,
-): Set<CalendarLayer> | null {
-  if (!userId || typeof window === "undefined") return null;
-  try {
-    return parseCalendarLayers(
-      window.localStorage.getItem(`frapp.events.calendar-layers.${userId}`),
+    return parseHiddenCalendarKinds(
+      window.localStorage.getItem(hiddenKindsStorageKey(userId)),
     );
   } catch {
     return null;
   }
 }
 
-export function writeCalendarLayers(
+export function writeHiddenKinds(
   userId: string | null | undefined,
-  layers: ReadonlySet<CalendarLayer>,
+  hidden: ReadonlySet<CalendarKind>,
 ): void {
   if (!userId || typeof window === "undefined") return;
   try {
     window.localStorage.setItem(
-      `frapp.events.calendar-layers.${userId}`,
-      JSON.stringify([...layers]),
+      hiddenKindsStorageKey(userId),
+      serializeHiddenCalendarKinds(hidden),
     );
   } catch {
-    /* Best-effort, as the view. */
+    /* Best-effort: the choice holds for this page's life. */
   }
 }

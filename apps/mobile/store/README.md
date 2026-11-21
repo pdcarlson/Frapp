@@ -14,8 +14,8 @@ The owner approved renders of the real app on Expo web as the screens (2026-09-2
 no longer wait on a device build or on `preview` (#2415), and picked a framed design for both
 stores (2026-11-05): `node scripts/demo/capture-mobile.mjs --store` signs in to the local demo
 chapter, captures seven screens once, and frames them with a caption in the feature graphic's
-charcoal and gold, into `screenshots/app-store/` (1320 × 2868; the console took 1206 × 2622 instead, see § 6.4) and
-`screenshots/google-play/` (1242 × 2208). No Ask screen, because this binary has none (#2259),
+charcoal and gold, into `screenshots/app-store/` (1206 × 2622, the size the console takes, see § 6.4) and
+`screenshots/google-play/` (1242 × 2208). No Ask screen, because production has none (#2259; the server's AI is off),
 and no Dues screen, because a populated ledger shows the Stripe footer § Review notes keeps from
 App Review. The procedure, the captions, and where the sizes come from are in
 [`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-store-screenshots).
@@ -53,8 +53,8 @@ header is centered: on an iPhone the product page shows only its middle (about 6
 width, and the top three quarters above the app card), so the first, left-aligned version
 lost its headline there and was replaced the same day.
 
-**App Store screenshot size.** The console took 1206 × 2622 on 2026-11-05, not the
-pipeline's 1320 × 2868: [`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-store-screenshots).
+**App Store screenshot size.** 1206 × 2622, the size the console took on 2026-11-05; the
+pipeline renders it directly since 2026-11-12: [`mobile.md` § 6.4](../../../docs/ops/deployment/mobile.md#64-store-screenshots).
 
 **The product is Frapp** ([ADR-25](../../../spec/architecture/adr/adr-25.md),
 2026-09-23). The App Store **listing** name is **`Frapp: Chapter Hub`**. The
@@ -258,7 +258,7 @@ record; each is a review-time or launch risk.
 | --- | --- |
 | [#2257](https://github.com/pdcarlson/Frapp/issues/2257) | Guideline 1.2 — member-level report and block ship on mobile only in a binary built from `main` after the #2257 member-side change merged; the officer queue that reads reports is on the web dashboard only (#2311). Filtering before posting: [`spec/behavior/chat/README.md` § No pre-post content filter](../../../spec/behavior/chat/README.md#no-pre-post-content-filter) |
 | ~~[#2258](https://github.com/pdcarlson/Frapp/issues/2258)~~ | Decided 2026-09-23 (owner): Backwork stays off mobile for the beta; the web dashboard keeps it. See § Content Rights for what that changes in the console |
-| ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It needs `EXPO_PUBLIC_ASK_ENABLED` off in the EAS `production` environment, which the repo cannot see, and since 2026-09-22 an EAS `production` build refuses to evaluate its config when the flag is on (`apps/mobile/app.config.js`), so a set value fails the build instead of shipping Ask (§ Description's note) |
+| ~~[#2259](https://github.com/pdcarlson/Frapp/issues/2259)~~ | Fixed in the repo 2026-09-22 (owner decision): with Ask off, Chat home and Events draw no ✦ pill, the sheet renders nothing, and `frapp://ask` redirects to Chat home, so **a reviewer is shown no Ask surface at all**. That is also why § Review notes says nothing about Ask: there is nothing on screen to explain. Live only in the next build. It needs `EXPO_PUBLIC_ASK_ENABLED` off in the EAS `production` environment, which the repo cannot see, and since 2026-09-22 an EAS `production` build refuses to evaluate its config when the flag is on (`apps/mobile/app.config.js`), so a set value fails the build instead of shipping Ask (§ Description's note) **Changed 2026-11-12 (#4415):** the build flag and its production fence are gone. Whether the app draws Ask is now the API's answer, so a reviewer sees no Ask while production runs with `AI_ENABLED` off, which is the default. Turning it on in production puts Ask, the AI sheet and minutes drafting in front of a reviewer in the binary already on the stores, so the listing, the review notes and the privacy answers must be updated first ([#3297](https://github.com/pdcarlson/Frapp/issues/3297)) |
 | ~~[#2260](https://github.com/pdcarlson/Frapp/issues/2260)~~ | Closed 2026-09-18 — answered ("it is not set"), superseded by #2415 |
 | ~~[#2261](https://github.com/pdcarlson/Frapp/issues/2261)~~ | Fixed in the repo 2026-09-23 with #2302: the Terms say 18 or older and carry the zero-tolerance clause Guideline 1.2 expects. The server refuses to add anyone to a chapter until they accept (join, onboarding). A member from before #2302 is asked by the app's Terms prompt, which is a client gate, not a server one: [`spec/behavior/legal.md`](../../../spec/behavior/legal.md#acceptance-record) § Acceptance record says what it can't block. Live only after the next Deploy production (landing, API and web) and in a binary built after it merged |
 | ~~[#2262](https://github.com/pdcarlson/Frapp/issues/2262)~~ | Fixed in the repo 2026-09-22: the FERPA notice no longer points at a redaction tool. Live only after the next Deploy production |
@@ -270,7 +270,7 @@ the work; the detail lives there, not here.
 
 | # | Risk | Kind |
 | --- | --- | --- |
-| [#2454](https://github.com/pdcarlson/Frapp/issues/2454) | **Screenshots uploaded to both stores on 2026-11-05.** Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked. Since 2026-11-05 both stores' framed sets come from `capture-mobile.mjs --store` (see the note at the top of this file); the owner uploaded both on 2026-11-05, and the App Store slot took 1206 × 2622, not 1320 × 2868 (`mobile.md` § 6.4); what remains is the pipeline rendering that size itself in the console | hard gate |
+| ~~[#2454](https://github.com/pdcarlson/Frapp/issues/2454)~~ | **Screenshots uploaded to both stores on 2026-11-05.** Filed 2026-09-21 because the gate's only tracker was #2196 §4, and #2196 was closed as completed with every box unticked. Since 2026-11-05 both stores' framed sets come from `capture-mobile.mjs --store` (see the note at the top of this file); the owner uploaded both on 2026-11-05, and the App Store slot took 1206 × 2622, not 1320 × 2868 (`mobile.md` § 6.4), which the pipeline renders itself since 2026-11-12 | done |
 | [#2415](https://github.com/pdcarlson/Frapp/issues/2415) | EAS `preview` holds only `SENTRY_AUTH_TOKEN`. It no longer owns the screenshot route (#2454 shoots from Expo web), but a `preview` build still cannot sign in. Its other half, no Stripe key in `production`, stopped gating submission on 2026-09-21: this listing no longer claims card payments, so that key is a product decision rather than a blocker. Neither half now gates submission, which ships the `production` build | no longer a gate (2026-09-22) |
 | [#2195](https://github.com/pdcarlson/Frapp/issues/2195) | Apple Developer trader status (EU DSA) — **probably already done, and only needs confirming.** #2195 was filed 2026-09-13 off a banner reading "Developers must provide their trader status to submit new apps", which gates submission itself rather than only EU availability. The dialog it sends you to *is* the trader-status dialog, and § As submitted records answering it the next day, 2026-09-14, on the "I don't plan to distribute in the EU" limb. So the action has very likely been taken and the issue is stale. Confirm the banner is gone from the Apps page and close #2195; do not re-answer the dialog, because re-picking is how you end up declaring trader and publishing a home address on an EU listing | confirm, then close |
 | [#2308](https://github.com/pdcarlson/Frapp/issues/2308) / [#2309](https://github.com/pdcarlson/Frapp/issues/2309) | The App Review login exists in `frapp-prod` (created 2026-09-17 and marked for the seed on 2026-09-24, #2309), but its chapter is seeded only on the day of submission, because the check-in event goes stale 43 to 67 hours after a seed (#2478 § D). Until that seed runs, the reviewer signs in to no chapter. The seed is ready: `scripts/demo/seed-demo.mjs --reviewer` targets a hosted project, and its `auth` → `sql` → `storage` → `verify` path passed end to end on staging on 2026-09-23 at `69e0021` (output in [#2537](https://github.com/pdcarlson/Frapp/pull/2537); staging was cleaned afterwards). Changes made after that run, which reached `main` in the follow-up PR that links back to #2537 rather than in #2537 itself, were verified against the local stack, unit tests and the `pglite-migrations` check only: `sql` (a guard that runs between its deletes, and a refusal to adopt a login that other rows reference), `storage` (`--remove` clears the chapter's folder in every bucket, and refuses while the chapter exists) and `verify` (a stricter staleness check). Applying it to production is the owner's step, [`demo-data.md` § Production (App Review)](../../../docs/guides/demo-data.md#production-app-review) | hard gate |
@@ -283,19 +283,17 @@ the work; the detail lives there, not here.
 
 > Deliberately omits Ask. [`spec/ui/brand-identity.md`](../../../spec/ui/brand-identity.md)
 > gives the tagline as "Ask your chapter anything." and positions Frapp as the
-> AI-first operating system for Greek life, but Ask is gated behind
-> `EXPO_PUBLIC_ASK_ENABLED` (default off, and set by no `eas.json` profile — which alone
-> is *not* proof it is off in a build, as the dues note below explains, so an EAS
-> `production` build now refuses to evaluate its config with the flag on:
-> `apps/mobile/app.config.js`) and answers
-> from a hand-written table in `apps/mobile/lib/ask/corpus.ts`. Store metadata that
+> AI-first operating system for Greek life, but Ask is off in production: the app
+> draws it only when the API says the server has AI on (`AI_ENABLED`, off by default;
+> until 2026-11-12 a build flag, `EXPO_PUBLIC_ASK_ENABLED`, over a hand-written table,
+> both since deleted). Store metadata that
 > advertised it would be inaccurate under Guideline 2.3. **Use the tagline as the
 > subtitle once Ask genuinely ships** — the subtitle is editable on any new version.
 >
 > **The binary now agrees (2026-09-22).** The sign-in screen used to open on the brand
 > tagline, making in the app the claim this listing avoids. It now reads "Everything your
 > chapter needs is already in chat." ([#2298](https://github.com/pdcarlson/Frapp/issues/2298)),
-> and a build without Ask draws no ✦ pill ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
+> and the app draws no Ask entry for a member without Ask ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
 > The copy lives in [`spec/ui/design-system/writing.md`](../../../spec/ui/design-system/writing.md)
 > § 7, Sign in. When Ask ships, move the listing subtitle and the sign-in line together.
 
@@ -356,21 +354,21 @@ Officers get what they need on their feet: take attendance at the door with a QR
 >
 > | Old claim | Verdict | Evidence |
 > | --- | --- | --- |
-> | take attendance by QR code | **ships on iOS** | `app/(app)/host-check-in.tsx`, reached from the "Host check-in" tile in `more.tsx` and gated `events:update` |
+> | take attendance by QR code | **ships on iOS** | `app/(app)/host-check-in.tsx`, reached from the "Host check-in" row in `you.tsx` (`more.tsx` until #3839) and gated `events:update` |
 > | post to the right channel | **partly ships — kept, reworded** | An officer holding `announcements:post` gets a live composer in the read-only `#announcements` channel, and that send fans an URGENT push chapter-wide: `chat-thread.tsx` `canSend={canSend && channelCanPost}` off the server's `can_post`. But **creating or organising channels is web-only** (`useCreateChannel`'s only consumer is `apps/web/components/chat-admin/`), so "the right channel" overclaimed. Now "post an announcement every member gets" |
 > | invite members with a link | **partial — dropped** | `useCreateInvite` has exactly one consumer in `apps/mobile`, the one-time founding wizard (`app/(auth)/create-chapter.tsx`), reachable only while the account belongs to **zero** chapters. An officer of an existing chapter has no invite affordance, the role is hardcoded `Member`, and the link points at the web app. Invites are already covered honestly by the invite-only paragraph below |
 > | assign roles and permissions | **web only** | `components/directory/member-detail-sheet.tsx` renders a read-only `Role` value row; no mutation is imported. The editor is `apps/web/components/roles/` |
 > | track service and study hours | **web only** | *Corrected 2026-11-11 (#3897): the next binary has an approve control. An officer holding `service:approve` approves or rejects a pending entry from the Activity sheet (`components/activity/activity-sheet.tsx`, `useReviewServiceEntry`). The listing text is unchanged, pending Paul; what follows is the 2026-09-21 record.* No approve control on iOS — Service hours' log sheet (`components/service-hours/log-hours-sheet.tsx`) holds its only two mutations, `useCreateServiceEntry` and the proof photo's `useRequestServiceProofUploadUrl`, neither of which approves anything, and `approve_service_entry`'s single non-test caller is reached from the web page. Officer-wide *study* tracking exists nowhere: `study.controller.ts`'s list has no admin branch at all |
 > | see who has paid | **web only** | Both mobile `useInvoices` call sites pass the viewer's id, and `selectInvoiceRows` filters to it. The chapter ledger is `apps/web/components/billing/invoice-list.tsx` |
 >
-> Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-hours-screen.spec.tsx` and `lib/more/profile-screen.spec.tsx` pin the fix.
+> Two in-app strings were fixed in the same pass for the same reason, and a bug behind one of them: the Service hours tile promised review and approval, the invite-failure message sent officers to a directory with no invite affordance, and `GET /v1/service-entries` was read unscoped — which handed a `service:approve` holder the whole chapter's entries under a screen that says "you've logged". `lib/more/service-hours-screen.spec.tsx` and `packages/hooks/src/profile-stats.hook.spec.tsx` (the Profile cards, moved there from `lib/more/profile-screen.spec.tsx` in #4137) pin the fix.
 
 Frapp is invite-only. Your chapter's officers create the chapter on the web and send you an invite link; open it on your phone and you are in.
 
 > **Changed 2026-11-05, in both consoles** (Play first, then App Store Connect the same day). This read "Frapp is invite-only. Your chapter's officers create the chapter on the web
 > and send you an invite link". Neither half holds: the app has its own create-chapter flow
 > (`app/(auth)/create-chapter.tsx`, the founding wizard, reached from the join screen's "I'm starting
-> our chapter" and from More), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
+> our chapter" and from You), and `POST /v1/chapters/onboard` needs only a signed-in account, so a
 > founder needs no invite. What is invite-only is joining an existing chapter.
 
 Features
@@ -393,7 +391,7 @@ Features
 > was the web dashboard.)* `frapp-prod` has **0** DM channels, so a reviewer would have
 > found neither the feature nor a way to produce it. "leaderboards" → "house rank": the
 > leaderboard *routes* were deleted and what survives is the viewer's own rank tile
-> ("House rank #N of M", composed in `components/tasks/points-summary-card.tsx` from the
+> ("#N of M in the house" since #5570, composed in `components/tasks/points-summary-line.tsx` from the
 > `{rank, of}` that `lib/tasks/points-card.ts` selects); the leaderboard list is web-only.
 > The officer paragraph is reconciled as of 2026-09-21 — see the verdict table under it.
 > (This note used to say the opposite and to hold the paste pending #2304; it was written
@@ -463,15 +461,15 @@ states what a reviewer will actually be shown.
   > ([`ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)). Staging
   > has it, and production was not readable from the session that wrote this. Confirm it
   > in Infisical `prod` before adding Host check-in to the list.
-- Universal links are not configured, so tapping an `https://` invite link opens the web app, not this app — do not describe any link as opening the app. If a reviewer ever does need to redeem by hand, the join screen accepts a bare token or a full `https://app.frapp.live/join?token=…` pasted link and extracts the token from either; that is a fallback, not the route to describe.
+- From 0.11.0 an `https://app.frapp.live/join?token=…` invite link opens this app (universal links, #4002), but only once the web serves the app-link files in production, and the reviewer is handed credentials, not an invite, so the review notes describe no link opening the app. If a reviewer ever does need to redeem by hand, the join screen accepts a bare token or a full `https://app.frapp.live/join?token=…` pasted link and extracts the token from either; that is a fallback, not the route to describe.
 - **Report and block (Guideline 1.2).** Tell App Review where they are: "Long-press any message from another member and choose Report message; the report form and the Report sent screen offer Block <name>. Settings → Blocked members lists and removes blocks." A member's profile in the directory also has Block / Unblock. Then state how objectionable content is handled, because 1.2 also asks about filtering: "Members must agree to Terms of Service with zero tolerance for objectionable content and abusive users; the app asks before they reach anything else. Members can report any message and block any member. Chapter officers review reports from the web dashboard and can remove the reported message, including in a direct message." Do not claim a pre-post content filter: there is none ([`spec/behavior/chat/README.md` § No pre-post content filter](../../../spec/behavior/chat/README.md#no-pre-post-content-filter)).
   *Not for the note itself:*
   - Report and block are true only of a binary built from `main` after the #2257 member-side change merged.
   - Block needs the message § Seed the reviewer's chapter asks for, because a system post offers Report only.
   - **Run Deploy production (landing, API and web) before submitting; there is no version of this answer to paste without it.** Two of its three sentences describe code that production didn't carry when this was written (2026-09-28: the API and landing both ran `7e47ec55`, built 2026-09-17). The zero-tolerance clause and the acceptance prompt are #2302 (§ Open before submitting, #2261). The officer queue is Chat Admin's Reported messages section and its remove route (#2311, #2492). After the deploy, check that https://frapp.live/terms carries the zero-tolerance clause and that the section renders on `app.frapp.live`. The same applies to the reviewer-account bullet above, whose Terms sentence describes the same clause.
   - The reviewer's account is the demo chapter's president, so it can open that queue, but only on web; the app itself has no report-review screen, so do not describe one.
-- Camera is used only to scan a chapter's event check-in QR code. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
-- Sign in with Apple and Sign in with Google are offered on the sign-in screen (Guideline 4.8: Apple is required once Google is offered). Password and magic-link remain. **Tell App Review to sign in with the email and password supplied above (on the sign-in screen, tap Continue with email first) — and smoke-test that exact route on the TestFlight build first.** No sign-in from a store build has been exercised against `frapp-prod` yet, and its demo chapter is seeded only on the day of submission (#2309 readied the login on 2026-09-24), and [#2334](https://github.com/pdcarlson/Frapp/issues/2334) records that the Apple button can abort the app outright on the sign-in screen. An OAuth identity joins the seeded account **only when its email matches the seeded address** (GoTrue Automatic linking, [`deployment/supabase.md`](../../../docs/ops/deployment/supabase.md)); a reviewer who signs in with their own Apple or Google account — or with Hide My Email, whose relay address can never match — becomes a *new* user in no chapter. That is not a blank app: `resolveAuthGate` routes a member-less account to the **join** screen, which asks whether they have an invite (they were never given one) or are starting a chapter, and a chapter founded there is `incomplete`, which refuses paid-ops **writes** (#2297) while every screen still loads. Do not plan to rescue that with an invite — the first bullet's arithmetic holds here too: a token minted mid-review is usually dead before the reply lands. (Corrected 2026-09-22; this clause used to end "a reviewer still joins with the invite token after signing in". That is a real member's route — `redeem` binds whoever is signed in rather than matching the invite email, which is why the sign-in screen's Hide My Email promise is correct — and it is simply not the reviewer's, who is handed credentials rather than an invite. Do not delete that hint on the strength of this note.)
+- Camera is used only to scan a chapter's event check-in QR code, after the member taps Scan code. The same code is also a link the phone's own Camera app opens, and tapping its banner opens Frapp already checking in. Location is used only while the app is open, to confirm the member is inside a chapter study zone or at the event being checked in to; there is no background location.
+- Sign in with Apple and Sign in with Google are offered on the sign-in screen (Guideline 4.8: Apple is required once Google is offered). Password and magic-link remain. **Tell App Review to sign in with the email and password supplied above (on the sign-in screen, tap Continue with email first) — and smoke-test that exact route on the TestFlight build first.** No sign-in from a store build has been exercised against `frapp-prod` yet, and its demo chapter is seeded only on the day of submission (#2309 readied the login on 2026-09-24), and [#2334](https://github.com/pdcarlson/Frapp/issues/2334) records that the Apple button can abort the app outright on the sign-in screen. An OAuth identity joins the seeded account **only when its email matches the seeded address** (GoTrue Automatic linking, [`deployment/supabase.md`](../../../docs/ops/deployment/supabase.md)); a reviewer who signs in with their own Apple or Google account — or with Hide My Email, whose relay address can never match — becomes a *new* user in no chapter. That is not a blank app: `resolveAuthGate` routes a member-less account to the **join** screen, which offers Paste for an invite (they were never given one) and a Create a chapter line, and a chapter founded there is `incomplete`, which refuses paid-ops **writes** (#2297) while every screen still loads. (While chapter billing is off for the beta, `CHAPTER_BILLING_BETA_OFF`, 2026-11-15, it starts `active` and can write everything instead.) Do not plan to rescue that with an invite — the first bullet's arithmetic holds here too: a token minted mid-review is usually dead before the reply lands. (Corrected 2026-09-22; this clause used to end "a reviewer still joins with the invite token after signing in". That is a real member's route — `redeem` binds whoever is signed in rather than matching the invite email, which is why the sign-in screen's Hide My Email promise is correct — and it is simply not the reviewer's, who is handed credentials rather than an invite. Do not delete that hint on the strength of this note.)
 - No in-app purchases and no digital goods. **The app takes no payment of any kind.** `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is not set in the EAS `production` environment ([#2415](https://github.com/pdcarlson/Frapp/issues/2415)), so `isStripeAvailable()` is false and PaymentSheet never opens. Do not tell App Review the app takes dues by card, and do not argue guideline 3.1.5 from it — the beta chapter is not collecting dues by card (decided 2026-09-21). **That decision is the only thing making the two sentences above true, and reversing it needs no repo change** — `eas env:set` reaches the bundle server-side. If the key ever ships, this bullet and § Identity's Price row become false statements to App Review: change both in the same sitting as the privacy rows below. Chapter *subscriptions* to Frapp itself are bought on the web dashboard and are not offered, linked or mentioned in the app.
   > **Seed no OPEN invoice for the reviewer and the question never arises.** Recorded
   > 2026-09-21, when the dues sentence came out of this note. What follows is the part
@@ -623,6 +621,15 @@ Advertising Data, Browsing History, Search History.
 > [#3401](https://github.com/pdcarlson/Frapp/issues/3401), which keeps the Files picker). Deploy the
 > landing before submitting a binary that carries s20's photo row.
 >
+> **Task photos use this row too (#4565, #4611, 2026-11-16).** An officer's reference
+> photo on a task and the assignee's proof photo when they mark it done pick from the
+> library through the same pipeline (`lib/tasks/task-photos.ts`) and are kept in the
+> private `tasks` bucket. They are *Photos or Videos* items collected for *App
+> Functionality* and linked to the member, so the row's values don't change. The
+> privacy policy's permissions clause names them and, on the precedents above, the
+> edit moved only the page's pin. The iOS purpose string names them from the first
+> store build after 2026-11-16.
+>
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The
 > argument for calling User ID *linked* is that `distinct_id` is a pseudonym whose salt
@@ -643,11 +650,19 @@ Advertising Data, Browsing History, Search History.
 > linked to the user, and its product page preview has only a "Data Linked to You" section,
 > so nothing is declared as tracking. Crash Data and Performance Data are both
 > App Functionality, linked. Photos or Videos (†) is still declared.
+>
+> **Push-token device label (#5129, open in [#5159](https://github.com/pdcarlson/Frapp/issues/5159)).**
+> Since #5097 the push token's row also stores the platform, OS version and model
+> (`lib/notifications/push-device-name.ts`), linked to the member, and the privacy policy
+> names them beside the push token from 2026-11-16. Apple defines Device ID as "the
+> device's advertising identifier, or other device-level ID", which a model and OS
+> version are not, so the Identifiers → Device ID row above stands. Whether to add
+> *Diagnostics → Other Diagnostic Data* is the owner's console decision in #5159.
 
 Where each answer comes from:
 
 - **Phone Number** — chapters can define a member field of type `phone`
-  (`CustomFieldTypeSchema` in `packages/validation/src/index.ts`). There is no
+  (`CustomFieldTypeSchema` in `packages/validation/src/chapter-config.ts`). There is no
   address field type, which is why **Physical Address** is not declared.
 - **Other User Content** — chat messages **and chat photo attachments**. Apple's
   "Emails or Text Messages" type is not used; in-app chat belongs here.
@@ -655,11 +670,11 @@ Where each answer comes from:
   (`lib/chat/attachment-upload.ts`), so a member's photo goes from the library
   to the chat bucket from the phone. That is also what reinstated the
   Photos or Videos row above — read its footnote before touching either.
-  Documents now upload from the phone too, photos only (#3399): s12's sheet
-  sends a library photo to the documents bucket, and that photo is declared
-  under the Photos or Videos row above. A PDF or Office file still uploads only
-  from the web dashboard, since picking one needs `expo-document-picker`, a
-  native module no store build carries yet. Service-hour proof uploads from
+  Documents now upload from the phone too (#3399): s12's sheet sends a library
+  photo to the documents bucket, declared under the Photos or Videos row
+  above, and from 0.13.0 a PDF, Office or text file the member picks in Files
+  (#3401), which is a file they chose to share with the chapter, under Other
+  User Content here. Service-hour proof uploads from
   the phone too, photos only: the s20 sheet's "Add photo proof" row sends a
   library photo to the service bucket, declared under the same row. Backwork
   has no mobile screen, so it stays web-dashboard-only and is not claimed here
@@ -768,14 +783,14 @@ Two of Play's definitions differ from Apple's, and they change answers:
 | Personal info → Phone number | Yes | No | Optional | App functionality | Deleted | A chapter's `phone` member field, as in the App Store row |
 | Personal info → User IDs | Yes | No | Required | App functionality, Analytics | Kept as an anonymous tombstone; the analytics id is forgotten | Member and account ids; the pseudonymous analytics `distinct_id` (see *User ID carries Analytics* above) |
 | Messages → Other in-app messages | Yes | No | Optional | App functionality | **Kept, anonymised** | Chat channels and DMs |
-| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos and service-hour proof photos are kept, anonymised, with their messages and entries; the profile photo is deleted; a chapter logo and document photos stay with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; a photo a member attaches as proof to a service-hour entry (s20, `lib/more/service-proof.ts`), kept in the private service bucket with its entry: deleting a pending entry deletes its photo, but account deletion keeps the entry, anonymised, and its photo with it, since the deletion purge reaches only profile photos and generated reports ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion); whether it should reach proof is [#3425](https://github.com/pdcarlson/Frapp/issues/3425)) (a photo uploaded for an entry that never saved stays unclaimed until [#2197](https://github.com/pdcarlson/Frapp/issues/2197)'s sweep); the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; a photo a member holding `chapter_docs:upload` adds to the chapter's documents (`lib/more/document-upload.ts`, #3399), which is filed in the chapter's library and stays, attributed to "Deleted User" after its uploader's account is deleted, until an officer deletes the document; and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The camera only reads check-in codes on the device, and no frame leaves the phone. The owner entered this row in Play's Data safety form as written here, profile photo included, on 2026-11-05 (#2720, #2895) |
+| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos and service-hour proof photos are kept, anonymised, with their messages and entries; the profile photo is deleted; a chapter logo and document photos stay with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; a photo a member attaches as proof to a service-hour entry (s20, `lib/more/service-proof.ts`), kept in the private service bucket with its entry: deleting a pending entry deletes its photo, but account deletion keeps the entry, anonymised, and its photo with it, since the deletion purge reaches only profile photos and generated reports ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion); whether it should reach proof is [#3425](https://github.com/pdcarlson/Frapp/issues/3425)) (a photo uploaded for an entry that never saved stays unclaimed until [#2197](https://github.com/pdcarlson/Frapp/issues/2197)'s sweep); the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; a photo a member holding `chapter_docs:upload` adds to the chapter's documents (`lib/more/document-upload.ts`, #3399), which is filed in the chapter's library and stays, attributed to "Deleted User" after its uploader's account is deleted, until an officer deletes the document; a photo an officer adds to a task, or an assignee adds as proof they finished it (`lib/tasks/task-photos.ts`, #4565), kept in the private tasks bucket with the task (#4611 named it in the privacy policy, 2026-11-16); and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The owner entered this row in Play's Data safety form as written here, profile photo included, on 2026-11-05 (#2720, #2895). The camera only reads check-in codes on the device (s18's Scan code), and no frame leaves the phone. *2026-11-13 (#4763):* that sentence was dropped while 0.13.0 was to remove the in-app scanner, and is back now that 0.13.0 keeps Scan code; the answer to enter never changed |
 | App activity → App interactions | Yes | No | Required | Analytics | Forgotten (the analytics forget) | The server-side product events behind the App Store *Product Interaction* row, the client's named `outbox-*` and `push-prompt-answered` events (#3164), plus the SDK's `$screen` route views and app lifecycle events (#3382). Required because the only opt-out is a chapter setting, not the member's choice |
 | App activity → In-app search history | Yes | **Yes** | Optional | App functionality | Nothing stored to delete | The directory and chapter-finder queries (`GET /v1/members/search`, `GET /v1/chapter-directory/search`). Ephemeral only while the App Store table's open question holds: if the API keeps query strings in its access logs, this answer is No |
 | App activity → Other user-generated content | Yes | No | Optional | App functionality | **Kept, anonymised** | Free text a member writes outside chat: service-hour entries, tasks they create, the details of a report they file (kept whole, as moderation history), and a chapter they create |
 | App activity → Other actions | Yes | No | Optional | App functionality | **Mixed**: event check-ins, task completions, poll votes and reactions are kept, anonymised; the Terms acceptance stays on the anonymised account record; study sessions, settings, notification preferences, read markers and the member's own blocks are deleted | Event check-ins (`event_attendance`), study sessions (`study_sessions`), task completions, poll votes, reactions, blocks, settings and notification preferences, read markers, and the Terms acceptance |
 | App info and performance → Crash logs | Yes | No | Required | App functionality | Not deleted with the account; aged out by Sentry's retention | Sentry, when the build has `EXPO_PUBLIC_SENTRY_DSN` (EAS `production` does, per #2415) |
 | App info and performance → Diagnostics | Yes | No | Required | App functionality | As Crash logs | Sentry tracing (`tracesSampleRate` in `lib/sentry/options.ts`; the rate is in [`observability.md` § Sampling](../../../spec/behavior/observability.md#sampling)) |
-| Device or other IDs | Yes | No | Optional | App functionality | Deleted | The Expo push token (`lib/notifications/push.ts`). Optional because it sits behind the notification permission |
+| Device or other IDs | Yes | No | Optional | App functionality | Deleted | The Expo push token (`lib/notifications/push.ts`). Optional because it sits behind the notification permission. Since #4563 its row also stores the platform, OS version and model (`lib/notifications/push-device-name.ts`), never the name the member gave the device; that is diagnostics-type data rather than an ID, and whether it changes any answer is Paul's call. *2026-11-16 (#5129):* the privacy policy now names the platform, OS version and model beside the push token. Apple's definition of Device ID is "the device's advertising identifier, or other device-level ID", which a model and OS version are not, so the App Store Device ID row stands; whether Apple's *Other Diagnostic Data* ("any other data collected for the purposes of measuring technical diagnostics") should be declared, and whether this Play answer changes, is the console decision in [#5159](https://github.com/pdcarlson/Frapp/issues/5159) |
 
 **On account deletion** is what `DELETE /v1/users/me` does to each type, and
 [`data-retention.md` § Individual Account Deletion](../../../spec/behavior/data-retention.md#individual-account-deletion)
@@ -803,7 +818,7 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 | Question | Answer |
 | --- | --- |
 | Is all user data encrypted in transit? | **Yes.** Every endpoint the binary calls is HTTPS: `api.frapp.live`, Supabase, Sentry, PostHog and Expo |
-| Do you provide a way for users to request that their data is deleted? | **Yes.** In the app: More → Settings → Delete account, or Delete account in the join screen's Account menu or on the Terms prompt. On the web dashboard: My Profile → Delete account. Anyone who can't sign in can email team@frapp.live. What deletion keeps, anonymised, is in the table's *On account deletion* column |
+| Do you provide a way for users to request that their data is deleted? | **Yes.** In the app: You → Settings → Delete account, or Delete account in the join screen's Account menu or on the Terms prompt. On the web dashboard: My Profile → Delete account. Anyone who can't sign in can email team@frapp.live. What deletion keeps, anonymised, is in the table's *On account deletion* column |
 | Delete account URL | `https://frapp.live/support`; § 4 of that page describes all three routes. Play wants this page to name the app as the listing does *(rule unverified)*. It says Frapp on `main` since ADR-25 step 5 ([#2580](https://github.com/pdcarlson/Frapp/issues/2580)); enter this URL only after that's live on production |
 | Independent security review | No |
 | Families policy | Not applicable. The app isn't in the Families program, and its target audience is adults (§ Android-specific) |
@@ -848,6 +863,11 @@ Contacts, Installed apps, Web browsing, and the remaining Personal info types.
 > 2026-09-23: the Terms say 18 or older, which agrees with this target audience, and the
 > owner kept the iOS rating at 13+ (§ Age rating). Leave the three declarations as they
 > are.
+>
+> 2026-11-19 (#5627, owner's pick): the Terms now say 17 or older, with Frapp AI for 18
+> and older, so they no longer agree with this 18-and-over target audience. Whether to add
+> the 16–17 band is the owner's Play Console decision, filed as
+> [#5707](https://github.com/pdcarlson/Frapp/issues/5707); the declaration above is unchanged until then.
 
 ## Shipped builds and the API contract
 

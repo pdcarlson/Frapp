@@ -1,6 +1,6 @@
 import {
-  CHECK_IN_QR_PREFIX,
   CHECK_IN_TOKEN_WINDOW_MS,
+  LOCATED_TOKEN_PREVIOUS_WINDOWS,
   checkInManualCode,
   currentCheckInWindow,
   mintCheckInToken,
@@ -10,6 +10,7 @@ import {
 } from './check-in-token';
 
 const SECRET = 'test-check-in-secret-at-least-32-characters';
+const ORIGIN = 'https://app.frapp.live';
 const EVENT = '11111111-1111-4111-8111-111111111111';
 const OTHER_EVENT = '22222222-2222-4222-8222-222222222222';
 
@@ -17,15 +18,15 @@ const OTHER_EVENT = '22222222-2222-4222-8222-222222222222';
 const NOW = 1_800_000_015_000;
 
 describe('mintCheckInToken', () => {
-  it('produces a QR payload the scanner can route on', () => {
-    const minted = mintCheckInToken(EVENT, SECRET, NOW);
+  it('draws a check-in link the phone camera opens', () => {
+    const minted = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
     expect(minted.qrPayload).toBe(
-      `${CHECK_IN_QR_PREFIX}:${EVENT}:${minted.token}`,
+      `https://app.frapp.live/check-in?event=${EVENT}&t=${minted.token}`,
     );
   });
 
   it('reports the rotation deadline of the current window', () => {
-    const minted = mintCheckInToken(EVENT, SECRET, NOW);
+    const minted = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
     const endOfWindow =
       (currentCheckInWindow(NOW) + 1) * CHECK_IN_TOKEN_WINDOW_MS;
 
@@ -36,59 +37,80 @@ describe('mintCheckInToken', () => {
   });
 
   it('rotates the token when the window advances', () => {
-    const first = mintCheckInToken(EVENT, SECRET, NOW);
+    const first = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
     const next = mintCheckInToken(
       EVENT,
       SECRET,
       NOW + CHECK_IN_TOKEN_WINDOW_MS,
+      ORIGIN,
     );
     expect(next.token).not.toBe(first.token);
     expect(next.manualCode).not.toBe(first.manualCode);
   });
 
   it('mints different tokens for different events in the same window', () => {
-    expect(mintCheckInToken(EVENT, SECRET, NOW).token).not.toBe(
-      mintCheckInToken(OTHER_EVENT, SECRET, NOW).token,
+    expect(mintCheckInToken(EVENT, SECRET, NOW, ORIGIN).token).not.toBe(
+      mintCheckInToken(OTHER_EVENT, SECRET, NOW, ORIGIN).token,
     );
   });
 });
 
 describe('verifyCheckInToken', () => {
   it('accepts the token for the current window', () => {
-    const { token } = mintCheckInToken(EVENT, SECRET, NOW);
+    const { token } = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
     expect(verifyCheckInToken(token, EVENT, SECRET, NOW)).toBe(true);
   });
 
   it('accepts the previous window, so a scan racing a rotation still lands', () => {
     // `patterns.md` requires this: the member scanned a code that was current
     // when the camera fired and stale by the time the request arrived.
-    const { token } = mintCheckInToken(EVENT, SECRET, NOW);
+    const { token } = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
     expect(
       verifyCheckInToken(token, EVENT, SECRET, NOW + CHECK_IN_TOKEN_WINDOW_MS),
     ).toBe(true);
   });
 
-  it('rejects a token two windows old', () => {
-    const { token } = mintCheckInToken(EVENT, SECRET, NOW);
-    expect(
+  it('accepts a token three windows old when the check-in is located too: a camera banner, an app launch and a location prompt sit between the scan and the request', () => {
+    const { token } = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
+    const at = (windows: number) =>
       verifyCheckInToken(
         token,
         EVENT,
         SECRET,
-        NOW + 2 * CHECK_IN_TOKEN_WINDOW_MS,
-      ),
-    ).toBe(false);
+        NOW + windows * CHECK_IN_TOKEN_WINDOW_MS,
+        LOCATED_TOKEN_PREVIOUS_WINDOWS,
+      );
+    expect(at(3)).toBe(true);
+    expect(at(4)).toBe(false);
+  });
+
+  it('keeps one spare window when nothing checks where the member is, where the token is the only proof', () => {
+    const { token } = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
+    const at = (windows: number) =>
+      verifyCheckInToken(
+        token,
+        EVENT,
+        SECRET,
+        NOW + windows * CHECK_IN_TOKEN_WINDOW_MS,
+      );
+    expect(at(1)).toBe(true);
+    expect(at(2)).toBe(false);
   });
 
   it('rejects a token minted for a different event', () => {
     // Without event binding, one open event's code would check members into
     // every other event running at the same time.
-    const { token } = mintCheckInToken(OTHER_EVENT, SECRET, NOW);
+    const { token } = mintCheckInToken(OTHER_EVENT, SECRET, NOW, ORIGIN);
     expect(verifyCheckInToken(token, EVENT, SECRET, NOW)).toBe(false);
   });
 
   it('rejects a token signed with a different secret', () => {
-    const { token } = mintCheckInToken(EVENT, 'a-different-secret', NOW);
+    const { token } = mintCheckInToken(
+      EVENT,
+      'a-different-secret',
+      NOW,
+      ORIGIN,
+    );
     expect(verifyCheckInToken(token, EVENT, SECRET, NOW)).toBe(false);
   });
 
@@ -116,7 +138,7 @@ describe('checkInManualCode', () => {
   });
 
   it('is not derivable from the QR token', () => {
-    const minted = mintCheckInToken(EVENT, SECRET, NOW);
+    const minted = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
     expect(minted.token).not.toContain(minted.manualCode.replace('-', ''));
   });
 });
@@ -142,7 +164,7 @@ describe('normalizeManualCode', () => {
 
 describe('verifyManualCode', () => {
   it('accepts the current and previous window', () => {
-    const { manualCode } = mintCheckInToken(EVENT, SECRET, NOW);
+    const { manualCode } = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
     expect(verifyManualCode(manualCode, EVENT, SECRET, NOW)).toBe(true);
     expect(
       verifyManualCode(
@@ -155,7 +177,7 @@ describe('verifyManualCode', () => {
   });
 
   it('accepts a sloppily typed code', () => {
-    const { manualCode } = mintCheckInToken(EVENT, SECRET, NOW);
+    const { manualCode } = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
     expect(
       verifyManualCode(
         manualCode.toLowerCase().replace('-', ' '),
@@ -167,7 +189,7 @@ describe('verifyManualCode', () => {
   });
 
   it('rejects a stale, foreign-event, or wrong code', () => {
-    const { manualCode } = mintCheckInToken(EVENT, SECRET, NOW);
+    const { manualCode } = mintCheckInToken(EVENT, SECRET, NOW, ORIGIN);
     expect(
       verifyManualCode(
         manualCode,

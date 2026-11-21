@@ -10,11 +10,11 @@ import {
   signedIn,
 } from "../probe.mjs";
 import { AUTH_ADMIN_ONLY } from "../rls-smoke.mjs";
-import { readSeeded } from "./chat-read-enforcement.mjs";
+import { readSeeded } from "../chat-read-enforcement.mjs";
 
 // ─── BLACK-BOX policy enforcement (FRA-38) ──────────────────────────────────
 //
-// The read-enforcement tier (`chat-read-enforcement.mjs`) calls
+// The read-enforcement module (`../chat-read-enforcement.mjs`) calls
 // can_read_chat_message() directly, which proves the PREDICATE is right but
 // says nothing about whether the POLICY is wired to it.
 // The shape assertion covers the wiring only by pattern-matching the policy
@@ -59,15 +59,18 @@ if (readSeeded) {
       -- privilege. See the default-deny tier at the end of this block.
       grant select on public.members to rls_probe;
       grant select on public.financial_invoices to rls_probe;
+      grant select on public.chat_notification_preferences to rls_probe;
       grant execute on function public.can_read_chat_message(uuid) to rls_probe;
 
       -- The anon key's reader (ANON_KEY). A member of anon and NOT of
       -- authenticated, as on hosted, so a policy bound to anon or public
       -- applies to it and one bound to authenticated does not. It gets the same
-      -- table grants: hosted's default grant all on tables to anon is never
-      -- revoked at table level, so RLS is what stands between the anon key and
-      -- these rows there too. It gets no EXECUTE on can_read_chat_message,
-      -- which is revoked from anon on hosted.
+      -- table grants on purpose, although hosted anon holds none since
+      -- 20261119210325 (tiers/client-table-grants.mjs): with the grant in
+      -- place, the read reaches RLS, so these assertions prove the policies
+      -- alone also deny the anon key, the layer under the missing grant. It
+      -- gets no EXECUTE on can_read_chat_message, which is revoked from anon
+      -- on hosted.
       drop role if exists rls_probe_anon;
       create role rls_probe_anon nologin;
       grant anon to rls_probe_anon;
@@ -76,6 +79,7 @@ if (readSeeded) {
       grant select on public.chat_messages to rls_probe_anon;
       grant select on public.members to rls_probe_anon;
       grant select on public.financial_invoices to rls_probe_anon;
+      grant select on public.chat_notification_preferences to rls_probe_anon;
     `);
 
     // userA: chapter A, in member_ids of PRIVATE/DM/GROUP_DM, holds chat:secret.
@@ -173,9 +177,10 @@ if (readSeeded) {
       const rowLabel = (id) => ROW_LABEL[id] ?? id;
 
       await db.exec(`
-        insert into members (user_id, chapter_id) values
-          ('${F.userAId}', '${F.chapB}'),
-          ('${F.userCId}', '${F.chapB}');
+        -- With chapter B's member role: the read rule requires members:view.
+        insert into members (user_id, chapter_id, role_ids) values
+          ('${F.userAId}', '${F.chapB}', '{${F.roleMemberChapB}}'),
+          ('${F.userCId}', '${F.chapB}', '{${F.roleMemberChapB}}');
         insert into chat_messages (id, channel_id, sender_id) values
           ('${K.blockerMsg}', '${F.chPublic}', '${F.userCId}');
         insert into chat_message_actions (id, message_id, user_id, action_type) values
@@ -276,6 +281,130 @@ if (readSeeded) {
       );
     } finally {
       await db.exec("rollback to savepoint block_tier; release savepoint block_tier;");
+    }
+
+
+    // ─── chat_message_actions client writes (black-box, SET ROLE) ───────────
+    //
+    // The read tiers above grant the probe SELECT only, so until now the write
+    // policies were proven by shape alone (authorization-model.md § 4). This
+    // tier grants INSERT, UPDATE and DELETE and tries them. Clients write
+    // reactions, votes and sign-ups through the API, which checks channel
+    // access, the poll and the sign-up limit and writes as service_role. The
+    // one direct write left is taking back your own reaction (ADR-05). So:
+    //   - an insert, even of your own reaction on a message you can read, is
+    //     refused, and so is one on a channel you can't read;
+    //   - an update of your own vote is refused (no UPDATE policy: no rows);
+    //   - a delete of your own vote or sign-up removes nothing;
+    //   - a delete of your own reaction removes it, and of someone else's
+    //     removes nothing.
+    // Rolled back, so the tiers below see the seeded rows unchanged.
+    console.log("\n=== chat_message_actions client writes (black-box, SET ROLE) ===");
+    await db.exec("savepoint write_tier;");
+    try {
+      const W = {
+        pollMsg: "40000000-0000-0000-0000-000000000001",
+        ownReaction: "40000001-0000-0000-0000-000000000001",
+        ownVote: "40000002-0000-0000-0000-000000000001",
+        ownSignup: "40000003-0000-0000-0000-000000000001",
+        otherReaction: "40000004-0000-0000-0000-000000000001",
+      };
+      // The vote and sign-up sit on their own readable message, so the
+      // refused inserts below on msgPublic can't be refused by the
+      // (message, user, type) unique index instead of by the policy, and the
+      // sign-up delete targets a row the caller can read.
+      await db.exec(`
+        insert into chat_messages (id, channel_id, sender_id) values
+          ('${W.pollMsg}', '${F.chPublic}', '${F.userAId}');
+        insert into chat_message_actions (id, message_id, user_id, action_type) values
+          ('${W.ownReaction}',   '${F.msgPublic}', '${F.userCId}', 'reaction:👍'),
+          ('${W.ownVote}',       '${W.pollMsg}',   '${F.userCId}', 'vote'),
+          ('${W.ownSignup}',     '${W.pollMsg}',   '${F.userCId}', 'signup'),
+          ('${W.otherReaction}', '${F.msgPublic}', '${F.userAId}', 'reaction:🎉');
+        grant insert, update, delete on public.chat_message_actions to rls_probe;
+      `);
+      const asC = signedIn(F.userCAuth);
+      // Verdicts come from an owner read after each probe, not from RETURNING:
+      // RETURNING makes Postgres apply the SELECT policy too, which would
+      // refuse the DM and cross-chapter inserts in the write policy's place.
+      const ownerCount = async (where) =>
+        (await db.query(`select count(*)::int as n from public.chat_message_actions where ${where}`)).rows[0].n;
+
+      const refusedInserts = [
+        { name: "a member cannot insert their own reaction directly (the API writes it)", msg: F.msgPublic, type: "reaction:🔥" },
+        { name: "a member cannot insert a vote directly", msg: F.msgPublic, type: "vote" },
+        { name: "a member cannot insert a sign-up claim directly", msg: F.msgPublic, type: "signup" },
+        { name: "a member cannot insert a reaction on a DM they are not in", msg: F.msgDM, type: "reaction:🔥" },
+        { name: "a member cannot insert a reaction in another chapter", msg: F.msgPublicB, type: "reaction:🔥" },
+      ];
+      for (const s of refusedInserts) {
+        const probe = await probeAs(
+          asC,
+          `insert into public.chat_message_actions (message_id, user_id, action_type)
+             values ('${s.msg}', '${F.userCId}', '${s.type}')`,
+        );
+        const n = await ownerCount(
+          `message_id = '${s.msg}' and user_id = '${F.userCId}' and action_type = '${s.type}'`,
+        );
+        if (n === 0) {
+          console.log(`OK    ${s.name}`);
+        } else {
+          miss();
+          console.log(`MISS  ${s.name}\n        ↳ the insert went through (${probe.failure ?? "no error"})`);
+        }
+      }
+
+      const writes = [
+        {
+          name: "a member cannot change their own vote in place",
+          sql: `update public.chat_message_actions set payload = '{"option_ids":["x"]}'::jsonb where id = '${W.ownVote}'`,
+          check: `id = '${W.ownVote}' and payload is distinct from '{"option_ids":["x"]}'::jsonb`,
+          expect: 1,
+        },
+        {
+          name: "a member cannot delete their own vote directly (a closed poll stays closed)",
+          sql: `delete from public.chat_message_actions where id = '${W.ownVote}'`,
+          check: `id = '${W.ownVote}'`,
+          expect: 1,
+        },
+        {
+          name: "a member cannot delete their own sign-up claim directly",
+          sql: `delete from public.chat_message_actions where id = '${W.ownSignup}'`,
+          check: `id = '${W.ownSignup}'`,
+          expect: 1,
+        },
+        {
+          name: "a member cannot delete someone else's reaction",
+          sql: `delete from public.chat_message_actions where id = '${W.otherReaction}'`,
+          check: `id = '${W.otherReaction}'`,
+          expect: 1,
+        },
+        {
+          name: "a member can take back their own reaction (ADR-05)",
+          sql: `delete from public.chat_message_actions where id = '${W.ownReaction}'`,
+          check: `id = '${W.ownReaction}'`,
+          expect: 0,
+        },
+      ];
+      for (const s of writes) {
+        const probe = await probeAs(asC, s.sql);
+        const n = await ownerCount(s.check);
+        if (n === s.expect) {
+          console.log(`OK    ${s.name}`);
+        } else {
+          miss();
+          console.log(
+            `MISS  ${s.name}\n        ↳ expected ${s.expect} matching row(s), found ${n} (${probe.failure ?? "no error"})`,
+          );
+        }
+      }
+    } catch (e) {
+      miss();
+      console.log(
+        `ERR   chat_message_actions client writes\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+      );
+    } finally {
+      await db.exec("rollback to savepoint write_tier; release savepoint write_tier;");
     }
 
 
@@ -520,12 +649,16 @@ if (readSeeded) {
       }
     }
 
-    // ─── members / financial_invoices: default-deny enforcement (#423) ───────
+    // ─── members / financial_invoices / chat_notification_preferences: default-deny (#423, #4839)
     //
     // The two tiers above cover the tables that carry a client-reachable
-    // policy. These two carry none, and that is the point rather than a gap:
+    // policy. These three carry none, and that is the point rather than a gap:
     //
     //   - `financial_invoices` has no policy anywhere in the tree.
+    //   - `chat_notification_preferences` has had none since 20261117174649
+    //     dropped `_select_own`, whose `users` subselect never matched (#4839).
+    //     Its rows are each member's own, so "a signed-in reader sees nothing"
+    //     here includes their own preferences: no client reads the table.
     //   - `members`' only policy, `auth_admin_can_read_members`, is
     //     `to supabase_auth_admin`, the role Supabase Auth runs the
     //     custom-access-token hook as. It exists here since #1557 created that
@@ -533,7 +666,7 @@ if (readSeeded) {
     //     its absence.
     //
     // Under RLS, no reachable policy means default-deny, and per ADR-11 the API
-    // reads both tables exclusively through the service-role client, which
+    // reads these tables exclusively through the service-role client, which
     // bypasses RLS entirely. So the assertion that carries the value is the
     // negative one: a signed-in reader sees NOTHING, including in their own
     // chapter. The day a migration adds `using (true)`, or a chapter-scoped
@@ -545,11 +678,9 @@ if (readSeeded) {
     // enforceable form of the same intent is the deny below.
     //
     // Scope, stated so nobody reads more into it than it proves: this covers
-    // THESE TWO TABLES. A permissive policy added to any of the other ~46
+    // THESE THREE TABLES. A permissive policy added to any of the other
     // RLS-enabled tables changes no assertion here — the every-public-table
     // invariant (`schema-and-rls-smoke.mjs`) checks `relrowsecurity`, not what the policies do.
-    // `chat_notification_preferences` is the known uncovered one: it carries a
-    // client-reachable SELECT policy and only a name-set + tautology tripwire.
     //
     // A bare "sees zero rows" check would be worthless on its own — a missing
     // GRANT, a fixture that never inserted, or a typo'd table name each produce
@@ -558,7 +689,7 @@ if (readSeeded) {
     // is held, the rows exist when read as owner, the catalog carries no
     // client-reachable policy of any command shape, and only then that the
     // probe sees none of the rows.
-    console.log("\n=== members / financial_invoices default-deny (black-box, SET ROLE) ===");
+    console.log("\n=== members / financial_invoices / chat_notification_preferences default-deny (black-box, SET ROLE) ===");
     // Seeded in its own savepoint. A future NOT NULL column on
     // financial_invoices would otherwise raise straight past the header just
     // printed, into the tier-wide catch, and the log would show this heading
@@ -572,6 +703,9 @@ if (readSeeded) {
         insert into financial_invoices (id, chapter_id, user_id, title, amount, due_date) values
           ('${F.invA}', '${F.chapA}', '${F.userAId}', 'Chapter A dues', 15000, '2026-01-31'),
           ('${F.invB}', '${F.chapB}', '${F.userBId}', 'Chapter B dues', 25000, '2026-01-31');
+        insert into chat_notification_preferences (user_id, chapter_id, scope, scope_kind, level) values
+          ('${F.userAId}', '${F.chapA}', 'kind', 'system_audit', 'off'),
+          ('${F.userBId}', '${F.chapB}', 'kind', 'system_audit', 'all');
       `);
       await db.exec("release savepoint deny_seed;");
     } catch (e) {
@@ -579,7 +713,7 @@ if (readSeeded) {
       miss();
       await db.exec("rollback to savepoint deny_seed; release savepoint deny_seed;");
       console.log(
-        `SKIP  members / financial_invoices default-deny — fixture seed failed, 0 of its assertions ran` +
+        `SKIP  default-deny tables — fixture seed failed, 0 of its assertions ran` +
           `\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
       );
     }
@@ -592,7 +726,7 @@ if (readSeeded) {
     // uppercased one). A third addition would fail here, in a tier its author
     // never touched, with a message naming neither the seed block nor the
     // literal to bump.
-    const DENY_TABLES = ["members", "financial_invoices"];
+    const DENY_TABLES = ["members", "financial_invoices", "chat_notification_preferences"];
 
     const DENY_READERS = [
       { who: "a chapter-A member reading their own chapter", as: signedIn(F.userAAuth) },
@@ -667,13 +801,14 @@ if (readSeeded) {
       // The read probe below is `select`-only, so it is structurally blind to
       // the WRITE half of default-deny: `for insert with check (true)` or
       // `for update using (true)` leaves every read assertion green. That
-      // matters more than it sounds — Supabase's default
-      // `grant all on all tables in schema public to anon, authenticated`
-      // stands (no table-level revoke exists in supabase/migrations/), so on a
-      // permissive UPDATE policy any signed-in client could rewrite
-      // `members.role_ids` and grant itself permissions.
+      // matters even though 20261119210325 revoked the client roles' table
+      // grants (held there by tiers/client-table-grants.mjs): a later
+      // migration that grants a write back, together with a permissive UPDATE
+      // policy, would let any signed-in client rewrite `members.role_ids` and
+      // grant itself permissions. The grant and the policy are two layers, and
+      // this checks the policy one.
       //
-      // Both tables are supposed to carry NO policy a client role can reach,
+      // These tables are supposed to carry NO policy a client role can reach,
       // in any command shape, so assert exactly that from the catalog — it
       // covers INSERT/UPDATE/DELETE/ALL without needing a write probe per
       // command. A policy bound to `supabase_auth_admin` alone is excluded

@@ -51,8 +51,6 @@
 //   INFISICAL_PROJECT_ID        — workspaceId from .infisical.json
 //   STAGING_SMOKE_USER_EMAIL    — optional; enables the end-to-end sign-in probe
 //   STAGING_SMOKE_USER_PASSWORD
-//   RENDER_API_KEY             — optional; enables the Render healthCheckPath and auto-deploy assertions
-//   RENDER_SERVICE_ID          — frapp-api-staging service id (`.github/environments.json`, as the deploy reads it)
 //   RUN_URL                     — html_url of this run, for the alert body
 
 import { appendFileSync, readFileSync } from "node:fs";
@@ -69,10 +67,6 @@ import {
 } from "./lib/alert-issue.mjs";
 import { ghRequest } from "./lib/github.mjs";
 import { requireEnv } from "./lib/env.mjs";
-import {
-  EXPECTED_HEALTH_CHECK_PATH,
-  readHealthCheckPath,
-} from "./lib/render-health-check-path.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { ALERT_ROUTING } from "./lib/ops-docs.mjs";
 
@@ -223,127 +217,6 @@ export async function checkProjectStatus({ accessToken, projectRef, fetchImpl = 
   return status === "ACTIVE_HEALTHY"
     ? result("project-status", label, PASS, `status=${status}`)
     : result("project-status", label, FAIL, `status=${status}, expected ACTIVE_HEALTHY`);
-}
-
-/**
- * Render `frapp-api-staging` `serviceDetails.healthCheckPath` is `/health`.
- *
- * This path is Render's gate on every staging deploy: `deploy-staging.yml` waits
- * for the deploy to go `live`, which means the new instance passed it. Empty
- * is a TCP socket check (documented 2026-09-06). `/health/ready` would cancel
- * a deploy when a dependency is degraded. Production's copy of this assertion
- * lives in production-guardrails.mjs — do not fold production into this suite
- * (alert title is the lookup key). Staging's auto-deploy setting is this
- * suite's: `checkRenderAutoDeploy`.
- */
-export async function checkRenderHealthCheckPath({
-  apiKey,
-  serviceId,
-  fetchImpl = fetch,
-  serviceLabel = "frapp-api-staging",
-} = {}) {
-  const id = "health-check-path";
-  const label = `${serviceLabel} healthCheckPath is /health`;
-  if (!apiKey || !serviceId) {
-    return result(id, label, SKIPPED, "RENDER_API_KEY / RENDER_SERVICE_ID not set");
-  }
-  const response = await fetchImpl(
-    `https://api.render.com/v1/services/${serviceId}`,
-    withTimeout({ headers: { Authorization: `Bearer ${apiKey}` } }),
-  );
-  if (!response.ok) {
-    return result(id, label, FAIL, `Render API returned HTTP ${response.status}`);
-  }
-  const service = await response.json();
-  const path = readHealthCheckPath(service);
-  if (path === EXPECTED_HEALTH_CHECK_PATH) {
-    return result(id, label, PASS, `healthCheckPath=${path}`);
-  }
-  if (path === "") {
-    return result(
-      id,
-      label,
-      FAIL,
-      `healthCheckPath is empty (TCP-only probe on the open port; expected ${EXPECTED_HEALTH_CHECK_PATH})`,
-    );
-  }
-  if (typeof path === "string") {
-    return result(
-      id,
-      label,
-      FAIL,
-      `healthCheckPath='${path}' (expected ${EXPECTED_HEALTH_CHECK_PATH}; /health/ready would cancel a deploy when a dependency is degraded)`,
-    );
-  }
-  return result(
-    id,
-    label,
-    FAIL,
-    `healthCheckPath is unreadable (expected ${EXPECTED_HEALTH_CHECK_PATH} on serviceDetails)`,
-  );
-}
-
-/**
- * Render `frapp-api-staging` does NOT auto-deploy, and tracks `main`.
- *
- * Since #2505 staging deploys by commit (`deploy-staging.yml` since #2803),
- * after CI and the staging migrations, through the Render API. Auto-deploy
- * fires on push, before either: it builds a commit CI may yet fail, against a schema its
- * migration has not reached, and every API commit builds twice. The deploy
- * `deploy-staging.yml` then creates is superseded by, or supersedes, the one
- * auto-deploy started, and a cancelled deploy fails that job. So auto-deploy
- * on is drift, exactly as it is on production.
- *
- * (Until #2505 this asserted the opposite, `autoDeploy: "yes"`, because
- * auto-deploy was what kept staging current. `deploy-staging.yml` does that now.)
- *
- * `branch` must still be `main`: a service linked to another branch is not the
- * staging `deploy-staging.yml` deploys `main`'s commits to. Live GET
- * `/v1/services/{id}` puts `autoDeploy` and `branch` on the service root
- * (2026-09-09), not under `serviceDetails` — a nested decoy is not the live
- * field. Production-guardrails asserts production's copy under a different
- * alert title.
- */
-export async function checkRenderAutoDeploy({
-  apiKey,
-  serviceId,
-  fetchImpl = fetch,
-  serviceLabel = "frapp-api-staging",
-} = {}) {
-  const id = "render-auto-deploy";
-  const label = `${serviceLabel} deploys by commit (auto-deploy off, tracks main)`;
-  if (!apiKey || !serviceId) {
-    return result(id, label, SKIPPED, "RENDER_API_KEY / RENDER_SERVICE_ID not set");
-  }
-  const response = await fetchImpl(
-    `https://api.render.com/v1/services/${serviceId}`,
-    withTimeout({ headers: { Authorization: `Bearer ${apiKey}` } }),
-  );
-  if (!response.ok) {
-    return result(id, label, FAIL, `Render API returned HTTP ${response.status}`);
-  }
-  const service = await response.json();
-  const autoDeploy = service?.autoDeploy;
-  const branch = service?.branch;
-  const findings = [];
-  if (autoDeploy !== "no") {
-    findings.push(
-      `autoDeploy='${autoDeploy ?? "unreadable"}' (expected 'no'). ` +
-        `With auto-deploy on, every push builds before CI and the staging migrations, and races the ` +
-        `deploy Deploy staging creates for the same commit. Render dashboard → frapp-api-staging → ` +
-        `Settings → Auto-Deploy → Off.`,
-    );
-  }
-  if (branch !== "main") {
-    findings.push(
-      `branch='${branch ?? "unreadable"}' (expected 'main'). ` +
-        `A service pointed at another branch never receives the commits this job watches main for.`,
-    );
-  }
-  if (findings.length === 0) {
-    return result(id, label, PASS, `autoDeploy=${autoDeploy} branch=${branch}`);
-  }
-  return result(id, label, FAIL, findings.join(" "));
 }
 
 /**
@@ -1315,18 +1188,6 @@ export async function runStagingConformance({
       checkProjectStatus({
         accessToken: env.SUPABASE_ACCESS_TOKEN,
         projectRef: env.SUPABASE_PROJECT_REF,
-        fetchImpl,
-      }) },
-    { id: "health-check-path", label: "frapp-api-staging healthCheckPath is /health", run: () =>
-      checkRenderHealthCheckPath({
-        apiKey: env.RENDER_API_KEY,
-        serviceId: env.RENDER_SERVICE_ID,
-        fetchImpl,
-      }) },
-    { id: "render-auto-deploy", label: "frapp-api-staging deploys by commit (auto-deploy off, tracks main)", run: () =>
-      checkRenderAutoDeploy({
-        apiKey: env.RENDER_API_KEY,
-        serviceId: env.RENDER_SERVICE_ID,
         fetchImpl,
       }) },
     { id: "auth-hook", label: "custom_access_token_hook is enabled", run: () =>

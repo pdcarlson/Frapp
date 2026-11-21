@@ -4,6 +4,12 @@ import {
 } from '@repo/validation';
 import { validateClientPolicyEnv } from '../application/services/client-policy.service';
 import { validateDevLogEnv } from '../application/services/dev-log.service';
+import { validateAiEnv } from './ai-config';
+import { validateAiSpendEnv } from './ai-spend-config';
+import { validateAiStoredTextEnv } from './ai-stored-text-config';
+import { validateCalendarFeedEnv } from './calendar-feed-config';
+import { validateGoogleCalendarEnv } from './google-calendar-config';
+import { validateGoogleDriveEnv } from './google-drive-config';
 import { classifySupabaseKey } from './supabase-key';
 
 const REQUIRED_ENV_VARS = [
@@ -81,6 +87,57 @@ const REQUIRED_ENV_VARS = [
 // "off" and hide the typo. Rules: validateDevLogEnv.
 //   - DEV_LOG_TOKEN_SHA256 / DEV_LOG_CHAPTER_ID / DEV_LOG_CHANNEL_ID
 //
+// Also optional (ADR-28): the AI features. Unset, every AI route answers 404
+// and the gateway makes no call. A value that IS set is checked here, because
+// a typo in a switch would read as "off", or as the live provider. Rules:
+// validateAiEnv (config/ai-config.ts).
+//   - AI_ENABLED         the server switch; on is exactly "true"
+//   - AI_PROVIDER        "live" (default) or "scripted" (canned, no network)
+//   - AI_SCRIPTED_PACE_MS  local only, beside "scripted": milliseconds the
+//                        canned reply waits, so a working state can be seen;
+//                        not checked at boot, and anything but a whole
+//                        number is no wait (language-model-registry.ts)
+//   - ANTHROPIC_API_KEY  enables the Anthropic adapter; not checked at boot
+//   - GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_CREDENTIALS_JSON  enable the Google
+//                        adapter; both or neither, except that on Cloud Run
+//                        (K_SERVICE set) the project alone signs in as the
+//                        service's identity; the JSON must be a service
+//                        account's key file (checked at boot)
+//   - GOOGLE_VERTEX_LOCATION  optional, "global" when unset
+//   - ASSEMBLYAI_API_KEY  enables the AssemblyAI transcriber (meeting
+//                        recordings, #712); not checked at boot
+//   - AI_CHAPTER_MONTHLY_CAP_USD / AI_MEMBER_DAILY_CAP_USD /
+//     AI_ANTHROPIC_MONTHLY_CAP_USD / AI_GOOGLE_MONTHLY_CAP_USD /
+//     AI_ASSEMBLYAI_MONTHLY_CAP_USD
+//                        the spend caps in dollars; unset is the default in
+//                        config/ai-spend-config.ts (validateAiSpendEnv)
+//   - AI_STORED_TEXT_KEY  seals the AI text Frapp keeps (a reported exchange,
+//                        the Ask diagnostics window); unset, none is kept.
+//                        "<key id>:<base64 of 32 bytes>", checked at boot
+//   - AI_DIAGNOSTICS_CHAPTER_ID  the one chapter offered the 14-day Ask
+//                        diagnostics window; needs the key above
+//                        (config/ai-stored-text-config.ts)
+//
+// Optional, sealing calendar subscription links (config/calendar-feed-config.ts).
+// Unset, links already handed out keep working but none can be shown or made:
+//   - CALENDAR_FEED_TOKEN_KEY  "<key id>:<base64 of 32 bytes>", older keys
+//                        after it separated by commas; checked at boot
+//
+// Optional, the Google Calendar sync (#3322; config/google-calendar-config.ts).
+// All three or none, checked at boot; unset, Google Calendar is not offered and
+// the subscription link still is:
+//   - GOOGLE_CALENDAR_CLIENT_ID / GOOGLE_CALENDAR_CLIENT_SECRET  a Web OAuth
+//                        client in Google Cloud project `signet-frapp`, one per
+//                        environment, whose redirect URI is the API's origin
+//                        (API_URL less any trailing /v1) +
+//                        /v1/google-calendar/callback
+//   - GOOGLE_CALENDAR_TOKEN_KEY  seals members' Google refresh tokens,
+//                        "<key id>:<base64 of 32 bytes>"
+//
+// Also optional (#4631): GIFs in chat. Unset, GET /v1/gifs/availability says
+// off and both clients hide the GIF picker. Not checked at boot.
+//   - KLIPY_API_KEY      the KLIPY app key (infrastructure/gifs/)
+//
 // NOT here, and deliberately absent rather than merely unlisted:
 // SUPABASE_ANON_KEY. The API holds exactly one Supabase client and it is
 // built from SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
@@ -122,6 +179,33 @@ export function validateEnv(config: Record<string, unknown>) {
   const devLogProblems = validateDevLogEnv(config);
   if (devLogProblems.length > 0) {
     throw new Error(devLogProblems.join(' '));
+  }
+
+  const calendarFeedProblems = validateCalendarFeedEnv(config);
+  if (calendarFeedProblems.length > 0) {
+    throw new Error(calendarFeedProblems.join(' '));
+  }
+
+  const googleCalendarProblems = validateGoogleCalendarEnv(config);
+  if (googleCalendarProblems.length > 0) {
+    throw new Error(googleCalendarProblems.join(' '));
+  }
+
+  // Optional: the service account behind Google Drive (#5157, #5434). Unset
+  // turns the feature off; set, it is a service account address with a proof
+  // secret, or a real key file, never both.
+  const googleDriveProblems = validateGoogleDriveEnv(config);
+  if (googleDriveProblems.length > 0) {
+    throw new Error(googleDriveProblems.join(' '));
+  }
+
+  const aiProblems = [
+    ...validateAiEnv(config),
+    ...validateAiSpendEnv(config),
+    ...validateAiStoredTextEnv(config),
+  ];
+  if (aiProblems.length > 0) {
+    throw new Error(aiProblems.join(' '));
   }
 
   // Production invite emails are built from APP_URL. https: alone still

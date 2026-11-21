@@ -1,5 +1,7 @@
+import { EVENT_TYPES } from "@/tests/events-page";
+import { formatDateEntry, parseDateEntry } from "@repo/formatting";
 import type React from "react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   render,
   screen,
@@ -10,46 +12,51 @@ import {
 
 // Capture the create/update mutation args. `vi.hoisted` runs before the hoisted
 // `vi.mock` factory, so the spies exist when the factory wires them in.
-const { createMutate, updateMutate, mockCurrentChapter, mockToast } =
-  vi.hoisted(() => ({
-    createMutate: vi.fn(),
-    updateMutate: vi.fn(),
-    mockCurrentChapter: vi.fn(),
-    mockToast: vi.fn(),
-  }));
+const {
+  createMutate,
+  updateMutate,
+  mockCurrentChapter,
+  mockToast,
+  mockPermissions,
+  useEventMock,
+  useEventsMock,
+  createTypeMutate,
+} = vi.hoisted(() => ({
+  createMutate: vi.fn(),
+  // A type made in place from the Type menu (Paul 2026-11-20).
+  createTypeMutate: vi.fn(),
+  updateMutate: vi.fn(),
+  mockCurrentChapter: vi.fn(),
+  mockToast: vi.fn(),
+  // An officer who edits events unless a case says otherwise (#3709: points
+  // and required attendance are theirs).
+  mockPermissions: { list: ["events:update"] as string[] },
+  // The series parent a generated meeting reads; none unless a case sets it.
+  useEventMock: vi.fn<
+    (id: unknown) => { data: unknown; isPending: boolean; isError: boolean }
+  >(() => ({ data: undefined, isPending: false, isError: false })),
+  // The chapter's events, for a started series' next meeting (#4746); none
+  // unless a case sets them.
+  useEventsMock: vi.fn<
+    (options?: { enabled?: boolean }) => {
+      data: unknown;
+      isLoading: boolean;
+    }
+  >(() => ({ data: undefined, isLoading: false })),
+}));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
   EVENT_CREATE_UNCONFIRMED: "unconfirmed-sentinel",
   useCreateEvent: () => ({ mutateAsync: createMutate, isPending: false }),
+  useEvent: (id: unknown) => useEventMock(id),
+  useEvents: (options?: { enabled?: boolean }) => useEventsMock(options),
   useUpdateEvent: () => ({ mutateAsync: updateMutate, isPending: false }),
-  useEventTypes: () => ({
-    data: [
-      {
-        id: "type-meeting",
-        chapter_id: "chap-1",
-        name: "Chapter meeting",
-        point_value: 10,
-        is_mandatory: true,
-        position: 1,
-        created_at: "2026-11-11T00:00:00.000Z",
-        updated_at: "2026-11-11T00:00:00.000Z",
-      },
-      {
-        id: "type-social",
-        chapter_id: "chap-1",
-        name: "Social",
-        point_value: 0,
-        is_mandatory: false,
-        position: 2,
-        created_at: "2026-11-11T00:00:00.000Z",
-        updated_at: "2026-11-11T00:00:00.000Z",
-      },
-    ],
-    isLoading: false,
+  // The two chapter types the type picker and its Edit types list read.
+  ...(await import("@/tests/events-page")).eventTypeHooks(),
+  useCreateEventType: () => ({
+    mutateAsync: createTypeMutate,
+    isPending: false,
   }),
-  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRoles: () => ({
     data: [
       { id: "r1", name: "Exec" },
@@ -62,7 +69,7 @@ vi.mock("@repo/hooks", () => ({
   // editing behaviour, so they all run against an active chapter.
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
-    data: { permissions: ["billing:manage"] },
+    data: { permissions: mockPermissions.list },
     isPending: false,
     isError: false,
   }),
@@ -77,6 +84,7 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+import { EVENT_FORM_ROWS, EVENT_FORM_ROW_LABELS } from "@repo/validation";
 import { EventEditorDialog } from "./event-editor-dialog";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import {
@@ -86,31 +94,75 @@ import {
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
-/** Open "More options", which starts closed on create. Safe to call twice. */
-function openMoreOptions() {
-  const more = screen.queryByRole("button", { name: /More options/ });
-  if (more) fireEvent.click(more);
+/**
+ * Open a row's menu (#5561): its trigger reads "<Row>: <value>". Safe to call
+ * when it is already open.
+ */
+function openRow(
+  row: "When" | "Repeat" | "Who's coming" | "Check-in" | "Type",
+) {
+  // When's fields sit in the row itself, Google Calendar's way: no menu.
+  if (row === "When") return;
+  const trigger = screen.getByRole("button", {
+    name: new RegExp(`^${row.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: `),
+  });
+  if (trigger.getAttribute("aria-expanded") !== "true") {
+    fireEvent.click(trigger);
+  }
 }
 
-/** Open More options and the check-in zone under it. */
+/** Pick a type from the Type row's menu, or "No type" to let it go. */
+function pickType(name: string) {
+  openRow("Type");
+  fireEvent.click(screen.getByRole("option", { name: new RegExp(`^${name}`) }));
+}
+
+/** Open the Check-in row's menu, which holds the zone. */
 function openZone() {
-  openMoreOptions();
-  if (!screen.queryByRole("button", { name: "Add point" })) {
-    fireEvent.click(screen.getByRole("button", { name: /Check-in zone/ }));
+  openRow("Check-in");
+}
+
+/**
+ * One end of the schedule: the day typed into the date field, and a time.
+ * The end's day follows the start's unless the event spans days, so an end
+ * on the start's day is its time alone.
+ */
+function setSchedule(end: "Starts" | "Ends", day: string, time: string) {
+  if (end === "Starts" || screen.queryByLabelText("Ends, day")) {
+    fireEvent.change(screen.getByLabelText(`${end}, day`), {
+      target: { value: day },
+    });
   }
+  fireEvent.change(screen.getByLabelText(`${end}, time`), {
+    target: { value: time },
+  });
+}
+
+/** Name the event, create it, and check the end it was sent with. */
+async function expectCreatedEnd(end: Date) {
+  fireEvent.change(screen.getByLabelText("Event name"), {
+    target: { value: "Chapter Dinner" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+  await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+  expect(createMutate.mock.calls[0]![0]).toMatchObject({
+    end_time: end.toISOString(),
+  });
 }
 
 function fillRequiredFields() {
   fireEvent.change(screen.getByLabelText("Event name"), {
     target: { value: "Exec Sync" },
   });
-  fireEvent.change(screen.getByLabelText("Start"), {
-    target: { value: "2026-07-01T18:00" },
-  });
-  fireEvent.change(screen.getByLabelText("End"), {
-    target: { value: "2026-07-01T19:00" },
-  });
+  setSchedule("Starts", "2026-07-01", "18:00");
+  setSchedule("Ends", "2026-07-01", "19:00");
 }
+
+// Which label the notes field takes follows the meetings module (#4934).
+const meetingsState = vi.hoisted(() => ({ on: false }));
+vi.mock("@/components/meetings/event-minutes", () => ({
+  useMeetingsModuleOn: () => meetingsState.on,
+}));
 
 describe("EventEditorDialog form shape and attendance by role", () => {
   beforeEach(() => {
@@ -135,19 +187,149 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
   }
 
-  it("opens on the four fields every event needs, and says what the rest hold", () => {
+  it("shows every row at rest with what it is set to (#5561)", () => {
     renderCreate();
-    expect(screen.queryByLabelText("Points for attending")).toBeNull();
-    expect(screen.queryByLabelText("Repeat")).toBeNull();
+    expect(screen.getByLabelText("Points for attending")).toHaveValue(10);
     expect(
-      screen.getByRole("button", { name: /More options/ }),
-    ).toHaveTextContent("10 points · Optional for everyone · Doesn't repeat");
+      screen.getByRole("button", { name: /^Who's coming: / }),
+    ).toHaveTextContent("Optional for everyone");
+    expect(screen.getByRole("button", { name: /^Repeat: / })).toHaveTextContent(
+      "Doesn't repeat",
+    );
+    expect(
+      screen.getByRole("button", { name: /^Check-in: / }),
+    ).toHaveTextContent("Opens 10 minutes early");
+    expect(screen.getByRole("button", { name: /^Type: / })).toHaveTextContent(
+      "None",
+    );
+    // No More options: nothing is folded away.
+    expect(screen.queryByRole("button", { name: /More options/ })).toBeNull();
   });
 
-  it("keeps meeting minutes to an edit, after the event exists", () => {
+  it("sends when check-in opens, and refuses one past two hours", async () => {
     renderCreate();
-    openMoreOptions();
-    expect(screen.queryByLabelText("Meeting minutes")).toBeNull();
+    fillRequiredFields();
+    openRow("Check-in");
+    fireEvent.change(screen.getByLabelText("Opens how many minutes early"), {
+      target: { value: "200" },
+    });
+    expect(
+      screen.getByRole("button", { name: /^Check-in: / }),
+    ).toHaveTextContent("Opening time needs a fix");
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createMutate).not.toHaveBeenCalled();
+
+    openRow("Check-in");
+    fireEvent.change(screen.getByLabelText("Opens how many minutes early"), {
+      target: { value: "30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).toMatchObject({
+      check_in_opens_minutes: 30,
+    });
+  });
+
+  it("draws its rows in the order the phone draws them (#5561)", () => {
+    renderCreate();
+    const labels = EVENT_FORM_ROWS.map((row) =>
+      row === "notes" ? "Meeting minutes" : EVENT_FORM_ROW_LABELS[row],
+    );
+    const drawn = labels.map(
+      (label) => screen.getAllByText(label, { selector: "label, span" })[0]!,
+    );
+    for (let i = 1; i < drawn.length; i += 1) {
+      expect(
+        drawn[i - 1]!.compareDocumentPosition(drawn[i]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it("takes notes on create, as the phone's sheet does, and sends them", async () => {
+    renderCreate();
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Meeting minutes"), {
+      target: { value: "  Bring dues " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).toMatchObject({
+      notes: "Bring dues",
+    });
+  });
+
+  it("takes agenda items on create and sends them, in order (Paul 2026-11-19)", async () => {
+    renderCreate();
+    fillRequiredFields();
+    const field = screen.getByRole("textbox", { name: "Add an agenda item" });
+    fireEvent.change(field, { target: { value: "Treasurer report" } });
+    fireEvent.submit(field.closest("form")!);
+    fireEvent.change(field, { target: { value: "  Rush   recap " } });
+    fireEvent.submit(field.closest("form")!);
+    // A new event has nothing to check off.
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    const sent = createMutate.mock.calls[0]![0] as {
+      agenda: { text: string; done: boolean }[];
+    };
+    expect(sent.agenda.map((item) => [item.text, item.done])).toEqual([
+      ["Treasurer report", false],
+      ["Rush recap", false],
+    ]);
+  });
+
+  it("sends a line typed in the agenda but never entered", async () => {
+    renderCreate();
+    fillRequiredFields();
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Add an agenda item" }),
+      { target: { value: "Budget review" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    const sent = createMutate.mock.calls[0]![0] as {
+      agenda: { text: string }[];
+    };
+    expect(sent.agenda.map((item) => item.text)).toEqual(["Budget review"]);
+  });
+
+  it("sends no agenda when none was typed", async () => {
+    renderCreate();
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).not.toHaveProperty("agenda");
+  });
+
+  it("creates on Ctrl+Enter from a field, not from a menu over the form", async () => {
+    renderCreate();
+    fillRequiredFields();
+    // From the open Check-in menu, a portal over the form: not a create.
+    openRow("Check-in");
+    fireEvent.keyDown(screen.getByLabelText("Zone name"), {
+      key: "Enter",
+      ctrlKey: true,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createMutate).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(screen.getByLabelText("Event name"), {
+      key: "Enter",
+      ctrlKey: true,
+    });
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+  });
+
+  it("offers Discard only once something is typed", () => {
+    renderCreate();
+    expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Event name"), {
+      target: { value: "Formal" },
+    });
+    expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
   });
 
   it("labels the notes field as meeting minutes on edit", () => {
@@ -170,18 +352,45 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     expect(screen.queryByLabelText("Internal notes")).not.toBeInTheDocument();
   });
 
+  it("labels the notes field Notes on edit while minutes are their own record", () => {
+    meetingsState.on = true;
+    try {
+      render(
+        <EventEditorDialog
+          open
+          mode="edit"
+          event={{
+            id: "e0",
+            name: "Chapter",
+            start_time: "2026-07-01T18:00:00.000Z",
+            end_time: "2026-07-01T19:00:00.000Z",
+          }}
+          usingPreviewData={false}
+          onOpenChange={() => {}}
+          onSaved={async () => {}}
+        />,
+      );
+      expect(screen.getByLabelText("Notes")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Meeting minutes")).toBeNull();
+    } finally {
+      meetingsState.on = false;
+    }
+  });
+
   it("creates an event required for one role and optional for everyone else", async () => {
     renderCreate();
     fillRequiredFields();
-    openMoreOptions();
+    openRow("Who's coming");
     fireEvent.click(
-      screen.getByRole("button", { name: "Set a role differently" }),
+      within(
+        await screen.findByRole("radiogroup", { name: "Attendance for Exec" }),
+      ).getByRole("radio", { name: "Required" }),
     );
-    fireEvent.click(await screen.findByText("Exec"));
-    // The app's Select (Radix), not a native one.
-    fireEvent.click(screen.getByRole("combobox", { name: "Repeat" }));
-    fireEvent.click(await screen.findByRole("option", { name: "Every week" }));
-    expect(screen.getByText(/13 meetings, the last on Sep 23\./)).toBeTruthy();
+    openRow("Repeat");
+    fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
+    expect(
+      screen.getByText(/13 meetings, the last on September 23\./),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
@@ -190,9 +399,508 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       is_mandatory: false,
       others_invited: true,
       required_role_ids: ["r1"],
+      // Weekly on the start's day at its default length is the legacy
+      // token, which shipped phones read (#4488).
       recurrence_rule: "WEEKLY",
     });
     expect(body).not.toHaveProperty("optional_role_ids");
+  });
+
+  it("makes a twice-a-week series that ends on a date (#4488, #3662)", async () => {
+    renderCreate();
+    fillRequiredFields();
+    openRow("Repeat");
+    fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
+    // The start's weekday is on; one more chip makes it twice a week.
+    const pressed = screen
+      .getAllByRole("button", { pressed: true })
+      .map((chip) => chip.getAttribute("aria-label"));
+    expect(pressed).toHaveLength(1);
+    const other = pressed[0] === "Monday" ? "Thursday" : "Monday";
+    fireEvent.click(screen.getByRole("button", { name: other }));
+    openRow("Repeat");
+    fireEvent.click(screen.getByRole("radio", { name: "On date" }));
+    // Offered the day the 13 meetings would have ended on.
+    expect(screen.getByText(/meetings, the last on/)).toBeTruthy();
+    // A picked end date says its own length, and is the one sent.
+    openRow("Repeat");
+    fireEvent.change(screen.getByLabelText("Ends on"), {
+      target: { value: "2026-07-15" },
+    });
+    expect(
+      screen.getByText(/^\d meetings, the last on July 1\d\./),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0].recurrence_rule).toMatch(
+      /^FREQ=WEEKLY;INTERVAL=1;BYDAY=[A-Z]{2},[A-Z]{2};UNTIL=20260715;TZID=/,
+    );
+  });
+
+  describe("Repeat on an edit (#4488)", () => {
+    // A Monday series whose first meeting is still ahead.
+    const RULE =
+      "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=10;TZID=America/New_York";
+    const head = {
+      id: "h1",
+      name: "Chapter",
+      start_time: "2027-07-05T23:00:00.000Z",
+      end_time: "2027-07-06T00:00:00.000Z",
+      point_value: 10,
+      recurrence_rule: RULE,
+    };
+    const renderEdit = (event: Record<string, unknown>) =>
+      render(
+        <EventEditorDialog
+          open
+          mode="edit"
+          event={event}
+          usingPreviewData={false}
+          onOpenChange={() => {}}
+          onSaved={async () => {}}
+        />,
+      );
+    const saved = async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+      return updateMutate.mock.calls[0]![0].body as Record<string, unknown>;
+    };
+
+    it("asks which events a rename is for, and sends only the name", async () => {
+      renderEdit(head);
+      expect(screen.queryByText(/meetings, the last on/)).toBeNull();
+      fireEvent.change(screen.getByLabelText("Event name"), {
+        target: { value: "Chapter meeting" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      // The question Google Calendar, Apple Calendar and Outlook ask (#3667).
+      expect(await screen.findByText("This is a repeating event")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "This event only" }));
+      await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+      // No time or location, so the chapter isn't paged for a rename, and the
+      // unchanged rule isn't sent: a sent rule rebuilds the series.
+      expect(updateMutate.mock.calls[0]![0]).toEqual({
+        id: "h1",
+        body: { name: "Chapter meeting", scope: "instance" },
+      });
+    });
+
+    it("sends a rename to every upcoming event when asked", async () => {
+      renderEdit(head);
+      fireEvent.change(screen.getByLabelText("Event name"), {
+        target: { value: "Chapter meeting" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "All upcoming events" }),
+      );
+      await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+      expect(updateMutate.mock.calls[0]![0].body).toEqual({
+        name: "Chapter meeting",
+        scope: "series",
+      });
+    });
+
+    it("sends nothing when nothing changed", async () => {
+      const onOpenChange = vi.fn();
+      render(
+        <EventEditorDialog
+          open
+          mode="edit"
+          event={head}
+          usingPreviewData={false}
+          onOpenChange={onOpenChange}
+          onSaved={async () => {}}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+      expect(updateMutate).not.toHaveBeenCalled();
+      expect(screen.queryByText("This is a repeating event")).toBeNull();
+    });
+
+    it("moves stored weekdays with a start moved in the same save", async () => {
+      renderEdit(head);
+      // Monday July 5 → Tuesday July 6, same time, and 8 meetings.
+      openRow("When");
+      fireEvent.change(screen.getByLabelText("Starts, day"), {
+        target: { value: "2027-07-06" },
+      });
+      openRow("Repeat");
+      fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+        target: { value: "8" },
+      });
+      // The chip lit is the day saved.
+      expect(screen.getByRole("button", { name: "Tuesday" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "Monday" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      const body = await saved();
+      expect(body).toMatchObject({
+        recurrence_rule: RULE.replace("MO;COUNT=10", "TU;COUNT=8"),
+        scope: "series",
+      });
+    });
+
+    it("sends a changed rule to the whole series", async () => {
+      renderEdit(head);
+      openRow("Repeat");
+      fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+        target: { value: "6" },
+      });
+      expect(
+        screen.getByText(/^6 meetings, the last on August 9/),
+      ).toBeTruthy();
+      const body = await saved();
+      expect(body).toMatchObject({
+        recurrence_rule: RULE.replace("COUNT=10", "COUNT=6"),
+        scope: "series",
+      });
+    });
+
+    it("ends the series with Doesn't repeat", async () => {
+      renderEdit(head);
+      openRow("Repeat");
+      fireEvent.click(screen.getByRole("radio", { name: "Doesn't repeat" }));
+      const body = await saved();
+      expect(body).toMatchObject({ recurrence_rule: null, scope: "series" });
+    });
+
+    describe("from a generated meeting", () => {
+      // The second Monday, a week after the head.
+      const occurrence = {
+        ...head,
+        id: "o1",
+        start_time: "2027-07-12T23:00:00.000Z",
+        end_time: "2027-07-13T00:00:00.000Z",
+        recurrence_rule: null,
+        parent_event_id: "h1",
+      };
+      afterEach(() => {
+        useEventMock.mockImplementation(() => ({
+          data: undefined,
+          isPending: false,
+          isError: false,
+        }));
+      });
+      const withParent = () =>
+        useEventMock.mockImplementation((id: unknown) => ({
+          data: id === "h1" ? head : undefined,
+          isPending: false,
+          isError: false,
+        }));
+
+      it("reads the series' rule off its first meeting", () => {
+        withParent();
+        renderEdit(occurrence);
+        expect(useEventMock).toHaveBeenCalledWith("h1");
+        openRow("Repeat");
+        expect(
+          screen.getByRole("radio", { name: "Doesn't repeat" }),
+        ).toHaveAttribute("aria-checked", "false");
+      });
+
+      it("moves every upcoming meeting through the first, as a shift", async () => {
+        withParent();
+        renderEdit(occurrence);
+        // A day later on this meeting is a day later on the first (the end
+        // moves with the start).
+        openRow("When");
+        fireEvent.change(screen.getByLabelText("Starts, day"), {
+          target: { value: "2027-07-13" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+        fireEvent.click(
+          await screen.findByRole("button", { name: "All upcoming events" }),
+        );
+        await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+        const { id, body } = updateMutate.mock.calls[0]![0];
+        const DAY = 24 * 60 * 60 * 1000;
+        expect(id).toBe("h1");
+        expect(body).toEqual({
+          scope: "series",
+          start_time: new Date(Date.parse(head.start_time) + DAY).toISOString(),
+          end_time: new Date(Date.parse(head.end_time) + DAY).toISOString(),
+        });
+      });
+
+      it("leaves the meeting after a series move rebuilds it", async () => {
+        withParent();
+        const onLeftEvent = vi.fn();
+        updateMutate.mockResolvedValueOnce({ id: "h1" });
+        render(
+          <EventEditorDialog
+            open
+            mode="edit"
+            event={occurrence}
+            usingPreviewData={false}
+            onOpenChange={() => {}}
+            onSaved={async () => {}}
+            onLeftEvent={onLeftEvent}
+          />,
+        );
+        openRow("When");
+        fireEvent.change(screen.getByLabelText("Starts, day"), {
+          target: { value: "2027-07-13" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+        fireEvent.click(
+          await screen.findByRole("button", { name: "All upcoming events" }),
+        );
+        await waitFor(() => expect(onLeftEvent).toHaveBeenCalledTimes(1));
+      });
+
+      it("stays on the meeting after a rename of just this one", async () => {
+        withParent();
+        const onLeftEvent = vi.fn();
+        const onOpenChange = vi.fn();
+        updateMutate.mockResolvedValueOnce({ id: "o1" });
+        render(
+          <EventEditorDialog
+            open
+            mode="edit"
+            event={occurrence}
+            usingPreviewData={false}
+            onOpenChange={onOpenChange}
+            onSaved={async () => {}}
+            onLeftEvent={onLeftEvent}
+          />,
+        );
+        fireEvent.change(screen.getByLabelText("Event name"), {
+          target: { value: "Chapter meeting" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+        fireEvent.click(
+          await screen.findByRole("button", { name: "This event only" }),
+        );
+        await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+        expect(onLeftEvent).not.toHaveBeenCalled();
+      });
+
+      it("says what to do when an All upcoming save is refused", async () => {
+        withParent();
+        updateMutate.mockRejectedValueOnce({ statusCode: 400, message: "x" });
+        renderEdit(occurrence);
+        fireEvent.change(screen.getByLabelText("Event name"), {
+          target: { value: "Chapter meeting" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+        fireEvent.click(
+          await screen.findByRole("button", { name: "All upcoming events" }),
+        );
+        await waitFor(() =>
+          expect(mockToast).toHaveBeenCalledWith(
+            expect.objectContaining({
+              description: expect.stringMatching(
+                /^That change can't be made to the whole series/,
+              ),
+            }),
+          ),
+        );
+      });
+
+      it("holds Save until the first meeting has loaded", () => {
+        useEventMock.mockImplementation(() => ({
+          data: undefined,
+          isPending: true,
+          isError: false,
+        }));
+        renderEdit(occurrence);
+        expect(screen.getByText("Loading the series…")).toBeTruthy();
+        expect(
+          screen.getByRole("button", { name: "Save changes" }),
+        ).toBeDisabled();
+      });
+
+      it("locks Repeat when the first meeting can't be read", async () => {
+        useEventMock.mockImplementation(() => ({
+          data: undefined,
+          isPending: false,
+          isError: true,
+        }));
+        renderEdit(occurrence);
+        expect(
+          screen.getByRole("button", { name: "Repeat: Part of a series" }),
+        ).toBeInTheDocument();
+        openRow("Repeat");
+        expect(screen.getByText(/Part of a repeating series/)).toBeTruthy();
+        expect(
+          screen.queryByRole("radio", { name: "Doesn't repeat" }),
+        ).toBeNull();
+        fireEvent.change(screen.getByLabelText("Event name"), {
+          target: { value: "Chapter meeting" },
+        });
+        // Without the first meeting a series time change can't be sent, so
+        // the question isn't asked.
+        const body = await saved();
+        expect(body).toEqual({ name: "Chapter meeting", scope: "instance" });
+      });
+    });
+  });
+
+  // #4746: a Repeat change on a started series steps from its real next
+  // meeting, read from the chapter's events, not from the rule's pattern.
+  describe("Repeat on a started series", () => {
+    // Monthly on the 5th from Monday 2027-07-05; the August meeting was moved
+    // by hand to the 7th. The clock is past the head, before August.
+    const RULE = "FREQ=MONTHLY;INTERVAL=1;COUNT=10;TZID=America/New_York";
+    const head = {
+      id: "h1",
+      name: "Chapter",
+      start_time: "2027-07-05T16:00:00.000Z",
+      end_time: "2027-07-05T17:00:00.000Z",
+      point_value: 10,
+      recurrence_rule: RULE,
+    };
+    const child = (id: string, start: string) => ({
+      ...head,
+      id,
+      start_time: start,
+      end_time: start,
+      recurrence_rule: null,
+      parent_event_id: "h1",
+    });
+    const rows = [
+      head,
+      child("c-aug", "2027-08-07T16:00:00.000Z"),
+      child("c-sep", "2027-09-05T16:00:00.000Z"),
+    ];
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2027-07-20T12:00:00.000Z"));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      useEventsMock.mockImplementation(() => ({
+        data: undefined,
+        isLoading: false,
+      }));
+    });
+    const renderEdit = () =>
+      render(
+        <EventEditorDialog
+          open
+          mode="edit"
+          event={head}
+          usingPreviewData={false}
+          onOpenChange={() => {}}
+          onSaved={async () => {}}
+        />,
+      );
+    const shorten = () => {
+      openRow("Repeat");
+      fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+        target: { value: "3" },
+      });
+    };
+
+    it("counts from the moved meeting the series really holds next", () => {
+      useEventsMock.mockImplementation(() => ({
+        data: rows,
+        isLoading: false,
+      }));
+      renderEdit();
+      expect(useEventsMock).toHaveBeenCalledWith({ enabled: true });
+      shorten();
+      expect(
+        screen.getByText(/^3 meetings, the last on October 7/),
+      ).toBeTruthy();
+    });
+
+    it("counts from the rule's pattern when the events can't be read", () => {
+      renderEdit();
+      shorten();
+      expect(
+        screen.getByText(/^3 meetings, the last on October 5/),
+      ).toBeTruthy();
+    });
+
+    it("holds Repeat and Save while the events load", () => {
+      useEventsMock.mockImplementation(() => ({
+        data: undefined,
+        isLoading: true,
+      }));
+      renderEdit();
+      expect(screen.getByText("Loading the series…")).toBeTruthy();
+      expect(
+        screen.queryByRole("radio", { name: "Doesn't repeat" }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Save changes" }),
+      ).toBeDisabled();
+    });
+  });
+
+  it("keeps Create from sending a series it can't make", async () => {
+    renderCreate();
+    fillRequiredFields();
+    openRow("Repeat");
+    fireEvent.click(screen.getByRole("radio", { name: "Monthly" }));
+    openRow("Repeat");
+    fireEvent.change(screen.getByLabelText("Ends after how many meetings"), {
+      target: { value: "1" },
+    });
+    expect(screen.getByText("A series holds 2 to 120 meetings.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(createMutate).not.toHaveBeenCalled();
+  });
+
+  it("opens a copy of last year's event filled in, never repeating, and reports the event it made (#3930)", async () => {
+    createMutate.mockResolvedValue({ id: "evt-new" });
+    const onCreated = vi.fn();
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        template={{
+          id: "evt-old",
+          name: "Winter Formal 2026",
+          description: "Buses leave at 8:15.",
+          location: "Hilton Ballroom",
+          point_value: 15,
+          // Last year's repeat is not this year's plan.
+          recurrence_rule: "WEEKLY",
+        }}
+        initialStartAt="2026-12-05T21:00"
+        initialEndAt="2026-12-06T01:00"
+        onCreated={onCreated}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+    expect(
+      (screen.getByLabelText("Event name") as HTMLInputElement).value,
+    ).toBe("Winter Formal 2026");
+    openRow("When");
+    expect(
+      (screen.getByLabelText("Starts, day") as HTMLInputElement).value,
+    ).toContain("December 5");
+    expect(
+      (screen.getByLabelText("Starts, time") as HTMLInputElement).value,
+    ).toBe("9 PM");
+    // Nothing is made until the officer saves.
+    expect(createMutate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    const body = createMutate.mock.calls[0]![0];
+    expect(body).toMatchObject({
+      name: "Winter Formal 2026",
+      location: "Hilton Ballroom",
+      point_value: 15,
+    });
+    expect(body.recurrence_rule ?? null).toBeNull();
+    expect(body).not.toHaveProperty("id");
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith("evt-new"));
   });
 
   it("sends no role list on create when nothing differs", async () => {
@@ -212,9 +920,9 @@ describe("EventEditorDialog form shape and attendance by role", () => {
   it("refuses an event that invites nobody", async () => {
     renderCreate();
     fillRequiredFields();
-    openMoreOptions();
+    openRow("Who's coming");
     const everyone = screen.getByRole("radiogroup", {
-      name: "Attendance for everyone",
+      name: "Attendance for everyone else",
     });
     fireEvent.click(
       within(everyone).getByRole("radio", { name: "Not invited" }),
@@ -248,13 +956,19 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       />,
     );
 
+    openRow("Who's coming");
     const everyone = screen.getByRole("radiogroup", {
-      name: "Attendance for everyone",
+      name: "Attendance for everyone else",
     });
     expect(
       within(everyone).getByRole("radio", { name: "Not invited" }),
     ).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(screen.getByRole("button", { name: "Remove Exec" }));
+    // Exec back to the default's answer leaves it following everyone else.
+    fireEvent.click(
+      within(
+        screen.getByRole("radiogroup", { name: "Attendance for Exec" }),
+      ).getByRole("radio", { name: "Not invited" }),
+    );
     fireEvent.click(within(everyone).getByRole("radio", { name: "Optional" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -272,7 +986,7 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
   });
 
-  it("shows a role missing from the loaded list as a removable row", async () => {
+  it("shows a role missing from the loaded list as a row it can reset", async () => {
     render(
       <EventEditorDialog
         open
@@ -291,8 +1005,11 @@ describe("EventEditorDialog form shape and attendance by role", () => {
       />,
     );
 
+    openRow("Who's coming");
     fireEvent.click(
-      screen.getByRole("button", { name: "Remove Removed role" }),
+      within(
+        screen.getByRole("radiogroup", { name: "Attendance for Removed role" }),
+      ).getByRole("radio", { name: "Not invited" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
@@ -316,6 +1033,7 @@ describe("EventEditorDialog check-in zone", () => {
   });
 
   function addPoints(points: [string, string][]) {
+    openZone();
     points.forEach(() =>
       fireEvent.click(screen.getByRole("button", { name: "Add point" })),
     );
@@ -346,9 +1064,8 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
-    openZone();
-
     fillRequiredFields();
+    openZone();
     fireEvent.change(screen.getByLabelText("Zone name"), {
       target: { value: "Great Hall" },
     });
@@ -382,9 +1099,8 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
-    openZone();
-
     fillRequiredFields();
+    openZone();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
@@ -404,9 +1120,8 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
-    openZone();
-
     fillRequiredFields();
+    openZone();
     addPoints(TRIANGLE.slice(0, 2));
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -430,9 +1145,8 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
-    openZone();
-
     fillRequiredFields();
+    openZone();
     addPoints([["91", "0"], ...TRIANGLE.slice(1)]);
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
@@ -458,9 +1172,8 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
-    openZone();
-
     fillRequiredFields();
+    openZone();
     addPoints(TRIANGLE);
     fireEvent.change(screen.getByLabelText("Point 2 longitude"), {
       target: { value: "" },
@@ -491,9 +1204,8 @@ describe("EventEditorDialog check-in zone", () => {
         onSaved={async () => {}}
       />,
     );
-    openZone();
-
     fillRequiredFields();
+    openZone();
     addPoints(TRIANGLE);
     // Row 2 goes entirely blank; row 4 carries the out-of-range latitude.
     fireEvent.change(screen.getByLabelText("Point 2 latitude"), {
@@ -629,7 +1341,6 @@ describe("EventEditorDialog point value guard (#2206)", () => {
         onSaved={async () => {}}
       />,
     );
-    openMoreOptions();
     return screen.getByLabelText("Points for attending");
   }
 
@@ -743,11 +1454,84 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
     });
     expect(screen.getByLabelText("Event name")).toHaveValue("Chapter Dinner");
     expect(screen.getByLabelText("Location")).toHaveValue("Main House");
-    expect(screen.getByLabelText("Start")).toHaveValue("2026-11-12T18:00");
-    expect(screen.getByLabelText("End")).toHaveValue("2026-11-12T20:00");
-    expect(
-      screen.getByRole("button", { name: /More options/ }),
-    ).toHaveTextContent("5 points");
+    // The day and the times are written out (#3937, Google Calendar's way).
+    openRow("When");
+    expect(screen.getByLabelText("Starts, day")).toHaveValue(
+      formatDateEntry("2026-11-12", new Date()),
+    );
+    openRow("When");
+    expect(screen.getByLabelText("Starts, time")).toHaveValue("6 PM");
+    openRow("When");
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("8 PM");
+    expect(screen.getByLabelText("Points for attending")).toHaveValue(5);
+  });
+
+  it("carries the end with a moved start, keeping the length (#3937)", async () => {
+    renderFromChat({
+      initialStartAt: "2026-11-12T18:00",
+      initialEndAt: "2026-11-12T20:00",
+    });
+    openRow("When");
+    fireEvent.change(screen.getByLabelText("Starts, day"), {
+      target: { value: "2026-11-13" },
+    });
+    // The end's day follows the start's, so it has no field of its own.
+    expect(screen.queryByLabelText("Ends, day")).toBeNull();
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("8 PM");
+    await expectCreatedEnd(new Date("2026-11-13T20:00"));
+  });
+
+  it("carries the end through a start typed a key at a time", async () => {
+    renderFromChat({
+      initialStartAt: "2026-11-12T18:00",
+      initialEndAt: "2026-11-12T20:00",
+    });
+    // "11/1" on the way reads as some other November 1, and "1" as nothing:
+    // the end follows the whole move, not each keystroke.
+    for (const typed of ["1", "11", "11/", "11/1", "11/14"]) {
+      openRow("When");
+      fireEvent.change(screen.getByLabelText("Starts, day"), {
+        target: { value: typed },
+      });
+    }
+    const start = parseDateEntry("11/14", new Date())!;
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("8 PM");
+    await expectCreatedEnd(new Date(`${start}T20:00`));
+  });
+
+  it("puts an end before the start on the next day, past midnight", async () => {
+    renderFromChat({
+      initialStartAt: "2026-11-12T22:00",
+      initialEndAt: "2026-11-12T23:00",
+    });
+    fireEvent.change(screen.getByLabelText("Ends, time"), {
+      target: { value: "1am" },
+    });
+    expect(screen.queryByLabelText("Ends, day")).toBeNull();
+    await expectCreatedEnd(new Date("2026-11-13T01:00"));
+  });
+
+  it("gives a new start an hour when there is no end yet", async () => {
+    renderFromChat();
+    fireEvent.change(screen.getByLabelText("Starts, day"), {
+      target: { value: "2026-11-12" },
+    });
+    fireEvent.change(screen.getByLabelText("Starts, time"), {
+      target: { value: "7pm" },
+    });
+    expect(screen.getByLabelText("Ends, time")).toHaveValue("8 PM");
+  });
+
+  it("asks for the end's own day only for an event that spans days", async () => {
+    renderFromChat({
+      initialStartAt: "2026-11-12T18:00",
+      initialEndAt: "2026-11-12T20:00",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Ends another day" }));
+    fireEvent.change(screen.getByLabelText("Ends, day"), {
+      target: { value: "2026-11-14" },
+    });
+    await expectCreatedEnd(new Date("2026-11-14T20:00"));
   });
 
   it("posts the card in the channel it came from", async () => {
@@ -773,16 +1557,19 @@ describe("EventEditorDialog opened from chat (#3773)", () => {
     // in the channel (`EventService.create`).
     renderFromChat();
     fillRequiredFields();
-    openMoreOptions();
+    openRow("Who's coming");
     fireEvent.click(
       within(
-        screen.getByRole("radiogroup", { name: "Attendance for everyone" }),
+        screen.getByRole("radiogroup", {
+          name: "Attendance for everyone else",
+        }),
       ).getByRole("radio", { name: "Not invited" }),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Set a role differently" }),
+      within(
+        await screen.findByRole("radiogroup", { name: "Attendance for Exec" }),
+      ).getByRole("radio", { name: "Required" }),
     );
-    fireEvent.click(await screen.findByText("Exec"));
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
 
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
@@ -893,30 +1680,29 @@ describe("EventEditorDialog event types (#3730)", () => {
   }
 
   const fillTimes = () => {
-    fireEvent.change(screen.getByLabelText("Start"), {
-      target: { value: "2026-07-01T18:00" },
-    });
-    fireEvent.change(screen.getByLabelText("End"), {
-      target: { value: "2026-07-01T19:00" },
-    });
+    setSchedule("Starts", "2026-07-01", "18:00");
+    setSchedule("Ends", "2026-07-01", "19:00");
   };
 
   it("opens with no type held", () => {
     renderCreate();
-    const group = screen.getByRole("radiogroup", { name: "Type" });
-    for (const chip of within(group).getAllByRole("radio")) {
-      expect(chip).toHaveAttribute("aria-checked", "false");
-    }
+    expect(
+      screen.getByRole("button", { name: "Type: none" }),
+    ).toHaveTextContent("None");
   });
 
   it("fills the name, points and attendance from the type and sends it", async () => {
     renderCreate();
-    fireEvent.click(screen.getByRole("radio", { name: "Chapter meeting" }));
+    pickType("Chapter meeting");
 
     expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
     expect(
-      screen.getByRole("button", { name: /More options/ }),
-    ).toHaveTextContent("10 points · Required for everyone");
+      screen.getByRole("button", { name: "Type: Chapter meeting" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Points for attending")).toHaveValue(10);
+    expect(
+      screen.getByRole("button", { name: /^Who's coming: / }),
+    ).toHaveTextContent("Required for everyone");
 
     fillTimes();
     fireEvent.click(screen.getByRole("button", { name: "Create event" }));
@@ -929,16 +1715,81 @@ describe("EventEditorDialog event types (#3730)", () => {
     });
   });
 
+  async function createType(name: string) {
+    openRow("Type");
+    fireEvent.change(screen.getByPlaceholderText("Find or add a type"), {
+      target: { value: name },
+    });
+    fireEvent.click(
+      screen.getByRole("option", { name: `Create \u201c${name}\u201d` }),
+    );
+    await waitFor(() => expect(createTypeMutate).toHaveBeenCalledTimes(1));
+  }
+
+  it("makes a type in place from the form's points and attendance, and holds it", async () => {
+    createTypeMutate.mockReset().mockResolvedValue({
+      ...EVENT_TYPES[1]!,
+      id: "type-work",
+      name: "Work party",
+      point_value: 25,
+    });
+    renderCreate();
+    fireEvent.change(screen.getByLabelText("Points for attending"), {
+      target: { value: "25" },
+    });
+    await createType("Work party");
+    expect(createTypeMutate).toHaveBeenCalledWith({
+      name: "Work party",
+      point_value: 25,
+      is_mandatory: false,
+    });
+    // The list re-reads before the create settles, so the row then names
+    // the type; this stub list doesn't, so the name stands in for it.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Event name")).toHaveValue("Work party"),
+    );
+    expect(screen.getByLabelText("Event name")).toHaveValue("Work party");
+    expect(screen.getByLabelText("Points for attending")).toHaveValue(25);
+  });
+
+  it("makes a required type while everyone is required", async () => {
+    createTypeMutate.mockReset().mockResolvedValue({
+      ...EVENT_TYPES[0]!,
+      id: "type-rush",
+      name: "Rush",
+    });
+    renderCreate();
+    pickType("Chapter meeting");
+    await createType("Rush");
+    expect(createTypeMutate).toHaveBeenCalledWith({
+      name: "Rush",
+      point_value: 10,
+      is_mandatory: true,
+    });
+    // The name the officer's earlier pick wrote stays: only a blank one fills.
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
+  });
+
+  it("keeps what was changed when the held type is picked again", () => {
+    renderCreate();
+    pickType("Chapter meeting");
+    fireEvent.change(screen.getByLabelText("Points for attending"), {
+      target: { value: "25" },
+    });
+    pickType("Chapter meeting");
+    expect(screen.getByLabelText("Points for attending")).toHaveValue(25);
+  });
+
   it("replaces a name the last type wrote, never one the officer typed", () => {
     renderCreate();
-    fireEvent.click(screen.getByRole("radio", { name: "Chapter meeting" }));
-    fireEvent.click(screen.getByRole("radio", { name: "Social" }));
+    pickType("Chapter meeting");
+    pickType("Social");
     expect(screen.getByLabelText("Event name")).toHaveValue("Social");
 
     fireEvent.change(screen.getByLabelText("Event name"), {
       target: { value: "Bowling night" },
     });
-    fireEvent.click(screen.getByRole("radio", { name: "Chapter meeting" }));
+    pickType("Chapter meeting");
     expect(screen.getByLabelText("Event name")).toHaveValue("Bowling night");
   });
 
@@ -960,6 +1811,7 @@ describe("EventEditorDialog event types (#3730)", () => {
           name: "Weekly chapter",
           start_time: "2026-07-01T18:00:00.000Z",
           end_time: "2026-07-01T19:00:00.000Z",
+          point_value: 10,
           event_type_id: "type-meeting",
         }}
         usingPreviewData={false}
@@ -967,14 +1819,246 @@ describe("EventEditorDialog event types (#3730)", () => {
         onSaved={async () => {}}
       />,
     );
-    const held = screen.getByRole("radio", { name: "Chapter meeting" });
-    expect(held).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(held);
+    expect(
+      screen.getByRole("button", { name: "Type: Chapter meeting" }),
+    ).toBeInTheDocument();
+    pickType("No type");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
-    expect(updateMutate.mock.calls[0]![0].body).toMatchObject({
+    expect(updateMutate.mock.calls[0]![0].body).toEqual({
       event_type_id: null,
-      name: "Weekly chapter",
+      scope: "instance",
     });
+  });
+});
+
+// #3709: any member with `events:create` makes an event, but only an
+// `events:update` holder makes anyone required or attaches points.
+describe("EventEditorDialog for a member who can't edit events", () => {
+  beforeEach(() => {
+    createMutate.mockReset();
+    mockToast.mockReset();
+    createMutate.mockResolvedValue(undefined);
+    chapter.active();
+    mockPermissions.list = ["events:create", "members:view"];
+  });
+  afterEach(() => {
+    mockPermissions.list = ["events:update"];
+  });
+
+  function renderCreate() {
+    render(
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+  }
+
+  it("shows no points, and creates an optional event worth none", async () => {
+    renderCreate();
+    expect(
+      screen.getByRole("button", { name: /^Who's coming: / }),
+    ).toHaveTextContent("Optional for everyone");
+    expect(screen.queryByLabelText("Points for attending")).toBeNull();
+    expect(
+      screen.getByText("Events you make carry no points and require nobody."),
+    ).toBeInTheDocument();
+
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]![0]).toMatchObject({
+      point_value: 0,
+      is_mandatory: false,
+    });
+  });
+
+  it("takes only the name from a type", async () => {
+    renderCreate();
+    pickType("Chapter meeting");
+
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
+    expect(
+      screen.getByRole("button", { name: /^Who's coming: / }),
+    ).toHaveTextContent("Optional for everyone");
+  });
+
+  it("offers no Required answer, so nobody is made required", () => {
+    renderCreate();
+    openRow("Who's coming");
+    const everyone = screen.getByRole("radiogroup", {
+      name: /everyone/i,
+    });
+    expect(
+      within(everyone).queryByRole("radio", { name: "Required" }),
+    ).toBeNull();
+    expect(
+      within(everyone).getByRole("radio", { name: "Optional" }),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Going back or leaving the page keeps what was typed (Paul, 2026-11-13,
+ * #4593); Cancel and a save drop it.
+ */
+describe("EventEditorDialog keeps its draft (#4593)", () => {
+  beforeEach(() => {
+    createMutate.mockReset().mockResolvedValue(undefined);
+    updateMutate.mockReset().mockResolvedValue(undefined);
+    mockToast.mockReset();
+    chapter.active();
+  });
+
+  function editor(
+    props: Partial<React.ComponentProps<typeof EventEditorDialog>> = {},
+  ) {
+    return (
+      <EventEditorDialog
+        open
+        mode="create"
+        event={null}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+        keptDraft="event-create"
+        {...props}
+      />
+    );
+  }
+
+  it("opens on the kept draft after going back", () => {
+    const view = render(editor());
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    fillRequiredFields();
+    fireEvent.change(screen.getByLabelText("Points for attending"), {
+      target: { value: "25" },
+    });
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Exec Sync");
+    expect(screen.getByLabelText("Points for attending")).toHaveValue(25);
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("opens on the kept draft after the page was left", () => {
+    const view = render(editor());
+    fillRequiredFields();
+    view.unmount();
+    render(editor());
+    expect(screen.getByLabelText("Event name")).toHaveValue("Exec Sync");
+  });
+
+  it("keeps nothing for a form opened and left untouched", () => {
+    const view = render(editor());
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over on Discard", () => {
+    const view = render(editor());
+    fillRequiredFields();
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("drops the draft on the header's Discard", () => {
+    const view = render(editor());
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("");
+  });
+
+  it("drops the draft once the event is created", async () => {
+    const view = render(editor());
+    fillRequiredFields();
+    fireEvent.click(screen.getByRole("button", { name: "Create event" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockToast).toHaveBeenCalled());
+    view.rerender(editor({ open: false }));
+    view.rerender(editor({ open: true }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("");
+  });
+
+  it("keeps an edit to its own event", () => {
+    const one = {
+      id: "e1",
+      name: "Chapter",
+      start_time: "2026-07-01T18:00:00.000Z",
+      end_time: "2026-07-01T19:00:00.000Z",
+    };
+    const two = { ...one, id: "e2", name: "Rush" };
+    const view = render(
+      editor({ mode: "edit", event: one, keptDraft: "event-edit:e1" }),
+    );
+    fireEvent.change(screen.getByLabelText("Event name"), {
+      target: { value: "Chapter meeting" },
+    });
+    view.unmount();
+    const other = render(
+      editor({ mode: "edit", event: two, keptDraft: "event-edit:e2" }),
+    );
+    expect(screen.getByLabelText("Event name")).toHaveValue("Rush");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    other.unmount();
+    render(editor({ mode: "edit", event: one, keptDraft: "event-edit:e1" }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
+  });
+
+  it("keeps nothing from chat's /event, which has no draft name", () => {
+    const view = render(editor({ keptDraft: undefined }));
+    fillRequiredFields();
+    view.unmount();
+    render(editor({ keptDraft: undefined }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("");
+  });
+});
+
+describe("EventEditorDialog kept edits over a changed record (#4593)", () => {
+  beforeEach(() => {
+    updateMutate.mockReset().mockResolvedValue(undefined);
+    chapter.active();
+  });
+
+  it("keeps only what the officer changed, over the event as it is now", () => {
+    const before = {
+      id: "e1",
+      name: "Chapter",
+      location: "Hall A",
+      start_time: "2026-07-01T18:00:00.000Z",
+      end_time: "2026-07-01T19:00:00.000Z",
+    };
+    const editor = (event: Record<string, unknown>) => (
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={event}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+        keptDraft="event-edit:e1"
+      />
+    );
+    const view = render(editor(before));
+    fireEvent.change(screen.getByLabelText("Event name"), {
+      target: { value: "Chapter meeting" },
+    });
+    view.unmount();
+    // Someone else moves it while the draft waits.
+    render(editor({ ...before, location: "Hall B" }));
+    expect(screen.getByLabelText("Event name")).toHaveValue("Chapter meeting");
+    expect(screen.getByLabelText("Location")).toHaveValue("Hall B");
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
   });
 });

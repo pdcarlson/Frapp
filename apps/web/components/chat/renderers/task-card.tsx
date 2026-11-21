@@ -1,16 +1,24 @@
 "use client";
 
-import { CheckCircle2, Undo2 } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Pencil, Undo2 } from "lucide-react";
 import { TasksGlyph } from "../chat-glyphs";
 import {
+  canEditCardTask,
   canReadCardTask,
+  isSentBack,
+  readEditableCardTask,
   readLiveTask,
   taskCardControls,
   TASK_ACTION_LABELS,
   taskStatusLabel,
+  useCurrentChapter,
+  useMembers,
   useMyPermissions,
   subtaskProgress,
+  useNow,
   useTask,
+  taskDueLine,
   useUpdateTaskStatus,
   useConfirmTask,
   useRejectTask,
@@ -23,14 +31,23 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { readTaskPayload } from "@repo/chat-core/cards";
 import { Badge } from "@/components/ui/badge";
+import { taskStatusKind } from "@/components/tasks/task-status";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
-import { can } from "@repo/validation";
-import { formatDueOn } from "@repo/formatting";
+import { can, isModuleEnabled } from "@repo/validation";
+import { formatPointsChip } from "@repo/formatting";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { OWNS_ESCAPE } from "@/components/shared/panel";
+import { TaskEditForm } from "@/components/tasks/task-edit-form";
+import {
+  MarkDoneControl,
+  SendBackDialog,
+  TaskProof,
+} from "@/components/tasks/task-photo";
+import { memberLabel } from "@repo/hooks/display-names";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -42,16 +59,14 @@ interface TaskCardProps {
   isConfirmed: boolean;
 }
 
-/** Exported for the sign-in showcase, which draws this badge without a live task. */
-export const STATUS_BADGE: Record<
-  TaskStatus,
-  "default" | "outline" | "destructive"
-> = {
-  TODO: "outline",
-  IN_PROGRESS: "default",
-  COMPLETED: "default",
-  OVERDUE: "destructive",
-};
+/**
+ * What a refused confirm says, wherever a card's Confirm runs: the task card
+ * here and an Activity row's Confirm (#4402).
+ */
+export const TASK_CONFIRM_FAILURE = {
+  title: "Couldn't confirm task",
+  fallback: "Only admins with tasks:manage can confirm completions.",
+} as const;
 
 /**
  * Task assignment card. The chat message is an immutable creation-time snapshot
@@ -61,7 +76,8 @@ export const STATUS_BADGE: Record<
  * `kind:"task"` — see `ChatService.SERVER_ONLY_KINDS`).
  *
  * Interactive: the assignee can Start / Mark done and an admin
- * (`tasks:manage`) can Confirm / Reject inline. Buttons fire the existing task
+ * (`tasks:manage`) can Confirm / Reject inline, and Edit an unconfirmed task
+ * in the board's form (#4512). Buttons fire the existing task
  * REST endpoints with optimistic cache writes; the server stays the trust
  * boundary, so the gating here is UX-only. Which controls show, and when the
  * live status can be read at all, are `taskCardControls` and `canReadCardTask`
@@ -73,6 +89,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
+  // Send back asks for a reason in its own sheet (#4635).
+  const [sendingBack, setSendingBack] = useState(false);
   const { data: permissionsPayload } = useMyPermissions();
 
   /*
@@ -101,6 +119,15 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // surface itself is `@FreeTier`, so it is easy to assume a card rendered inside
   // chat inherits that; it does not. The route decides, not the host (#841).
   const gate = useSubscriptionGate();
+  // The due countdown's clock, a hook for the same reason.
+  const now = useNow();
+  // An officer's edit (#4512) puts the task form in the card's place until it
+  // saves or is cancelled, as the board's tile does (#4296).
+  const [editing, setEditing] = useState(false);
+  const chapterQuery = useCurrentChapter();
+  const tasksOff =
+    chapterQuery.data !== undefined &&
+    !isModuleEnabled(chapterQuery.data?.enabled_modules, "tasks");
 
   if (!payload) {
     return (
@@ -116,6 +143,13 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // a finished task "To do".
   const status: TaskStatus | null = live?.status ?? null;
   const statusLabel = live ? taskStatusLabel(live) : null;
+  // The due line (#4135): the live due date once read, since an edit can move
+  // it after this card was posted, counting down against a ticking clock.
+  const due = taskDueLine(
+    live?.due ?? payload.due_at ?? payload.due_date,
+    status,
+    new Date(now),
+  );
   // No control until the live task is read (#2065): acting on the snapshot
   // offered Start on tasks already in progress or done.
   // The controls follow whom the task is assigned to now (#4296): an edit
@@ -125,11 +159,15 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     payload.assignee_user_id,
     live,
   );
-  const controls = taskCardControls({
-    live,
-    isAssignee: isAssigneeNow,
-    canManage,
-  });
+  // No lifecycle control while the chapter has Tasks turned off, as on the
+  // phone (#4136): every one would be refused (`@RequireModule('tasks')`).
+  const controls = tasksOff
+    ? []
+    : taskCardControls({
+        live,
+        isAssignee: isAssigneeNow,
+        canManage,
+      });
   const memberControls = controls.filter(
     (control) => control === "start" || control === "complete",
   );
@@ -141,11 +179,21 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // (their own Reject). Any other officer whose permissions couldn't be read
   // never reads the task, so their card offers nothing, the way every card
   // does before its live task arrives.
-  const managerControls = taskCardControls({
-    live,
-    isAssignee: isAssigneeNow,
-    canManage: true,
-  }).filter((control) => control !== "start" && control !== "complete");
+  const managerControls = tasksOff
+    ? []
+    : taskCardControls({
+        live,
+        isAssignee: isAssigneeNow,
+        canManage: true,
+      }).filter((control) => control !== "start" && control !== "complete");
+  // Edit, wherever the card is shown (chat and Activity, #4512): the board's
+  // rule, a tasks:manage holder until the task is confirmed.
+  // Not while the chapter has Tasks turned off, as on mobile: every save
+  // would be refused.
+  const editable =
+    !tasksOff && canEditCardTask({ live, canManage })
+      ? readEditableCardTask(liveRaw)
+      : null;
   const actionsDisabled =
     !isConfirmed ||
     updateStatus.isPending ||
@@ -175,6 +223,36 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     };
   }
 
+  if (editing && editable) {
+    return (
+      <Card
+        className={cn(MESSAGE_CARD)}
+        role="group"
+        aria-label={`Editing ${editable.title}`}
+        // Escape puts the card back unsaved, like the board tile's Escape.
+        // The Activity panel would hear it first and close with the draft,
+        // so the card claims it there (`OWNS_ESCAPE`). An open picker is
+        // portaled out of the card, so its own Escape is not the card's.
+        {...{ [OWNS_ESCAPE]: "" }}
+        onKeyDown={(event) => {
+          if (
+            event.key === "Escape" &&
+            event.currentTarget.contains(event.target as Node)
+          ) {
+            event.stopPropagation();
+            setEditing(false);
+          }
+        }}
+      >
+        <CardTaskEdit
+          task={editable}
+          gate={gate}
+          onClose={() => setEditing(false)}
+        />
+      </Card>
+    );
+  }
+
   return (
     <Card className={cn(MESSAGE_CARD)}>
       <div className="flex items-center justify-between gap-2">
@@ -186,9 +264,25 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         >
           <TasksGlyph className="h-4 w-4" /> Task
         </div>
-        {status && statusLabel ? (
-          <Badge variant={STATUS_BADGE[status]}>{statusLabel}</Badge>
-        ) : null}
+        <div className="flex items-center gap-1">
+          {editable ? (
+            // A square icon by the badge, as on the board's tile: the
+            // lifecycle actions below stay the card's actions.
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 pointer-coarse:size-11"
+              aria-label={`Edit ${payload.title}`}
+              {...gate.controlProps(!isConfirmed)}
+              onClick={() => setEditing(true)}
+            >
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          ) : null}
+          {live && statusLabel ? (
+            <Badge variant={taskStatusKind(live)}>{statusLabel}</Badge>
+          ) : null}
+        </div>
       </div>
       <p className="mt-2 text-base font-bold">{payload.title}</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
@@ -196,9 +290,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           {payload.assigner_name} → {payload.assignee_name}
         </span>
         <span aria-hidden="true">·</span>
-        <span>
-          {formatDueOn(payload.due_at ?? payload.due_date) ??
-            `Due ${payload.due_date}`}
+        <span className={cn(due?.overdue && "text-destructive-text")}>
+          {due?.text ?? `Due ${payload.due_date}`}
         </span>
         {live && live.subtasks.length > 0 ? (
           <>
@@ -207,9 +300,19 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           </>
         ) : null}
         {payload.point_reward ? (
-          <Badge variant="outline">+{payload.point_reward} pts</Badge>
+          <Badge variant="outline">
+            {formatPointsChip(payload.point_reward)}
+          </Badge>
         ) : null}
       </div>
+      {live ? (
+        <TaskProof
+          task={live}
+          // Whoever reads the live task is its assignee or an officer.
+          showProof
+          sentBack={isSentBack(live)}
+        />
+      ) : null}
       {memberControls.length > 0 || managerControls.length > 0 ? (
         // `empty:hidden`: a denied `<Can>` leaves the row with nothing in it,
         // and an empty row would still add its margin to the card.
@@ -233,19 +336,38 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
             </Button>
           ) : null}
           {controls.includes("complete") ? (
-            <Button
+            <MarkDoneControl
               size="sm"
-              variant="secondary"
-              {...gate.controlProps(actionsDisabled)}
-              onClick={() =>
-                updateStatus.mutate(
-                  { id: payload.task_id, body: { status: "COMPLETED" } },
-                  onFailure("Couldn't complete task", "Try again in a moment."),
-                )
+              title={payload.title}
+              label={TASK_ACTION_LABELS.complete}
+              task={live ?? {}}
+              sentBack={!!live && isSentBack(live)}
+              controlProps={gate.controlProps(actionsDisabled)}
+              onComplete={(proof) =>
+                updateStatus
+                  .mutateAsync({
+                    id: payload.task_id,
+                    body: { status: "COMPLETED", ...proof },
+                  })
+                  .then(
+                    () => true,
+                    (error: unknown) => {
+                      onFailure(
+                        "Couldn't complete task",
+                        "Try again in a moment.",
+                      ).onError(error);
+                      return false;
+                    },
+                  )
               }
-            >
-              {TASK_ACTION_LABELS.complete}
-            </Button>
+              onUploadError={(message) =>
+                toast({
+                  title: "Couldn't add the photo",
+                  description: message,
+                  variant: "destructive",
+                })
+              }
+            />
           ) : null}
           {managerControls.length > 0 ? (
             <Can permission="tasks:manage">
@@ -262,8 +384,8 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                     confirmTask.mutate(
                       payload.task_id,
                       onFailure(
-                        "Couldn't confirm task",
-                        "Only admins with tasks:manage can confirm completions.",
+                        TASK_CONFIRM_FAILURE.title,
+                        TASK_CONFIRM_FAILURE.fallback,
                       ),
                     )
                   }
@@ -279,15 +401,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                   size="sm"
                   variant="secondary"
                   {...gate.controlProps(actionsDisabled)}
-                  onClick={() =>
-                    rejectTask.mutate(
-                      { id: payload.task_id },
-                      onFailure(
-                        "Couldn't reject task",
-                        "Only admins with tasks:manage can reject completions.",
-                      ),
-                    )
-                  }
+                  onClick={() => setSendingBack(true)}
                 >
                   <Undo2 className="h-4 w-4" />
                   {TASK_ACTION_LABELS.reject}
@@ -311,6 +425,43 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           ) : null}
         </div>
       ) : null}
+      <SendBackDialog
+        title={payload.title}
+        proofKind={live?.proof_kind}
+        open={sendingBack}
+        onClose={() => setSendingBack(false)}
+        onSubmit={async (body) => {
+          await rejectTask.mutateAsync({ id: payload.task_id, body });
+        }}
+      />
     </Card>
+  );
+}
+
+/**
+ * The board's edit form on a card (#4512), with the name of whom the task is
+ * assigned to now for the line under Assignee: an edit may have handed it on
+ * since the card was posted, so the snapshot's name won't do.
+ */
+export function CardTaskEdit({
+  task,
+  gate,
+  onClose,
+}: {
+  task: NonNullable<ReturnType<typeof readEditableCardTask>>;
+  gate: ReturnType<typeof useSubscriptionGate>;
+  onClose: () => void;
+}) {
+  const members = useMembers().data ?? [];
+  const assignee = members.find(
+    (member) => member.user_id === task.assignee_id,
+  );
+  return (
+    <TaskEditForm
+      task={task}
+      assigneeName={memberLabel(assignee?.display_name, task.assignee_id)}
+      gate={gate}
+      onClose={onClose}
+    />
   );
 }

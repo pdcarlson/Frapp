@@ -1,7 +1,13 @@
 "use client";
 
-import { useState, type ReactElement, type ReactNode } from "react";
-import { MoreHorizontal, type LucideIcon } from "lucide-react";
+import {
+  useState,
+  type ComponentType,
+  type ReactElement,
+  type ReactNode,
+} from "react";
+import Link from "next/link";
+import { Loader2, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -38,18 +44,41 @@ import { cn } from "@/lib/utils";
  *    browser menu, so copy, paste and "open in new tab" still work.
  */
 
+/**
+ * An item's glyph: a Lucide icon, or one of Frapp's own glyphs (a pin that is
+ * solid while pinned) wrapped to the same shape.
+ */
+export type RowMenuIcon = ComponentType<{
+  "aria-hidden"?: boolean | "true" | "false";
+  className?: string;
+}>;
+
 export type RowMenuEntry =
-  | {
+  | ({
       type: "item";
       key: string;
       label: string;
-      icon?: LucideIcon;
-      onSelect: () => void;
+      icon?: RowMenuIcon;
       destructive?: boolean;
       disabled?: boolean;
       /** Id of the text explaining why the item is disabled. */
       describedBy?: string;
-    }
+      /** Why the item is disabled, when no text on the page says it (offline). */
+      title?: string;
+    } & (
+      | { onSelect: () => void; href?: never; external?: never }
+      | {
+          /**
+           * The item is a link: middle-click, "open in new tab" and the
+           * status bar work as they do on any link. `undefined` only while
+           * the address is still loading, alongside `disabled`.
+           */
+          href: string | undefined;
+          /** Opens in a new tab, for a page outside Frapp. */
+          external?: boolean;
+          onSelect?: never;
+        }
+    ))
   | { type: "separator"; key: string }
   | { type: "label"; key: string; label: string };
 
@@ -69,7 +98,11 @@ export function keepsBrowserMenu(
   }
   const selection =
     typeof window === "undefined" ? null : window.getSelection();
-  if (!selection || selection.isCollapsed || selection.toString().trim() === "") {
+  if (
+    !selection ||
+    selection.isCollapsed ||
+    selection.toString().trim() === ""
+  ) {
     return false;
   }
   return (
@@ -97,16 +130,37 @@ function Entries({
           return <Label key={entry.key}>{entry.label}</Label>;
         }
         const Icon = entry.icon;
-        return (
-          <Item
-            key={entry.key}
-            disabled={entry.disabled}
-            aria-describedby={entry.describedBy}
-            onSelect={entry.onSelect}
-            className={entry.destructive ? DESTRUCTIVE_ITEM_CLASS : undefined}
-          >
+        const body = (
+          <>
             {Icon ? <Icon aria-hidden="true" /> : null}
             {entry.label}
+          </>
+        );
+        const itemProps = {
+          disabled: entry.disabled,
+          "aria-describedby": entry.describedBy,
+          title: entry.title,
+          className: entry.destructive ? DESTRUCTIVE_ITEM_CLASS : undefined,
+        };
+        if (entry.onSelect) {
+          return (
+            <Item key={entry.key} {...itemProps} onSelect={entry.onSelect}>
+              {body}
+            </Item>
+          );
+        }
+        return (
+          <Item key={entry.key} {...itemProps} asChild>
+            {entry.external ? (
+              <a href={entry.href} target="_blank" rel="noopener noreferrer">
+                {body}
+              </a>
+            ) : entry.href?.startsWith("/") ? (
+              <Link href={entry.href}>{body}</Link>
+            ) : (
+              // Another scheme the browser hands to an app (`webcal:`).
+              <a href={entry.href}>{body}</a>
+            )}
           </Item>
         );
       })}
@@ -136,45 +190,7 @@ export function RowMenu({
   // cleared as it passes: Radix skips its long-press timer while the trigger is
   // disabled, so a verdict left standing would swallow the next long-press.
   const [browserMenu, setBrowserMenu] = useState(false);
-  const [buttonOpen, setButtonOpen] = useState(false);
-
-  const button = (
-    <DropdownMenu open={buttonOpen} onOpenChange={setButtonOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label={label}
-          title="More"
-          className={cn(
-            compactControlClassName,
-            "shrink-0",
-            // Out of the way until the row is hovered or focused; never hidden
-            // from touch, where there is no hover.
-            "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100",
-          )}
-        >
-          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        className="min-w-[220px]"
-        // The content is portaled, but React still bubbles its events up the
-        // component tree to the row's context-menu trigger: without this, a
-        // right-click or a long-press on an open ⋯ menu would open the row's
-        // menu on top of it.
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-        onPointerDown={(event) => event.stopPropagation()}
-      >
-        <Entries entries={entries} kind="dropdown" />
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  const button = <MoreButton entries={entries} label={label} onRow />;
 
   return (
     <ContextMenu>
@@ -199,7 +215,10 @@ export function RowMenu({
           // The menu key and Shift+F10 fire `contextmenu` with no pointerdown
           // first, so a verdict left over from the last right-click must not
           // decide them.
-          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+          if (
+            event.key === "ContextMenu" ||
+            (event.shiftKey && event.key === "F10")
+          ) {
             setBrowserMenu(false);
           }
         }}
@@ -210,5 +229,111 @@ export function RowMenu({
         <Entries entries={entries} kind="context" />
       </ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+/**
+ * The ⋯ button and its menu. On a row it hides until the row is hovered or
+ * focused (never on touch); in a page or record header it always shows.
+ */
+function MoreButton({
+  entries,
+  label,
+  onRow = false,
+  disabled = false,
+  busy = false,
+  onOpenChange,
+}: {
+  entries: readonly RowMenuEntry[];
+  label: string;
+  onRow?: boolean;
+  disabled?: boolean;
+  busy?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <DropdownMenu
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        onOpenChange?.(next);
+      }}
+    >
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          disabled={disabled || busy}
+          aria-busy={busy || undefined}
+          aria-label={label}
+          title="More"
+          className={cn(
+            compactControlClassName,
+            "shrink-0",
+            // Out of the way until the row is hovered or focused; never hidden
+            // from touch, where there is no hover.
+            onRow &&
+              "opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100 pointer-coarse:opacity-100",
+          )}
+        >
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        className="min-w-[220px]"
+        // The content is portaled, but React still bubbles its events up the
+        // component tree to a row's context-menu trigger: without this, a
+        // right-click or a long-press on an open ⋯ menu would open the row's
+        // menu on top of it.
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <Entries entries={entries} kind="dropdown" />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * The ⋯ in a page, panel or record header: the same entries and menu as a
+ * row's, always visible. Every "more actions" button on web is this or
+ * `RowMenu` (rulebook § 9, `spec/ui/design-system/components.md` § Action
+ * menu); lint flags a hand-built ⋯ anywhere else.
+ */
+export function ActionMenuButton({
+  entries,
+  label,
+  disabled,
+  busy,
+  onOpenChange,
+}: {
+  entries: readonly RowMenuEntry[];
+  /** Accessible name, e.g. "More for Chapter Meeting". */
+  label: string;
+  /** Nothing in the menu can run now (the card is mid-save). */
+  disabled?: boolean;
+  /** An action from the menu is running: a spinner in place of the ⋯. */
+  busy?: boolean;
+  /** Told when the menu opens, e.g. to fetch what its items need. */
+  onOpenChange?: (open: boolean) => void;
+}) {
+  return (
+    <MoreButton
+      entries={entries}
+      label={label}
+      disabled={disabled}
+      busy={busy}
+      onOpenChange={onOpenChange}
+    />
   );
 }

@@ -1,6 +1,8 @@
 import { Linking, Platform } from "react-native";
 import Constants from "expo-constants";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { MemberFacingError } from "@repo/hooks/error-copy";
+import { FINISH_FAILED_COPY } from "./auth-providers";
 import { isWebOrExpoGo } from "./expo-go";
 import { requireGoogleSignIn } from "./google-auth-module";
 import type { GoogleSignInModule } from "./google-auth-types";
@@ -99,9 +101,6 @@ async function iosBinaryHasUrlScheme(iosClientId: string): Promise<boolean> {
   }
 }
 
-/** Same copy as the browser path's "did not finish" error in auth-session.tsx. */
-const FINISH_FAILED_MESSAGE = "Unable to finish sign-in. Retry in a moment.";
-
 export type NativeGoogleResult = "completed" | "cancelled" | "unavailable";
 
 export async function signInWithNativeGoogle(
@@ -147,7 +146,9 @@ export async function signInWithNativeGoogle(
     // ApiException) are not member copy, and the sign-in screen shows what
     // this throws.
     console.warn("Native Google sign-in failed.", error);
-    throw Object.assign(new Error(FINISH_FAILED_MESSAGE), { cause: error });
+    throw Object.assign(new MemberFacingError(FINISH_FAILED_COPY), {
+      cause: error,
+    });
   }
 
   // The SDK remembers the account it signed in. Forget it, so the next sign-in

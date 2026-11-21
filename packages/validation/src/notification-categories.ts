@@ -1,5 +1,9 @@
 import { isBetaOffModule } from "./beta-off-modules";
-import { canAllOfAny, MEMBER_JOINED_AUDIENCE } from "./permissions";
+import {
+  canAllOfAny,
+  MEMBER_JOINED_AUDIENCE,
+  RECAP_PUSH_AUDIENCE,
+} from "./permissions";
 
 /**
  * The member-facing notification categories, shared so every surface offers the
@@ -16,8 +20,11 @@ import { canAllOfAny, MEMBER_JOINED_AUDIENCE } from "./permissions";
  *
  * ## What the API actually emits
  *
- * Grepping `category: '…'` across `apps/api/src` yields nine distinct values.
- * Six are here. The other three are deliberately absent:
+ * Grepping `category: '…'` across `apps/api/src` yields the notification
+ * categories (beside Ask Frapp's unrelated safety ones), and the recap push
+ * names its own, `recap`, through `RECAP_NOTIFICATION_CATEGORY` (#4985).
+ * Seven are here. The chat reminder's `reminder` answers a reminder the member
+ * set themselves, so it has no switch. Three more are deliberately absent:
  *
  * - **`chat`** — dropped as a switch on 2026-11-06 (the owner's iOS testing:
  *   "Do we really want users to be able to turn off chat?"). It silenced every
@@ -46,14 +53,16 @@ import { canAllOfAny, MEMBER_JOINED_AUDIENCE } from "./permissions";
  *   #1323. (Earlier versions of this docblock named `chat.service.ts` as an
  *   emitter and a `kind` arm in the predicate; neither exists any more.)
  * - **`admin`** — "message reported" to the officers who can open the chat
- *   report queue (`ChatReportService`, via `notifyUser`), and "Discord import
- *   finished" to the admin who started it. A report-queue officer must not be
- *   able to silence reports by flipping a switch, and the import notice
- *   answers a job the admin started themselves, so neither gets one. The
+ *   report queue (`ChatReportService`, via `notifyUser`), "Discord import
+ *   finished" to the admin who started it, and "Minutes drafted" / "Minutes
+ *   not drafted" to the officer who asked for a draft (`MeetingDraftService`).
+ *   A report-queue officer must not be able to silence reports by flipping a
+ *   switch, and the import and draft notices answer a job the member started
+ *   themselves, so none gets one. The
  *   report alert uses it rather than `chat` because it is moderation work, not
  *   a message. "New member joined" was here too until #4008 moved it to its
- *   own `members` switch; "invite accepted" is a system line in the inviter's
- *   DM, not a push, and "role change" sends nothing yet.
+ *   own `members` switch, with the inviter's "invite accepted" and "asked for
+ *   a new invite" (#5625); "role change" sends nothing yet.
  *
  * `default` is the fallback the service substitutes when a payload omits a
  * category — never a member preference. There is no `study` category at all
@@ -143,7 +152,8 @@ export const NOTIFICATION_CATEGORIES = [
     defaultEnabled: true,
   },
   {
-    // "<Name> joined" (#4008). Only the members who are sent it see the
+    // "<Name> joined" (#4008), and the inviter's own "accepted your invite"
+    // and "asked for a new invite" (#5625). Only the members who are sent it see the
     // switch: `MEMBER_JOINED_AUDIENCE` is both who `InviteService` pushes and
     // who `shownNotificationCategories` draws this row for. Chat reports and
     // the Discord import notice stay on `admin`, unswitchable (docblock above).
@@ -151,9 +161,21 @@ export const NOTIFICATION_CATEGORIES = [
     // Named for what sets it off rather than a noun like the rows above:
     // Shawn found "New members" didn't say what the switch does (#4008).
     label: "Someone joins the chapter",
-    description: "A notice each time a new member joins.",
+    description:
+      "A notice each time a new member joins, and when someone asks you for a new invite.",
     defaultEnabled: true,
     audience: MEMBER_JOINED_AUDIENCE,
+  },
+  {
+    // Sunday morning's push of last week's figures (#4985), the line
+    // Activity's "Last week" card shows. Its own switch, so a member can keep
+    // the task and event pushes and drop the digest, as Slack and Linear let
+    // a reader turn off their weekly digests on their own.
+    key: "recap",
+    label: "Weekly recap",
+    description: "Sunday morning: last week's events, tasks, points and hours.",
+    defaultEnabled: true,
+    audience: RECAP_PUSH_AUDIENCE,
   },
 ] as const satisfies readonly NotificationCategory[];
 

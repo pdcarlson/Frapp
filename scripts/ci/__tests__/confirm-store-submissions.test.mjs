@@ -4,10 +4,14 @@ import assert from "node:assert/strict";
 import {
   GRAPHQL_URL,
   MAX_FAILED_READS,
+  MAX_RETRIES,
+  LOG_TAIL_LINES,
   confirmStoreSubmissions,
   nextStep,
   pollSubmissions,
   readSubmission,
+  readSubmissionLog,
+  redactLogLine,
   summary,
 } from "../confirm-store-submissions.mjs";
 
@@ -15,12 +19,40 @@ const IOS = "3f1c2b4a-1111-4a2b-9c3d-0123456789ab";
 const ANDROID = "9e8d7c6b-2222-4b3c-8d4e-abcdefabcdef";
 const BUILD = "0b1c2d3e-3333-4c4d-8e5f-0123456789ab";
 
-/** A fetch stand-in that answers each submission id from its own script of replies, in order. */
-function fakeEas(replies) {
+/**
+ * A fetch stand-in that answers each submission id from its own script of
+ * replies, in order. `retries` maps a failed submission's id to the id its
+ * retry gets (or to a reply: an Error, a status number or `{ errors }`).
+ */
+function fakeEas(replies, retries = {}, files = {}, logFiles = {}) {
   const calls = [];
+  const retried = [];
+  const fetched = [];
+  const logQueries = [];
   const left = Object.fromEntries(Object.entries(replies).map(([id, list]) => [id, [...list]]));
   const fetchImpl = async (url, init) => {
-    const { variables } = JSON.parse(init.body);
+    if (init.method === "GET") {
+      fetched.push(url);
+      const file = files[url];
+      if (file instanceof Error) throw file;
+      if (typeof file === "number") return { ok: false, status: file, text: async () => "" };
+      return { ok: true, status: 200, text: async () => file };
+    }
+    const { query, variables } = JSON.parse(init.body);
+    if (/\blogFiles\b/.test(query)) {
+      logQueries.push(variables.id);
+      const answer = logFiles[variables.id];
+      if (answer?.errors) return { ok: true, status: 200, json: async () => ({ errors: answer.errors }) };
+      return { ok: true, status: 200, json: async () => ({ data: { submissions: { byId: { logFiles: answer ?? [] } } } }) };
+    }
+    if (variables.parentSubmissionId) {
+      retried.push(variables.parentSubmissionId);
+      const next = retries[variables.parentSubmissionId];
+      if (next instanceof Error) throw next;
+      if (typeof next === "number") return { ok: false, status: next, json: async () => ({}) };
+      if (next?.errors) return { ok: true, status: 200, json: async () => ({ errors: next.errors }) };
+      return { ok: true, status: 200, json: async () => ({ data: { submission: { retrySubmission: { submission: { id: next, status: "IN_QUEUE" } } } } }) };
+    }
     calls.push({ url, id: variables.id, auth: init.headers.authorization });
     const list = left[variables.id];
     const next = list.length > 1 ? list.shift() : list[0];
@@ -30,10 +62,10 @@ function fakeEas(replies) {
     return {
       ok: true,
       status: 200,
-      json: async () => ({ data: { submissions: { byId: { id: variables.id, status: next.status, error: next.error ?? null } } } }),
+      json: async () => ({ data: { submissions: { byId: { id: variables.id, status: next.status, canRetry: next.canRetry ?? false, error: next.error ?? null } } } }),
     };
   };
-  return { fetchImpl, calls };
+  return { fetchImpl, calls, retried, fetched, logQueries };
 }
 
 /** A clock that only moves when the poll sleeps. */
@@ -45,7 +77,7 @@ function clock() {
 describe("readSubmission", () => {
   it("asks EAS's GraphQL API for the one submission, with the token as a bearer", async () => {
     const eas = fakeEas({ [IOS]: [{ status: "IN_QUEUE" }] });
-    assert.deepEqual(await readSubmission({ id: IOS, token: "t0k", fetchImpl: eas.fetchImpl, sleep: async () => {} }), { status: "IN_QUEUE", error: null });
+    assert.deepEqual(await readSubmission({ id: IOS, token: "t0k", fetchImpl: eas.fetchImpl, sleep: async () => {} }), { status: "IN_QUEUE", error: null, canRetry: false });
     assert.deepEqual(eas.calls, [{ url: GRAPHQL_URL, id: IOS, auth: "Bearer t0k" }]);
   });
 
@@ -60,7 +92,7 @@ describe("readSubmission", () => {
 
   it("asks again within the read after a dropped connection or a 5xx, but not after a 4xx", async () => {
     const blip = fakeEas({ [IOS]: [503, { status: "IN_PROGRESS" }] });
-    assert.deepEqual(await readSubmission({ id: IOS, token: "t", fetchImpl: blip.fetchImpl, sleep: async () => {} }), { status: "IN_PROGRESS", error: null });
+    assert.deepEqual(await readSubmission({ id: IOS, token: "t", fetchImpl: blip.fetchImpl, sleep: async () => {} }), { status: "IN_PROGRESS", error: null, canRetry: false });
     assert.equal(blip.calls.length, 2);
     const refused = fakeEas({ [IOS]: [403] });
     await readSubmission({ id: IOS, token: "t", fetchImpl: refused.fetchImpl, sleep: async () => {} });
@@ -187,7 +219,12 @@ describe("nextStep and summary", () => {
     assert.match(errored, /while its commit is still the latest `v\*` tag/);
     const ios = nextStep({ store: "ios", id: IOS, build: BUILD, status: "CANCELED", error: null });
     assert.ok(ios.includes(`--id ${BUILD} --non-interactive --no-auto-testflight-setup\``), ios);
-    assert.match(nextStep({ store: "ios", id: IOS, build: "", status: "ERRORED", error: null }), /upload it again by hand/);
+    // A runner-built binary (#5162) has no EAS build id: once EAS won't retry, it can't be resent.
+    const gone = nextStep({ store: "ios", id: IOS, build: "", status: "ERRORED", error: null });
+    assert.match(gone, /this build can't be sent again/);
+    assert.match(gone, /drop its entry/);
+    assert.match(gone, /re-run that run's iOS job by itself/);
+    assert.doesNotMatch(gone, /keep the entry/);
     assert.match(nextStep({ store: "ios", id: IOS, status: "CANCELED" }), /^iOS's upload to TestFlight was cancelled\./);
     const queued = nextStep({ store: "ios", id: IOS, status: "IN_QUEUE", readError: null });
     assert.match(queued, /still `IN_QUEUE` when this job stopped waiting\. It may still finish: check https:\/\/expo\.dev\/accounts\/pdcarlson\/projects\/frapp\/submissions\//);
@@ -199,8 +236,8 @@ describe("nextStep and summary", () => {
 });
 
 describe("confirmStoreSubmissions", () => {
-  const run = async (env, replies) => {
-    const eas = fakeEas(replies);
+  const run = async (env, replies, retries = {}) => {
+    const eas = fakeEas(replies, retries);
     const c = clock();
     const logs = [];
     let written = "";
@@ -212,8 +249,70 @@ describe("confirmStoreSubmissions", () => {
       writeSummary: (text) => (written += text),
       log: (line) => logs.push(line),
     });
-    return { code, written, logs, calls: eas.calls };
+    return { code, written, logs, calls: eas.calls, retried: eas.retried };
   };
+
+  // Paul, 2026-11-12: iOS 0.12.0 (21) failed at App Store Connect with
+  // SERVER_ERROR after an hour of building. A passing store error is sent
+  // again through EAS's retry, without rebuilding or anyone's hands.
+  const RETRY_1 = "aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa";
+  const RETRY_2 = "bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb";
+  const SERVER_ERROR = { status: "ERRORED", canRetry: true, error: { errorCode: "SERVER_ERROR", message: "App Store Connect returned an unexpected server error." } };
+
+  it("retries an upload App Store Connect failed with a server error, and passes when the retry finishes", async () => {
+    const { code, written, logs, retried } = await run(
+      { IOS_UPLOAD: "success", IOS_SUBMISSION: IOS, IOS_BUILD: BUILD },
+      { [IOS]: [{ status: "IN_PROGRESS" }, SERVER_ERROR], [RETRY_1]: [{ status: "IN_QUEUE" }, { status: "FINISHED" }] },
+      { [IOS]: RETRY_1 },
+    );
+    assert.equal(code, 0);
+    assert.deepEqual(retried, [IOS]);
+    assert.ok(logs.some((l) => l === `iOS submission ${IOS} failed (SERVER_ERROR); retried it as ${RETRY_1}.`));
+    assert.match(written, new RegExp(`\\| iOS \\| \`${RETRY_1}\` \\(retry of \`${IOS}\`\\) \\| \`FINISHED\` \\|`));
+  });
+
+  it(`stops after ${MAX_RETRIES} retries and fails, saying it already tried`, async () => {
+    const { code, retried, logs } = await run(
+      { IOS_SUBMISSION: IOS, IOS_BUILD: BUILD },
+      { [IOS]: [SERVER_ERROR], [RETRY_1]: [SERVER_ERROR], [RETRY_2]: [SERVER_ERROR] },
+      { [IOS]: RETRY_1, [RETRY_1]: RETRY_2 },
+    );
+    assert.equal(code, 1);
+    assert.deepEqual(retried, [IOS, RETRY_1]);
+    assert.ok(logs.some((l) => /^::error::iOS's upload to TestFlight failed: .*\(`SERVER_ERROR`\)\. It was already retried 2 times \(first try 3f1c2b4a/.test(l)));
+  });
+
+  it("doesn't retry an error a second try would repeat, or one EAS no longer lets it retry", async () => {
+    const rejected = { status: "ERRORED", canRetry: true, error: { errorCode: "BUILD_NUMBER_ALREADY_USED", message: "taken" } };
+    const notRetried = await run({ IOS_SUBMISSION: IOS, IOS_BUILD: BUILD }, { [IOS]: [rejected] }, { [IOS]: RETRY_1 });
+    assert.equal(notRetried.code, 1);
+    assert.deepEqual(notRetried.retried, []);
+    // Still retryable on EAS: the summary names the hand retry, not a rebuild.
+    assert.ok(notRetried.logs.some((l) => l.includes(`**Retry a store upload** workflow (platform \`ios\`, submission \`${IOS}\`)`)));
+    const expired = await run({ IOS_SUBMISSION: IOS, IOS_BUILD: BUILD }, { [IOS]: [{ ...SERVER_ERROR, canRetry: false }] }, { [IOS]: RETRY_1 });
+    assert.equal(expired.code, 1);
+    assert.deepEqual(expired.retried, []);
+    assert.ok(expired.logs.some((l) => l.includes(`--id ${BUILD} --non-interactive --no-auto-testflight-setup`)));
+  });
+
+  it("retries any error EAS allows when dispatched by hand", async () => {
+    const rejected = { status: "ERRORED", canRetry: true, error: { errorCode: "SOMETHING_ELSE", message: "x" } };
+    const { code, retried } = await run(
+      { ANDROID_UPLOAD: "success", ANDROID_SUBMISSION: ANDROID, RETRY_ANY_ERROR: "true" },
+      { [ANDROID]: [rejected], [RETRY_1]: [{ status: "FINISHED" }] },
+      { [ANDROID]: RETRY_1 },
+    );
+    assert.equal(code, 0);
+    assert.deepEqual(retried, [ANDROID]);
+  });
+
+  it("asks for a retry once, and reports a refused one without failing differently", async () => {
+    const { code, retried, logs } = await run({ IOS_SUBMISSION: IOS }, { [IOS]: [SERVER_ERROR] }, { [IOS]: 502 });
+    assert.equal(code, 1);
+    assert.deepEqual(retried, [IOS], "a mutation whose answer was lost is never sent twice");
+    assert.ok(logs.some((l) => l === `iOS submission ${IOS}: couldn't retry it (HTTP 502).`));
+    assert.ok(logs.some((l) => /Retrying it failed: HTTP 502\./.test(l)));
+  });
 
   it("passes when every given submission finished, and checks only the ones it was given", async () => {
     const { code, written, calls } = await run({ IOS_UPLOAD: "success", IOS_SUBMISSION: IOS, ANDROID_UPLOAD: "skipped", ANDROID_SUBMISSION: "" }, { [IOS]: [{ status: "FINISHED" }] });
@@ -258,5 +357,78 @@ describe("confirmStoreSubmissions", () => {
       assert.equal(calls.length, 0);
       assert.match(written, /^## Store uploads/);
     }
+  });
+});
+
+describe("a failed submission's log", () => {
+  const LOG = "https://storage.example/logs/submission.txt";
+  const bunyan = (msg, level = 30) => JSON.stringify({ level, msg });
+  const run = (eas, submissions, logged) => {
+    const c = clock();
+    return pollSubmissions({ submissions, token: "t", fetchImpl: eas.fetchImpl, deadlineMs: 10 * 60_000, pollMs: 60_000, now: c.now, sleep: c.sleep, log: (line) => logged.push(line) });
+  };
+
+  it("removes links and email addresses, and breaks up anything a runner could read as a workflow command", () => {
+    assert.equal(redactLogLine("Downloading https://storage.example/a.ipa?X-Goog-Signature=abc now"), "  | Downloading [link removed] now");
+    assert.equal(redactLogLine("Apple ID: someone@example.com"), "  | Apple ID: [email removed]");
+    assert.equal(redactLogLine("::error::x then ##[stop-commands]tok\nnext"), "  | : :error: :x then # #[stop-commands]tok next");
+  });
+
+  it("reads EAS's JSON-per-line log as plain lines, keeping a line that isn't JSON", async () => {
+    const text = [bunyan("Uploading build to App Store Connect"), "", "not json", bunyan("Apple said\nno", 50)].join("\n");
+    const eas = fakeEas({}, {}, { [LOG]: text });
+    assert.deepEqual(await readSubmissionLog({ urls: [LOG], fetchImpl: eas.fetchImpl, sleep: async () => {} }), {
+      lines: ["  | Uploading build to App Store Connect", "  | not json", "  | Apple said", "  | no"],
+      failures: [],
+    });
+  });
+
+  it("keeps only the last LOG_TAIL_LINES lines, and a file it can't read doesn't hide the others", async () => {
+    const text = Array.from({ length: LOG_TAIL_LINES + 5 }, (_, i) => bunyan(`line ${i}`)).join("\n");
+    const eas = fakeEas({}, {}, { [LOG]: text, [`${LOG}?gone`]: 403, [`${LOG}?down`]: new Error("socket hang up") });
+    const got = await readSubmissionLog({ urls: [`${LOG}?gone`, LOG, `${LOG}?down`], fetchImpl: eas.fetchImpl, sleep: async () => {} });
+    assert.equal(got.lines.length, LOG_TAIL_LINES);
+    assert.equal(got.lines.at(-1), `  | line ${LOG_TAIL_LINES + 4}`);
+    assert.equal(got.failures.length, 2);
+    assert.equal(got.failures[0], "HTTP 403");
+    assert.match(got.failures[1], /^request failed: /);
+  });
+
+  it("asks for the log files apart from the status, and prints each failed try's log once, after asking for its retry", async () => {
+    const RETRY = "4a5b6c7d-4444-4d5e-9f60-0123456789ab";
+    const failed = { status: "ERRORED", canRetry: true, error: { errorCode: "SERVER_ERROR", message: "unexpected" } };
+    const eas = fakeEas(
+      { [IOS]: [failed], [RETRY]: [{ status: "IN_QUEUE" }, failed] },
+      { [IOS]: RETRY },
+      { [LOG]: bunyan("ASC: 500 UNEXPECTED_ERROR", 50), [`${LOG}?retry`]: new Error("socket hang up") },
+      { [IOS]: [LOG], [RETRY]: [`${LOG}?retry`] },
+    );
+    const logged = [];
+    const rows = await run(eas, [{ store: "ios", id: IOS }], logged);
+    assert.equal(rows[0].status, "ERRORED");
+    assert.deepEqual(eas.logQueries, [IOS, RETRY]);
+    assert.ok(logged.includes("  | ASC: 500 UNEXPECTED_ERROR"), logged.join("\n"));
+    const retriedAt = logged.findIndex((l) => l.includes(`retried it as ${RETRY}`));
+    const printedAt = logged.indexOf("  | ASC: 500 UNEXPECTED_ERROR");
+    assert.ok(retriedAt >= 0 && retriedAt < printedAt, logged.join("\n"));
+    assert.ok(logged.some((l) => l.includes(`submission ${RETRY}: its log had nothing to show`) && l.includes("request failed")), logged.join("\n"));
+  });
+
+  it("reads no log for a finished upload, and says where to look when there is none or it can't be found", async () => {
+    const eas = fakeEas(
+      { [IOS]: [{ status: "FINISHED" }], [ANDROID]: [{ status: "CANCELED" }] },
+      {},
+      {},
+      { [IOS]: [LOG], [ANDROID]: { errors: [{ message: "nope" }] } },
+    );
+    const logged = [];
+    await run(eas, [{ store: "ios", id: IOS }, { store: "android", id: ANDROID }], logged);
+    assert.deepEqual(eas.logQueries, [ANDROID]);
+    assert.deepEqual(eas.fetched, []);
+    assert.ok(logged.some((l) => l.includes(`submission ${ANDROID}: couldn't find its log (nope)`)), logged.join("\n"));
+    const none = fakeEas({ [ANDROID]: [{ status: "CANCELED" }] });
+    const quiet = [];
+    await run(none, [{ store: "android", id: ANDROID }], quiet);
+    assert.ok(quiet.some((l) => l.includes("EAS gave no log for it")), quiet.join("\n"));
   });
 });

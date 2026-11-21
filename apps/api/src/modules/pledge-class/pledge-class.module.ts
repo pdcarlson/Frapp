@@ -4,10 +4,13 @@ import { PledgeClassController } from '../../interface/controllers/pledge-class.
 import { SupabasePledgeClassRepository } from '../../infrastructure/supabase/repositories/supabase-pledge-class.repository';
 import { PLEDGE_CLASS_REPOSITORY } from '#domain/repositories/pledge-class.repository.interface';
 import { RbacModule } from '../rbac/rbac.module';
+import { ChapterModule } from '../chapter/chapter.module';
 
 @Module({
-  // RbacModule → PermissionsGuard's role lookups.
-  imports: [RbacModule],
+  // RbacModule → PermissionsGuard's role lookups, and the rank and channel
+  // rules on assignments; ChapterModule → the member and group reads they
+  // judge.
+  imports: [RbacModule, ChapterModule],
   controllers: [PledgeClassController],
   providers: [
     PledgeClassService,

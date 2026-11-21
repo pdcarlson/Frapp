@@ -13,10 +13,12 @@ import {
   Min,
   Validate,
   ValidateIf,
+  ValidateNested,
   ValidatorConstraint,
   type ValidatorConstraintInterface,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
+import { IsExpoPushToken } from '../decorators/is-expo-push-token.decorator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
@@ -66,7 +68,7 @@ function normalizeBlankToNull(value: unknown): unknown {
  * server's, so clients must never treat their own verdict as final.
  */
 @ValidatorConstraint({ name: 'supportedTimeZone', async: false })
-export class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
+class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
     // `null` clears the field, and the @Transform below has already turned blank
     // input into `null` — so any string reaching here is a real candidate zone.
@@ -80,15 +82,28 @@ export class SupportedTimeZoneConstraint implements ValidatorConstraintInterface
 }
 
 export class RegisterPushTokenDto {
-  @ApiProperty({ description: 'Expo push token' })
+  @ApiProperty({ description: 'Expo push token', maxLength: 255 })
   @IsString()
+  @MaxLength(255)
+  @IsExpoPushToken()
   token: string;
 
-  @ApiPropertyOptional({ description: 'Device name for display' })
+  @ApiPropertyOptional({
+    description:
+      "The device's platform, OS version and model, such as `ios 26.1 · iPhone 16`. Never the name the member gave the device. A re-register with a different value replaces the stored one.",
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   device_name?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Whether the phone lets Frapp's notifications show right now (the OS permission, and on Android the app's notification channel). Sent on every register so officers can see who a push reaches. Omitted by older builds, which leaves the stored value as it was.",
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  notifications_enabled?: boolean;
 }
 
 export class ListNotificationPreferencesQueryDto {
@@ -128,6 +143,12 @@ const NOTIFICATION_SCREEN_REGEX = /^[a-z][a-z_]{0,39}$/;
 /** Most screens one "seen" call may name; a client screen covers one or two. */
 const MARK_READ_SCREENS_MAX = 10;
 
+/**
+ * Most rows one read or clear may name: one inbox entry's, and a client lists
+ * 50 (#3948).
+ */
+const ENTRY_IDS_MAX = 100;
+
 export class MarkNotificationsReadDto {
   @ApiPropertyOptional({
     description:
@@ -142,6 +163,70 @@ export class MarkNotificationsReadDto {
   @ArrayMaxSize(MARK_READ_SCREENS_MAX)
   @Matches(NOTIFICATION_SCREEN_REGEX, { each: true })
   screens?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      "Mark read only these notifications (the caller's own, in the active chapter): the rows one inbox entry stands for. Combined with `screens`, a row must match both.",
+    type: [String],
+    format: 'uuid',
+    maxItems: ENTRY_IDS_MAX,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(ENTRY_IDS_MAX)
+  @IsUUID('all', { each: true })
+  ids?: string[];
+}
+
+/** A chat conversation, as an inbox entry groups it (#3948). */
+export class NotificationConversationDto {
+  @ApiProperty({
+    description: 'The chat channel (`data.target.channelId`)',
+    format: 'uuid',
+  })
+  @IsUUID()
+  channelId: string;
+
+  @ApiPropertyOptional({
+    description:
+      "A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.",
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID()
+  threadRootId?: string;
+}
+
+export class ClearNotificationsDto {
+  @ApiProperty({
+    description:
+      "The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped.",
+    type: [String],
+    format: 'uuid',
+    minItems: 1,
+    maxItems: ENTRY_IDS_MAX,
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(ENTRY_IDS_MAX)
+  @IsUUID('all', { each: true })
+  ids: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid.',
+    type: NotificationConversationDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NotificationConversationDto)
+  conversation?: NotificationConversationDto;
+}
+
+export class ClearNotificationsResultDto {
+  @ApiProperty({ description: 'How many notifications this call cleared' })
+  cleared: number;
 }
 
 export class MarkNotificationsReadResultDto {
@@ -183,7 +268,7 @@ export class UpdateNotificationPreferenceDto {
  * character and the Unicode line and paragraph separators, not only CR and LF.
  */
 @ValidatorConstraint({ name: 'customStatusLine', async: false })
-export class CustomStatusLineConstraint implements ValidatorConstraintInterface {
+class CustomStatusLineConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
     return (
       typeof value === 'string' &&
@@ -311,6 +396,15 @@ export class UpdateUserSettingsDto {
   @IsString()
   @Matches(ISO_INSTANT_REGEX, { message: `$property ${ISO_INSTANT_MESSAGE}` })
   custom_status_expires_at?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      "Read receipts on direct messages (#5519). Off is two-way: the member's reads are not reported to anyone, and they are told about no one's. Null or absent leaves it as it is.",
+    type: Boolean,
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  read_receipts?: boolean;
 }
 
 /**
@@ -383,4 +477,11 @@ export class UserSettingsDto implements UserSettingsValues {
     format: 'date-time',
   })
   custom_status_expires_at: string | null;
+
+  @ApiProperty({
+    description:
+      'Read receipts on direct messages (#5519). `true` until the member turns them off.',
+    type: Boolean,
+  })
+  read_receipts: boolean;
 }

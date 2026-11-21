@@ -5,8 +5,11 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { isChatRoute } from "@/components/layout/shell-layout";
 import { ChatProvider } from "@/lib/chat/chat-provider";
 import { ChatShell } from "./chat-shell";
+import { FormFillHost } from "./form-fill-dialog";
+import { FormResponsesHost } from "./form-responses-dialog";
 import { ChatRouteSkeleton } from "@/components/chat/chat-route-skeleton";
 import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
+import type { ChatView } from "@/components/layout/shell-prefs";
 
 /**
  * Reads `?channel=<id>&message=<id>` so a caller (the member directory's
@@ -16,8 +19,8 @@ import { CHAT_CHANNEL_PARAM, CHAT_MESSAGE_PARAM } from "@/lib/chat/chat-links";
  * `directory-page.tsx`'s `?tab=` pattern).
  *
  * Only a chat URL names chat's target (#3779). The panel stays mounted beside
- * every tool page, and a tool's own `?channel=` (`/chat-admin?channel=` is
- * the channel editor's) must not steer it. Off a chat URL the panel keeps the
+ * every tool page, and a page's own `?channel=` (`/settings?tab=chat&channel=`
+ * is the channel editor's) must not steer it. Off a chat URL the panel keeps the
  * target it last had, so going from a linked message to a tool page does not
  * read as the link being cleared.
  */
@@ -25,10 +28,14 @@ function ChatPageContent({
   defaultMembersHidden,
   toolBeside,
   onClose,
+  view,
+  onViewChange,
 }: {
   defaultMembersHidden: boolean;
   toolBeside: boolean;
   onClose?: () => void;
+  view: ChatView;
+  onViewChange?: (view: ChatView) => void;
 }) {
   const searchParams = useSearchParams();
   const onChatUrl = isChatRoute(usePathname());
@@ -49,13 +56,22 @@ function ChatPageContent({
 
   return (
     <ChatProvider>
-      <ChatShell
-        initialChannelId={channelParam}
-        initialMessageId={messageParam}
-        defaultMembersHidden={defaultMembersHidden}
-        toolBeside={toolBeside}
-        onClose={onClose}
-      />
+      {/* The full-page form a form card opens, and its creator's Responses
+          (#3926), hosted above the shell so a card the timeline scrolls away
+          can't close either mid-use. */}
+      <FormFillHost>
+        <FormResponsesHost>
+          <ChatShell
+            initialChannelId={channelParam}
+            initialMessageId={messageParam}
+            defaultMembersHidden={defaultMembersHidden}
+            toolBeside={toolBeside}
+            onClose={onClose}
+            view={view}
+            onViewChange={onViewChange}
+          />
+        </FormResponsesHost>
+      </FormFillHost>
     </ChatProvider>
   );
 }
@@ -72,6 +88,8 @@ export function ChatPage({
   defaultMembersHidden = false,
   toolBeside = false,
   onClose,
+  view = "channels",
+  onViewChange,
 }: {
   /** The member list's remembered state, read by the layout on the server. */
   defaultMembersHidden?: boolean;
@@ -79,6 +97,10 @@ export function ChatPage({
   toolBeside?: boolean;
   /** Closes the chat panel (`ChatShell`'s prop of the same name). */
   onClose?: () => void;
+  /** Channels or direct messages (`ChatShell`'s prop of the same name). */
+  view?: ChatView;
+  /** The panel moving to the other list (`ChatShell`'s prop). */
+  onViewChange?: (view: ChatView) => void;
 } = {}) {
   /*
     This boundary's fallback must never be what the server sends.
@@ -104,6 +126,8 @@ export function ChatPage({
         defaultMembersHidden={defaultMembersHidden}
         toolBeside={toolBeside}
         onClose={onClose}
+        view={view}
+        onViewChange={onViewChange}
       />
     </Suspense>
   );

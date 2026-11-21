@@ -5,12 +5,16 @@ import { useHiddenUnsetFeatures } from "@repo/hooks";
 import { cn } from "@/lib/utils";
 import { ChapterNavHeader } from "@/components/layout/chapter-nav-header";
 import { DASHBOARD_NAV, type NavItem } from "@/components/layout/nav-config";
+import type { ChatView } from "@/components/layout/shell-prefs";
 import {
   isNavItemVisible,
   ProtectedNavItem,
 } from "@/components/layout/protected-nav-item";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
+import { LiveMeetingCard } from "@/components/meetings/live-meeting-card";
+import { AskBar } from "@/components/ask/ask-bar";
+import { useAskEntry } from "@/components/ask/ask-host";
 
 /**
  * The module nav: its rows, section headings and the collapse toggle.
@@ -26,9 +30,9 @@ import { EYEBROW } from "@/components/ui/typography";
  * inside the mobile drawer (`variant="drawer"`), with the chapter row on top,
  * always expanded, and no toggle.
  *
- * **Collapsing is a preference**, and also what the shell does while chat and
- * a tool are open side by side on a window too narrow for the full nav
- * (`shell-layout.ts`). The rail never appears in the drawer.
+ * **Collapsing is a preference**, never forced: the full nav fits beside
+ * chat and a tool from the side-by-side width up (`shell-layout.ts`, #5575).
+ * The rail never appears in the drawer.
  *
  * Section headings are derived, never declared — a heading renders only when at
  * least one of its items survives the permission, module and setup gates, so a
@@ -57,7 +61,19 @@ type AppNavProps = {
    * instead of a link to `/chat`. `open` marks it the way a current row is
    * marked. Absent, the row is the plain link it is below that width.
    */
-  chatRow?: { onSelect: () => void; open: boolean };
+  chatRow?: {
+    onSelect: (view: ChatView) => void;
+    open: boolean;
+    /** Which list the open panel shows (#3774). */
+    view: ChatView;
+  };
+  /**
+   * Which list chat shows, for the two chat rows when they are links (below
+   * the side-by-side width, and in the drawer): the row for the list on
+   * screen at `/chat` is the current page, and Chat links back to channels
+   * from Direct messages (#3774).
+   */
+  chatView?: ChatView;
   /**
    * Clicking the open tool's row closes it (#3779). Given, the row whose
    * route is open becomes a button that calls this instead of a link to the
@@ -65,14 +81,42 @@ type AppNavProps = {
    */
   onCloseTool?: () => void;
   /**
-   * Ids of rows with something new for the member (today Chat's unread,
-   * `use-chat-has-unread.ts`; the only row the app counts). A highlighted row
+   * Ids of rows with something new for the member (today Chat's unread
+   * channels, `use-chat-has-unread.ts`; Direct messages carries a count
+   * instead, `counts` below). A highlighted row
    * draws bright and semibold with a dot, on every route and in the drawer,
    * until the count clears (#3824).
    */
   highlighted?: ReadonlySet<string>;
+  /** Rows with a mention-red count (today Direct messages, #3774). */
+  counts?: ReadonlyMap<string, number>;
   className?: string;
 };
+
+/**
+ * The two rows that open the chat panel (#3774): Chat on the chapter's
+ * channels, Direct messages on the member's conversations.
+ */
+const CHAT_ROW_VIEW: Readonly<Record<string, ChatView>> = {
+  chat: "channels",
+  direct: "direct",
+};
+
+/** The toggle's action, as its tooltip and pressed state name it. */
+const CHAT_ROW_ACTION: Readonly<Record<ChatView, [string, string]>> = {
+  channels: ["Open chat", "Close chat"],
+  direct: ["Open direct messages", "Close direct messages"],
+};
+
+/** What a screen reader hears after a counted row's name. */
+function countLabel(id: string, value: number): string {
+  if (id === "direct") {
+    return value === 1
+      ? "1 unread conversation"
+      : `${value} unread conversations`;
+  }
+  return `${value} new`;
+}
 
 /** What a screen reader hears after a highlighted row's name. */
 const HIGHLIGHT_LABEL: Record<string, string> = {
@@ -89,17 +133,22 @@ const TOGGLE_LABEL = {
 const navIconClassName = "h-[18px] w-[18px]";
 
 /**
- * A row is the current page when its own route is open, and the current
- * section when a route it owns is (`activeFor`: the Settings tools, which keep
- * their own pages but sit under the Settings row).
+ * A row is the current page when its own route is open. The officer tools
+ * that once kept routes of their own under Chapter settings now open inside
+ * it (#3837), so no row stands for another route any more.
  */
-function currentFor(
-  item: NavItem,
+/**
+ * The row's `aria-current`: "page" on its own page, "true" on a page under it
+ * (a meeting's minutes under Meetings, Bulk upload under Backwork), so the
+ * sidebar always says where you are (rulebook § 8). Only "page" makes the row
+ * close the page it opened; under it, the row goes back to its list.
+ */
+export function currentFor(
+  item: Pick<NavItem, "href">,
   pathname: string,
 ): "page" | "true" | undefined {
   if (item.href === pathname) return "page";
-  if (item.activeFor?.includes(pathname)) return "true";
-  return undefined;
+  return pathname.startsWith(`${item.href}/`) ? "true" : undefined;
 }
 
 export function AppNav({
@@ -111,8 +160,10 @@ export function AppNav({
   onNavigate,
   variant = "column",
   chatRow,
+  chatView = "channels",
   onCloseTool,
   highlighted,
+  counts,
   className,
 }: AppNavProps) {
   const isDrawer = variant === "drawer";
@@ -155,54 +206,83 @@ export function AppNav({
             {section.label}
           </p>
         )}
-        {visibleItems.map((item) => (
-          <ProtectedNavItem
-            key={item.id}
-            item={item}
-            current={
-              chatRow && item.id === "chat"
-                ? chatRow.open
-                  ? "true"
-                  : undefined
-                : currentFor(item, pathname)
-            }
-            permissions={permissions}
-            iconClassName={navIconClassName}
-            onNavigate={onNavigate}
-            focusClassName={FOCUS_RING_SHELL}
-            isModuleEnabled={isModuleEnabled}
-            hiddenFeatures={hiddenFeatures}
-            collapsed={isCollapsed}
-            highlight={
-              highlighted?.has(item.id)
-                ? (HIGHLIGHT_LABEL[item.id] ?? "new")
-                : undefined
-            }
-            {...(chatRow && item.id === "chat"
-              ? {
-                  onSelect: chatRow.onSelect,
-                  pressed: chatRow.open,
-                  selectLabel: chatRow.open ? "Close chat" : "Open chat",
-                }
-              : // Only the row whose own page is open. A Settings tool's
-                // route marks the Settings row too (`activeFor`), and there
-                // the row stays the way back to the Settings hub.
-                onCloseTool &&
-                  item.id !== "chat" &&
-                  currentFor(item, pathname) === "page"
+        {visibleItems.map((item) => {
+          const rowView = CHAT_ROW_VIEW[item.id];
+          const count = counts?.get(item.id);
+          const shared = {
+            permissions,
+            iconClassName: navIconClassName,
+            onNavigate,
+            focusClassName: FOCUS_RING_SHELL,
+            isModuleEnabled,
+            hiddenFeatures,
+            collapsed: isCollapsed,
+            highlight: highlighted?.has(item.id)
+              ? (HIGHLIGHT_LABEL[item.id] ?? "new")
+              : undefined,
+            count: count
+              ? { value: count, label: countLabel(item.id, count) }
+              : undefined,
+          };
+          if (rowView && chatRow) {
+            // A toggle from the side-by-side width up: the row of the list
+            // on screen closes the panel, the other switches it in place.
+            const open = chatRow.open && chatRow.view === rowView;
+            const [openLabel, closeLabel] = CHAT_ROW_ACTION[rowView];
+            return (
+              <ProtectedNavItem
+                key={item.id}
+                item={item}
+                current={open ? "true" : undefined}
+                onSelect={() => chatRow.onSelect(rowView)}
+                pressed={open}
+                selectLabel={open ? closeLabel : openLabel}
+                {...shared}
+              />
+            );
+          }
+          if (rowView) {
+            // A link: both rows go to `/chat`, so the list on screen says
+            // which of them is the current page.
+            const here = pathname === "/chat" && chatView === rowView;
+            const linked =
+              item.id === "chat" && chatView === "direct"
+                ? { ...item, href: "/chat?view=channels" }
+                : item;
+            return (
+              <ProtectedNavItem
+                key={item.id}
+                item={linked}
+                current={here ? "page" : undefined}
+                {...shared}
+              />
+            );
+          }
+          return (
+            <ProtectedNavItem
+              key={item.id}
+              item={item}
+              current={currentFor(item, pathname)}
+              {...shared}
+              {...(onCloseTool && currentFor(item, pathname) === "page"
                 ? {
+                    // Only the row whose own page is open.
                     onSelect: onCloseTool,
                     pressed: true,
                     selectLabel: `Close ${item.label}`,
                   }
                 : {})}
-          />
-        ))}
+            />
+          );
+        })}
       </div>
     );
   });
 
   const CollapseIcon = isCollapsed ? PanelLeftOpen : PanelLeftClose;
+  const hasAsk = useAskEntry() !== null;
+  // Ask shares the toggle's row in the expanded column (#5560).
+  const sharedFoot = hasAsk && !isCollapsed && !isDrawer && !!onToggleCollapsed;
 
   return (
     <div
@@ -224,6 +304,27 @@ export function AppNav({
       >
         {sections}
       </nav>
+      {/* Above the foot, a live meeting the viewer runs shows its Start
+          minutes card (#5219). No room in the rail. */}
+      {isCollapsed ? null : <LiveMeetingCard />}
+      {isDrawer || !hasAsk || sharedFoot ? null : (
+        /*
+         * Ask Frapp's one home from `lg` up (#5560, Paul's pick of
+         * 2026-11-19): the foot of the column on every layout, so it never
+         * moves as panes open and close and covers no page. In the rail it is
+         * the crest alone above the expand toggle; with a toggle in the
+         * column it shares the toggle's row (below). A member without Ask
+         * gets no box at all, so their toggle sits where it always did.
+         */
+        <div
+          className={cn(
+            "mt-auto flex shrink-0 flex-col pt-2",
+            isCollapsed ? "items-center" : "w-full",
+          )}
+        >
+          <AskBar compact rail={isCollapsed} />
+        </div>
+      )}
       {isDrawer || !onToggleCollapsed ? null : (
         /*
          * The collapse toggle (#4044). It stays pinned to the bottom of the
@@ -234,11 +335,19 @@ export function AppNav({
          * `text-muted` glyph in the corner, which members missed. The rail
          * has no room for a label, so there the name is the accessible name
          * and the tooltip.
+         *
+         * Changed in #5560 (Paul's pick, 2026-11-19): for a member with Ask
+         * the expanded column's foot is one row, Ask Frapp's bar filling it
+         * and the toggle a 34px glyph at its end, named by its label and
+         * tooltip. A second row cost the 48px a full sidebar doesn't have at
+         * 1024x768 (`tests/visual/nav-fit.spec.ts`).
          */
         <div
           data-nav-toggle=""
           className={cn(
-            "mt-auto flex shrink-0 flex-col pt-2",
+            "flex shrink-0 flex-col pt-2",
+            // With no Ask block above it, the toggle pins itself down.
+            (!hasAsk || sharedFoot) && "mt-auto",
             isCollapsed ? "items-center" : "w-full",
           )}
         >
@@ -250,23 +359,41 @@ export function AppNav({
               isCollapsed ? "w-6" : "w-full",
             )}
           />
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            aria-label={isCollapsed ? TOGGLE_LABEL.expand : undefined}
-            aria-expanded={!isCollapsed}
-            title={isCollapsed ? TOGGLE_LABEL.expand : TOGGLE_LABEL.collapse}
+          <div
             className={cn(
-              "flex h-[34px] shrink-0 items-center rounded-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground",
-              isCollapsed ? "w-[34px] justify-center" : "w-full gap-2.5 px-2.5",
-              FOCUS_RING_SHELL,
+              "flex items-center gap-1.5",
+              !isCollapsed && "w-full",
             )}
           >
-            <CollapseIcon className={navIconClassName} aria-hidden="true" />
-            {isCollapsed ? null : (
-              <span className="truncate">{TOGGLE_LABEL.collapse}</span>
-            )}
-          </button>
+            {sharedFoot ? (
+              <AskBar compact className="h-[34px] min-w-0 flex-1" />
+            ) : null}
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-label={
+                isCollapsed
+                  ? TOGGLE_LABEL.expand
+                  : sharedFoot
+                    ? TOGGLE_LABEL.collapse
+                    : undefined
+              }
+              aria-expanded={!isCollapsed}
+              title={isCollapsed ? TOGGLE_LABEL.expand : TOGGLE_LABEL.collapse}
+              className={cn(
+                "flex h-[34px] shrink-0 items-center rounded-[10px] text-sm text-muted-foreground transition hover:bg-card hover:text-foreground",
+                isCollapsed || sharedFoot
+                  ? "w-[34px] justify-center"
+                  : "w-full gap-2.5 px-2.5",
+                FOCUS_RING_SHELL,
+              )}
+            >
+              <CollapseIcon className={navIconClassName} aria-hidden="true" />
+              {isCollapsed || sharedFoot ? null : (
+                <span className="truncate">{TOGGLE_LABEL.collapse}</span>
+              )}
+            </button>
+          </div>
         </div>
       )}
     </div>

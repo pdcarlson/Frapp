@@ -1,6 +1,6 @@
 # UI principles
 
-> Seven rules every Frapp screen is checked against, on web and mobile alike, written as yes/no checks so a screenshot can pass or fail them. They came out of the owner's design asks of 2026-11-04 to 2026-11-06: each ask traced back to one of these seven causes, so a screen that passes them shouldn't need the ask. The detailed recipes stay where they are ([`components.md`](components.md), [`foundations.md`](foundations.md), [`writing.md`](writing.md), [`../mobile/patterns.md`](../mobile/patterns.md)); this page links to them rather than restating them.
+> Eight rules every Frapp screen is checked against, on web and mobile alike, written as yes/no checks so a screenshot can pass or fail them. They came out of the owner's design asks of 2026-11-04 to 2026-11-06: each ask traced back to one of the first seven causes, and P8 was added on 2026-11-19 for the consistency asks that kept recurring, so a screen that passes them shouldn't need the ask. The detailed recipes stay where they are ([`components.md`](components.md), [`foundations.md`](foundations.md), [`writing.md`](writing.md), [`../mobile/patterns.md`](../mobile/patterns.md)); this page links to them rather than restating them.
 
 **How to use it.** Before a UI change ships, walk each changed screen through the checks below at real scale (P5's volumes) on both platforms. A failed check is fixed in the change, or filed per [`file-follow-up`](../../../.claude/skills/file-follow-up/SKILL.md) and named in the PR. Cite a check by its id (`P3.2`). [`README.md`](README.md) §8 makes this list part of the quality gate.
 
@@ -91,6 +91,24 @@ Every list, row and label is checked at the size of a real imported chapter. The
 | P5.5 | A count isn't formatted for its size: a raw 21718, or an unread badge that keeps growing instead of stopping at 99+. |
 | P5.6 | A picker for a big set (roles, members, channels) is a flat unsorted list. |
 
+### Three people
+
+Owner rule, 2026-11-13 ("something we should take into consideration every time we build a UI screen, is how it looks for each demographic of user"): a screen is designed, drawn and checked for the three people who open it, not for one imagined user. A screen sized for the president is empty for most of the chapter, and one sized for a member buries an officer. The owner's sizing, to be recounted when real use says otherwise:
+
+| Person | A week holds about |
+| --- | --- |
+| An average member | 3 events (chapter, one they signed up for, whatever else the chapter requires) and 1 or 2 tasks |
+| A committee chair | the same, plus their committee's meetings and tasks, and a few things to review |
+| An exec (the president) | "a bunch more": every committee's meeting, 8 or more tasks, and a queue of other people's work to sign off |
+
+A proposal page and a UI PR show the screen for all three and for the member with nothing at all, and the PR names them. The phone's Activity tab was the first screen built this way ([#4766](https://github.com/pdcarlson/Frapp/issues/4766)).
+
+| Check | Fails when |
+| --- | --- |
+| P5.7 | The screen was drawn for one person: for an average member it is mostly zeros or empty boxes, or for the president its first screenful is a wall with no order. |
+| P5.8 | A number, tile or section that only an officer has is shown to a member as a zero, or what an officer reviews is mixed into what they themselves owe. |
+| P5.9 | An obvious state was never drawn: nothing due, everything done, something happening right now, a part that failed to load (it must not read as empty or zero), a module the chapter has off. |
+
 ## P6. One product across web and mobile
 
 Web and mobile are two views of one app. A member who uses both should never relearn a name, a color or an order.
@@ -116,3 +134,14 @@ Whatever a member's thumb or keyboard expects from their platform works, on ever
 | P7.5 | A touch target is under 44 points, or a pointer target is under [`foundations.md`](foundations.md) §9's scale. |
 | P7.6 | A date or time is typed rather than picked with the platform's picker, or text that a member would copy (a code, an address) can't be selected. |
 | P7.7 | A list that updates from the server has no pull to refresh (mobile), or a link that looks like one doesn't open. |
+
+## P8. Same job, same component
+
+Owner, 2026-11-19, after page actions sat on their own row on some pages and in the header on others, and "New minutes" was a filled pill while "+ New event" was an outlined button: two screens that do the same job draw it the same way, from the same shared component, on both apps. A screen that hand-builds what a shared component already draws is a defect even when it looks close. The owner rulings behind each check, and the components to use, are in [`.claude/skills/ui-development/rulebook.md`](../../../.claude/skills/ui-development/rulebook.md) § 2 and § 3.
+
+| Check | Fails when |
+| --- | --- |
+| P8.1 | A page's actions (search, filters, view switches, export, create) sit on a row of their own under the header rather than in the page header, unless the control needs the page's full width. Web's `PageActions` moves into the header with #5686, which updates [`../web-dashboard/README.md`](../web-dashboard/README.md) § Page grammar to match. |
+| P8.2 | A create action is drawn by hand instead of the shared New button (web) or the floating "+" (phone), or two pages word it differently ("Add event", "+ Create task"). |
+| P8.3 | The same kind of row, form, record page or picker is laid out differently on two screens (a different order, a different menu, a card on one and a row on the other). |
+| P8.4 | A fix for a pattern landed on the screen it was reported on while sibling screens with the same pattern were neither fixed nor filed. |

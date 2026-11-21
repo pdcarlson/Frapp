@@ -1,27 +1,36 @@
 /** @vitest-environment jsdom */
+import { NowCard } from "@/components/now-card";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+} from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { activityKeys } from "@repo/hooks";
+import {
+  activityKeys,
+  activitySnoozeOptions,
+  activityStandingKeys,
+} from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
-import { expectBackRow } from "@/test/back-row";
 import { drawnText, screenText } from "@/test/screen-text";
 import { StyleSheet } from "react-native";
 import { getSignetTokens } from "@repo/theme/signet";
 
 /**
- * The phone's Activity screen (#3897; its redesign, #4173 step 2), rendered
- * for real over a stubbed read and a stubbed sheet: the summary and its
- * tiles, the groups and their parts, the rows it draws, what a row opens, and
- * when it reads again. The sheet has its own spec
- * (`activity-sheet.spec.tsx`); the row model's is in `@repo/hooks`.
+ * The phone's Activity screen (#3897; rebuilt around the week ring, #4766),
+ * rendered for real over a stubbed read and a stubbed sheet: the week card,
+ * the semester gauges, the To review card, the To do list by day, what the
+ * member made, what a row opens, and when it reads again. The sheet has its
+ * own spec (`activity-sheet.spec.tsx`); the models' are in `@repo/hooks`
+ * (`activity-agenda.spec.ts`, `activity-rows.spec.ts`).
  *
- * It renders `app/(app)/activity.tsx` but lives here: a spec under `app/`
+ * It renders `app/(app)/(tabs)/activity.tsx` but lives here: a spec under `app/`
  * ships as a route module (`lib/routes.spec.ts`).
  */
 
@@ -59,6 +68,31 @@ const myPoll = (id: string, question: string, closed = false) => ({
   message: {},
 });
 
+/** The member's week: two events (one made), one task still open. */
+const week = (overrides: Record<string, unknown> = {}) => ({
+  start: "2026-11-08T05:00:00.000Z",
+  end: "2026-11-15T05:00:00.000Z",
+  events: { done: 1, total: 2 },
+  tasks: { done: 0, total: 1 },
+  polls: { done: 0, total: 0 },
+  cards: { done: 0, total: 0 },
+  unavailable: [] as string[],
+  ...overrides,
+});
+
+/** An event that invites the member, `hours` from now. */
+const eventIn = (hours: number, overrides: Record<string, unknown> = {}) => ({
+  id: "ev-1",
+  name: "Chapter",
+  start_time: new Date(Date.now() + hours * 3_600_000).toISOString(),
+  end_time: null,
+  location: "Great Hall",
+  attendance: "required",
+  check_in_open: false,
+  checked_in: false,
+  ...overrides,
+});
+
 const read = (overrides: Record<string, unknown> = {}) => ({
   needs_you: {
     tasks: [task()],
@@ -88,6 +122,7 @@ const read = (overrides: Record<string, unknown> = {}) => ({
   },
   needs_you_count: 2,
   unavailable: [] as string[],
+  week: week(),
   ...overrides,
 });
 
@@ -102,9 +137,39 @@ const activity = vi.hoisted(() => ({
   },
 }));
 
-/** The chapter read: its module switches, which hide a module's tile. */
+/**
+ * The chapter read: its module switches, which hide the Task board door,
+ * and its plan, which decides whether rows carry Confirm and Approve (#4437).
+ */
 const chapter = vi.hoisted(() => ({
-  data: undefined as undefined | { enabled_modules: Record<string, boolean> },
+  data: undefined as
+    | undefined
+    | {
+        enabled_modules: Record<string, boolean>;
+        subscription_status?: string;
+        past_due_since?: string | null;
+      },
+  isPending: false,
+}));
+
+/** The row actions' writes (#4437) and the connection they are held on. */
+const writes = vi.hoisted(() => ({
+  confirm: vi.fn(),
+  review: vi.fn(),
+  checkIn: vi.fn(),
+  fix: vi.fn(),
+  writeBlockedReason: null as string | null,
+}));
+vi.mock("@/lib/connection/use-connection", () => ({
+  useConnection: () => ({ writeBlockedReason: writes.writeBlockedReason }),
+}));
+// A zoned event's row check-in asks for the phone's position (#4427).
+vi.mock("@/lib/location", () => ({
+  requireForegroundFix: writes.fix,
+  latLngOf: (fix: { lat: number; lng: number }) => ({
+    lat: fix.lat,
+    lng: fix.lng,
+  }),
 }));
 
 /** The link writes, each a `mutateAsync` that resolves unless a test says not. */
@@ -115,22 +180,183 @@ const links = vi.hoisted(() => ({
   clear: vi.fn(),
   remove: vi.fn(),
   restore: vi.fn(),
+  markRead: vi.fn(),
 }));
 
+/** The message reminder writes (#4957): Snooze sets, Done clears. */
+const reminderWrites = vi.hoisted(() => ({
+  set: vi.fn(),
+  clear: vi.fn(),
+}));
+/** Last week's recap (`GET /v1/activity/recap`), unread unless a test sets it. */
+const recap = vi.hoisted(() => ({ value: { data: undefined as unknown } }));
+/** The Archive's read (`GET /v1/activity/archive`, #5127) and whether it was asked for. */
+const archive = vi.hoisted(() => ({
+  enabled: false as boolean | undefined,
+  value: {
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    data: undefined as unknown,
+    refetch: () => Promise.resolve(),
+  },
+}));
+/** The active chapter: the recap's dismissals are kept per chapter. */
+const activeChapter = vi.hoisted(() => ({ id: "chapter-1" }));
+
+/** The standing read (`GET /v1/activity/standing`) behind the gauges. */
+const standing = vi.hoisted(() => ({
+  value: {
+    data: undefined as unknown,
+    isPending: false,
+    refetch: vi.fn(() => Promise.resolve()),
+  },
+}));
+
+/** The Activity card (#5464): what the server sent, and what the card did. */
+const cards = vi.hoisted(() => ({
+  layout: undefined as
+    | { card_order: string[]; hidden_cards: string[]; saved: boolean }
+    | undefined,
+  save: vi.fn(),
+  reset: vi.fn(),
+  refetch: vi.fn(() => Promise.resolve()),
+  pending: false,
+}));
+const nudge = vi.hoisted(() => ({
+  ask: false,
+  data: null as null | Record<string, unknown>,
+  enabledCalls: [] as boolean[],
+  dismiss: vi.fn(),
+  markSeen: vi.fn(),
+  recheck: vi.fn(),
+  setEnabled: vi.fn(),
+}));
+vi.mock("@/lib/ai/availability", () => ({
+  useAiSurfaces: () => ({
+    ask: nudge.ask,
+    ready: true,
+    available: true,
+  }),
+}));
+vi.mock("@/components/ask/ask-sheet", () => ({ AskSheet: () => null }));
+
+/** Members the roster holds besides the officer, for a group's faces. */
+const roster = vi.hoisted(() => ({ members: [] as string[] }));
+
+/** The reads and writes behind a row's long-press menu (#5492). */
+const menuReads = vi.hoisted(() => ({
+  tasks: [] as Record<string, unknown>[],
+  events: [] as Record<string, unknown>[],
+  updateStatus: vi.fn<(input: unknown) => Promise<object>>(() =>
+    Promise.resolve({}),
+  ),
+  deleteTask: vi.fn(() => Promise.resolve({})),
+  deleteEvent: vi.fn(),
+}));
+// The sheets a menu opens have their own specs; here only what opens them.
+vi.mock("@/components/tasks/new-task-sheet", async () => {
+  const { forwardRef, createElement } = await import("react");
+  return {
+    NewTaskSheet: forwardRef(function NewTaskSheet(props: object) {
+      return createElement("NewTaskSheet", props);
+    }),
+  };
+});
+
+const eventsNow = vi.hoisted(() => ({
+  value: { events: [] as unknown[], now: Date.now() },
+}));
+const snoozeWrites = vi.hoisted(() => ({
+  snooze: vi.fn(() => Promise.resolve()),
+  unsnooze: vi.fn(() => Promise.resolve()),
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useActivityNudge: (options?: { enabled?: boolean }) => {
+    nudge.enabledCalls.push(options?.enabled ?? true);
+    return { data: nudge.data };
+  },
+  useActivityNudgeActions: () => ({
+    dismiss: nudge.dismiss,
+    markSeen: nudge.markSeen,
+    recheck: nudge.recheck,
+  }),
+  useSetActivityNudgesEnabled: () => ({ mutate: nudge.setEnabled }),
+  useActivitySnoozeWake: () => undefined,
+  useActivitySnooze: () => ({
+    snooze: snoozeWrites.snooze,
+    unsnooze: snoozeWrites.unsnooze,
+    isPending: false,
+  }),
   useActivity: () => activity.value,
+  // The Now card's read (#5777): nothing on unless a test says so.
+  useEventsOnNow: () => eventsNow.value,
+  useActivityStanding: () => standing.value,
+  useActivityRecap: () => recap.value,
+  useActivityArchive: (options: { enabled?: boolean }) => {
+    archive.enabled = options.enabled;
+    return archive.value;
+  },
   useViewerUserId: () => "me",
-  useActiveChapterId: () => "chapter-1",
-  // Read by the back row and the chips for the chapter's accent.
-  useCurrentChapter: () => ({ data: chapter.data }),
+  useActiveChapterId: () => activeChapter.id,
+  useActivityUnread: () => ({ markRead: links.markRead }),
+  // Read for the chapter's accent, its modules and its plan.
+  useCurrentChapter: () => ({
+    data: chapter.data,
+    isPending: chapter.isPending,
+  }),
+  // What a row's long press reads (#5492): the viewer's tasks and the
+  // chapter's events, as the board and the Calendar read them.
+  useTasks: () => ({ data: menuReads.tasks, isSuccess: true }),
+  useEvents: () => ({ data: menuReads.events, isSuccess: true }),
+  usePermissionList: () => links.permissions,
+  // A real mutation under the hook's own key, so the screen sees it settle.
+  useUpdateTaskStatus: () =>
+    useMutation({
+      mutationKey: ["tasks", "update-task-status"],
+      mutationFn: menuReads.updateStatus,
+    }),
+  useDeleteTask: () => ({ mutateAsync: menuReads.deleteTask }),
+  useDeleteEvent: () => ({ mutate: menuReads.deleteEvent }),
+  useConfirmTask: () => ({ mutateAsync: writes.confirm }),
+  useRejectTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useReviewServiceEntry: () => ({ mutateAsync: writes.review }),
+  useCheckIn: () => ({ mutateAsync: writes.checkIn }),
   useMyPermissions: () => ({ data: { permissions: links.permissions } }),
+  // The member's arrangement (#5520): the role's default unless a test saves one.
+  useActivityLayout: () => ({
+    data: cards.layout,
+    refetch: cards.refetch,
+    isSuccess: !cards.pending,
+    isPending: cards.pending,
+  }),
+  useSaveActivityLayout: () => ({ mutate: cards.save }),
+  useResetActivityLayout: () => ({ mutate: cards.reset }),
   useSetActivityLinkState: (state: "done" | "hidden") => ({
     mutateAsync: links[state],
   }),
   useClearActivityLinkState: () => ({ mutateAsync: links.clear }),
   useRemoveActivityLink: () => ({ mutateAsync: links.remove }),
   useRestoreActivityLink: () => ({ mutateAsync: links.restore }),
+  useSetMessageReminder: () => ({ mutateAsync: reminderWrites.set }),
+  useClearMessageReminder: () => ({ mutateAsync: reminderWrites.clear }),
+  // The roster knows the officer only, unless a test adds members: anyone
+  // else has left (#4402, faces).
+  useActivityFaces: () => (id: string) =>
+    id === "officer"
+      ? {
+          name: "Olive Officer",
+          avatarUrl: "https://photos.example/olive.png",
+          tint: { fill: "#102030", text: "#405060" },
+        }
+      : roster.members.includes(id)
+        ? {
+            name: `Member ${id}`,
+            avatarUrl: null,
+            tint: { fill: "#102030", text: "#405060" },
+          }
+        : null,
 }));
 
 /** The props the screen last handed its sheet. */
@@ -138,9 +364,11 @@ const sheet = vi.hoisted(() => ({
   props: null as null | {
     row: { key: string } | null;
     viewerId: string | null;
+    rowActionState?: string;
     onClosed: () => void;
     onActed: () => void;
     linkActions: import("@/components/activity/activity-sheet").LinkSheetActions;
+    reminderActions: import("@/components/activity/activity-sheet").ReminderSheetActions;
   },
 }));
 const openLink = vi.hoisted(() => vi.fn());
@@ -153,17 +381,35 @@ vi.mock("@/components/activity/activity-sheet", () => ({
   },
 }));
 
-import ActivityScreen from "@/app/(app)/activity";
+import ActivityScreen from "@/app/(app)/(tabs)/activity";
+import { recapDismissal } from "@/components/activity/recap-card";
 import {
   ActivityAsk,
+  ActivityAskButton,
   ActivityListRow,
 } from "@/components/activity/activity-row";
-import { FilterChips } from "@/components/filter-chips";
+import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { OFFLINE_COPY } from "@repo/validation";
 import { InlineNote } from "@/components/inline-note";
 import { SectionCount, SectionHeader } from "@/components/list-section";
-import { StatusChip } from "@/components/status-chip";
+import { HairlineChip, StatusChip } from "@/components/status-chip";
+import { MemberAvatar } from "@/components/member-avatar";
 import { ScreenShell } from "@/components/screen-shell";
+import { ActivityEditor } from "@/components/activity/activity-editor";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  ItemActionsMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 import { UndoBar } from "@/components/tasks/undo-bar";
+import { ProgressRing } from "@/components/activity/progress-ring";
+import { ReviewCard } from "@/components/activity/review-card";
+import {
+  SemesterStrip,
+  SemesterStripSkeleton,
+} from "@/components/activity/semester-strip";
+import { WeekCard } from "@/components/activity/week-card";
 
 const mounted: ReactTestRenderer[] = [];
 let queryClient: QueryClient;
@@ -178,11 +424,24 @@ const screen = () => (
 
 /** Every mounted focus effect, run again: the member came back. */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
+/** The member pushed a screen over this one. Refocus before the test ends. */
+const blur = (expoRouter as unknown as { __blur: () => void }).__blur;
 
-function render(): ReactTestRenderer {
+/**
+ * Each re-read invalidates the list and the standing together, so a count of
+ * re-reads is a count of the list's invalidations.
+ */
+const listRereads = (invalidate: ReturnType<typeof vi.spyOn>) =>
+  invalidate.mock.calls.filter(
+    ([filters]: unknown[]) =>
+      JSON.stringify((filters as { queryKey?: unknown }).queryKey) ===
+      JSON.stringify(activityKeys.chapter("chapter-1")),
+  ).length;
+
+function render(options?: Parameters<typeof create>[1]): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(screen());
+    tree = create(screen(), options);
   });
   mounted.push(tree);
   return tree;
@@ -215,32 +474,80 @@ const sectionCount = (tree: ReactTestRenderer, label: string) => {
   return count;
 };
 
-/** A tile's resting style, flattened. */
-const tileStyle = (tree: ReactTestRenderer, id: string) =>
-  StyleSheet.flatten(tile(tree, id).props.style({ pressed: false }));
-
 const tokens = getSignetTokens("dark");
 
-/** The pressable a tile draws, by its summary id. */
-const tile = (tree: ReactTestRenderer, id: string) =>
+/** Any pressable the screen draws, by its test id. */
+const pressable = (tree: ReactTestRenderer, testID: string) =>
   tree.root.find(
     (node) =>
-      (node.type as unknown) === "Pressable" &&
-      node.props.testID === `activity-tile-${id}`,
+      (node.type as unknown) === "Pressable" && node.props.testID === testID,
   );
 
-/** The chip `FilterChips` shows as on (`null` is All). */
-const litChip = (tree: ReactTestRenderer) =>
-  tree.root.findByType(FilterChips).props.selected;
+/** A line of the week card, by the kind it counts. */
+const weekLine = (tree: ReactTestRenderer, id: string) =>
+  pressable(tree, `activity-week-line-${id}`);
+
+/** The day headings the To do list draws, in order, each with its count. */
+const dayHeadings = (tree: ReactTestRenderer) =>
+  tree.root
+    .findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        String(node.props.testID ?? "").startsWith("activity-day-"),
+    )
+    .map(
+      (day) =>
+        day.find((node) => node.props.accessibilityRole === "header").props
+          .accessibilityLabel as string,
+    );
+
+/** Whether a section heading is drawn at all. */
+const hasSection = (tree: ReactTestRenderer, label: string) =>
+  tree.root
+    .findAllByType(SectionHeader)
+    .some((node) => node.props.children === label);
+
+/** The To review card's own row: its count, and what opens or closes it. */
+const reviewToggle = (tree: ReactTestRenderer) =>
+  pressable(tree, "activity-review-toggle");
 
 describe("Activity screen (#3897)", () => {
   beforeEach(() => {
+    cards.layout = undefined;
+    cards.pending = false;
+    cards.save.mockClear();
+    cards.reset.mockClear();
+    standing.value = {
+      data: undefined,
+      isPending: false,
+      refetch: vi.fn(() => Promise.resolve()),
+    };
     queryClient = new QueryClient();
     sheet.props = null;
+    archive.enabled = false;
+    archive.value = { ...archive.value, isPending: false, data: undefined };
     // Reset here, not at a test's end: a failing test must not leave the
     // next one rendering as an officer.
     links.permissions = [];
+    roster.members = [];
+    menuReads.tasks = [];
+    menuReads.events = [];
+    menuReads.updateStatus.mockClear();
+    menuReads.deleteTask.mockClear();
+    menuReads.deleteEvent.mockClear();
     chapter.data = undefined;
+    chapter.isPending = false;
+    writes.confirm.mockReset().mockResolvedValue(undefined);
+    writes.review.mockReset().mockResolvedValue(undefined);
+    writes.checkIn.mockReset().mockResolvedValue(undefined);
+    writes.fix.mockReset();
+    writes.writeBlockedReason = null;
+    nudge.ask = false;
+    nudge.data = null;
+    nudge.dismiss.mockReset();
+    nudge.markSeen.mockReset();
+    nudge.recheck.mockReset();
+    nudge.setEnabled.mockReset();
     activity.value = {
       data: read(),
       isPending: false,
@@ -254,250 +561,913 @@ describe("Activity screen (#3897)", () => {
     act(() => {
       for (const tree of mounted.splice(0)) tree.unmount();
     });
+    dismissItemMenu();
   });
 
-  it("goes back to More", () => {
-    expectBackRow(render(), "More", "/more");
-  });
-
-  it("lists what needs the member first, then what they made, each group with its count", () => {
-    const tree = render();
-    // The approval is for now and the task, due in 2099, is for later.
-    expect(rowLabels(tree)).toEqual([
-      "Food bank",
-      "Book the venue",
-      "Dues vote",
-    ]);
-    expect(sectionCount(tree, "Needs you")).toBe(2);
-    // Open polls only: the closed one is archived, outside the count.
-    expect(sectionCount(tree, "Made by you")).toBe(1);
-    // The count is its own muted text, not part of the caption.
-    expect(screenText(tree)).not.toContain("Needs you · 2");
-    // Nothing is coming up, and the group says so instead of vanishing.
-    expect(sectionCount(tree, "Coming up")).toBeNull();
-    expect(screenText(tree)).toContain("No events in the next two weeks.");
-  });
-
-  it("splits Needs you into Now and Later, and Made by you by kind", () => {
-    const text = screenText(render());
-    expect(text).toMatch(
-      /Now\n1\n[\s\S]*Food bank[\s\S]*Later\n1\n[\s\S]*Book the venue/,
-    );
-    expect(text).toContain("Polls you posted");
-    expect(text).not.toContain("Files you uploaded");
-  });
-
-  it("draws one part with no heading when everything is for now", () => {
-    activity.value = {
-      ...activity.value,
-      data: read({
-        needs_you: { ...read().needs_you, tasks: [] },
-      }),
-    };
-    const text = screenText(render());
-    expect(text).toContain("Food bank");
-    expect(text).not.toMatch(/^Now$/m);
-    expect(text).not.toMatch(/^Later$/m);
-  });
-
-  it("names what a row asks of the member as the action, for the eye and for a screen reader", () => {
-    const tree = render();
-    const approval = row(tree, "Food bank");
-    expect(approval.findByType(ActivityAsk).props.label).toBe("Approve");
-    expect(approval.findAllByType(StatusChip)).toHaveLength(0);
-    const pressable = approval.find(
-      (node) => (node.type as unknown) === "Pressable",
-    );
-    expect(pressable.props.accessibilityValue).toEqual({ text: "Approve" });
-    expect(pressable.props.accessibilityHint).toBe("Sam Hill · 1h 30m.");
-    // A state is a status chip, never the ask.
-    const task = row(tree, "Book the venue");
-    expect(task.findByType(StatusChip).props.label).toBe("To do");
-    expect(task.findAllByType(ActivityAsk)).toHaveLength(0);
-  });
-
-  it("leads a row with its kind's glyph, and an event with its date", () => {
-    activity.value = {
-      ...activity.value,
-      data: read({
-        coming_up: [
-          {
-            id: "ev-1",
-            name: "Chapter",
-            start_time: "2099-03-07T19:00:00.000Z",
-            end_time: null,
-            location: "Great Hall",
-            attendance: "optional",
-            check_in_open: false,
-            checked_in: false,
-          },
-        ],
-      }),
-    };
-    const tree = render();
-    const lead = (label: string, id: string) =>
-      row(tree, label).findAll((node) => node.props.testID === id);
-    expect(lead("Food bank", "activity-glyph-hours").length).toBeGreaterThan(0);
-    expect(
-      lead("Book the venue", "activity-glyph-task").length,
-    ).toBeGreaterThan(0);
-    expect(lead("Dues vote", "activity-glyph-poll").length).toBeGreaterThan(0);
-    const block = row(tree, "Chapter").findAll(
+  it("is a tab, so it draws no back row (#4610)", () => {
+    const rows = render().root.findAll(
       (node) =>
-        (node.type as unknown) === "View" &&
-        node.props.testID === "activity-date-block",
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Back to "),
     );
-    expect(block).toHaveLength(1);
-    // The block is decoration; the detail still says the day in words.
-    expect(block[0]!.props.accessibilityElementsHidden).toBe(true);
-    expect(row(tree, "Chapter").props.row.detail).toContain("Great Hall");
+    expect(rows).toHaveLength(0);
   });
 
-  describe("summary", () => {
-    it("says how much is waiting, with a tile per kind of ask", () => {
+  it("opens the task board from its title row (#4610)", () => {
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    const [link] = render().root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Task board",
+    );
+    expect(link!.props.accessibilityRole).toBe("button");
+    act(() => link!.props.onPress());
+    expect(push).toHaveBeenCalledWith("/tasks");
+  });
+
+  it("draws no Task board while the chapter has Tasks off", () => {
+    chapter.data = { enabled_modules: { tasks: false } };
+    const links = render().root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Task board",
+    );
+    expect(links).toHaveLength(0);
+  });
+
+  describe("the week card (#4766)", () => {
+    const ring = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAllByType(ProgressRing)
+        .find((node) => node.props.testID === "activity-week-ring")!;
+
+    it("draws the week as one ring, done of total, with a line per kind", () => {
       const tree = render();
-      expect(screenText(tree)).toContain("2 things need you");
-      // A member who confirms nothing and approves nothing gets neither tile.
-      expect(tile(tree, "tasks").props.accessibilityLabel).toBe("Your tasks");
-      expect(tile(tree, "tasks").props.accessibilityValue).toEqual({
-        text: "1",
-      });
-      expect(tile(tree, "polls").props.accessibilityValue).toEqual({
-        text: "0",
-      });
+      expect(ring(tree).props.progress).toBeCloseTo(1 / 3);
+      expect(drawnText(ring(tree))).toBe("1of 3");
+      const text = screenText(tree);
+      expect(text).toContain("2 left this week");
+      // One sentence to a screen reader, where the ring is decoration.
       expect(
         tree.root.findAll(
-          (node) => node.props.testID === "activity-tile-confirm",
+          (node) =>
+            node.props.accessibilityLabel ===
+            "1 of 3 things done this week. 2 left this week.",
+        ).length,
+      ).toBeGreaterThan(0);
+      expect(weekLine(tree, "events").props.accessibilityLabel).toBe(
+        "Events: 1 of 2 done",
+      );
+      expect(drawnText(weekLine(tree, "tasks"))).toBe("Tasks0 of 1");
+      // Nothing to answer this week: no line, never "0 of 0".
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-week-line-answers",
         ),
       ).toHaveLength(0);
+      expect(text).not.toContain("0 of 0");
+      // The count tiles and the chips are gone.
+      expect(text).not.toMatch(/need you|Your tasks|Polls to vote on/);
     });
 
-    it("gives an officer the To confirm and Hours to approve tiles", () => {
-      links.permissions = ["tasks:manage", "service:approve"];
+    it("puts the one thing to do next on the card, and no heading over an empty list", () => {
       const tree = render();
-      expect(tile(tree, "confirm").props.accessibilityLabel).toBe("To confirm");
-      expect(tile(tree, "approve").props.accessibilityValue).toEqual({
-        text: "1",
+      const card = tree.root.findByType(WeekCard);
+      expect(card.props.next.title).toBe("Book the venue");
+      expect(drawnText(card)).toContain("Next");
+      // It is on the card, not repeated under To do.
+      expect(
+        rowLabels(tree).filter((label) => label === "Book the venue"),
+      ).toHaveLength(1);
+      expect(hasSection(tree, "To do")).toBe(false);
+      expect(screenText(tree)).not.toContain("Nothing to do right now.");
+    });
+
+    it("leads with an event open for check-in, whose ask is the one filled button", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            eventIn(0.1, {
+              check_in_open: true,
+              // Happening now runs until the end (#5777).
+              end_time: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+            }),
+          ],
+        }),
+      };
+      const tree = render();
+      const card = tree.root.findByType(WeekCard);
+      expect(card.props.next.title).toBe("Chapter");
+      expect(drawnText(card)).toContain("Happening now");
+      // Check in is one press (#4427), so the Next row's filled ask is the
+      // button itself, and still the only filled one on the screen.
+      const filled = [
+        ...tree.root.findAllByType(ActivityAsk),
+        ...tree.root.findAllByType(ActivityAskButton),
+      ].filter((ask) => ask.props.filled);
+      expect(filled).toHaveLength(1);
+      const button = card.findByType(ActivityAskButton);
+      expect(button.props.filled).toBe(true);
+      expect(button.props.action.label).toBe("Check in");
+      // The task it displaced is the list's now.
+      expect(hasSection(tree, "To do")).toBe(true);
+    });
+
+    it("puts an event that's on in the Now card and leaves it out of the week card and To do (#5777)", () => {
+      const live = eventIn(-0.5, {
+        end_time: new Date(Date.now() + 1_800_000).toISOString(),
+        check_in_open: true,
+        // Not checked in: Activity alone would list it as Happening now.
+        checked_in: false,
+      });
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [live] }),
+      };
+      eventsNow.value = { events: [live], now: Date.now() };
+      try {
+        const tree = render();
+        const now = tree.root.findByType(NowCard);
+        expect(drawnText(now)).toContain("Chapter");
+        expect(drawnText(now)).toContain("Check-in is open");
+        const card = tree.root.findByType(WeekCard);
+        expect(card.props.next?.title).not.toBe("Chapter");
+        expect(drawnText(card)).not.toContain("Happening now");
+        // Nowhere else on the page: the Now card holds every mention.
+        const count = (text: string) => text.split("Chapter").length - 1;
+        expect(count(screenText(tree))).toBe(count(drawnText(now)));
+      } finally {
+        eventsNow.value = { events: [], now: Date.now() };
+      }
+    });
+
+    it("says nothing is due, with a quiet check and no zero", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, tasks: [] },
+          week: week({
+            events: { done: 0, total: 0 },
+            tasks: { done: 0, total: 0 },
+          }),
+        }),
+      };
+      const tree = render();
+      const text = screenText(tree);
+      expect(text).toContain("Nothing due this week");
+      expect(ring(tree).props.progress).toBe(0);
+      expect(drawnText(ring(tree))).toBe("");
+      expect(text).not.toMatch(/\b0 of 0\b|0 left/);
+      expect(text).toContain("Nothing to do right now.");
+    });
+
+    it("closes the ring in the success hue when everything is done", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, tasks: [] },
+          week: week({
+            events: { done: 2, total: 2 },
+            tasks: { done: 1, total: 1 },
+          }),
+        }),
+      };
+      const tree = render();
+      expect(screenText(tree)).toContain("All done this week");
+      expect(ring(tree).props).toMatchObject({
+        progress: 1,
+        color: tokens.color.semantic.success,
       });
     });
 
-    it("sets its chip from a tile, and clears it from the lit tile", () => {
+    it("draws a part that couldn't load as a dash, says at least, and names it", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, tasks: [] },
+          unavailable: ["tasks"],
+          week: week({ tasks: null, unavailable: ["tasks"] }),
+        }),
+      };
       const tree = render();
-      act(() => {
-        tile(tree, "tasks").props.onPress();
-      });
-      expect(litChip(tree)).toBe("task");
-      expect(tile(tree, "tasks").props.accessibilityState).toEqual({
+      const text = screenText(tree);
+      expect(text).toContain("At least 1 left this week");
+      expect(drawnText(weekLine(tree, "tasks"))).toBe("Tasks–");
+      expect(weekLine(tree, "tasks").props.accessibilityLabel).toBe(
+        "Tasks: couldn't load",
+      );
+      expect(text).toContain("Couldn't load tasks. Pull down to try again.");
+      expect(text).not.toMatch(/All done|Nothing due/);
+    });
+
+    it("has no line for a kind the chapter has off", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ week: week({ events: null, polls: null }) }),
+      };
+      const tree = render();
+      expect(
+        tree.root
+          .findAll((node) =>
+            String(node.props.testID ?? "").startsWith("activity-week-line-"),
+          )
+          .map((node) => node.props.testID),
+      ).toContain("activity-week-line-tasks");
+      expect(screenText(tree)).not.toContain("Events");
+      expect(screenText(tree)).toContain("1 left this week");
+    });
+
+    it("draws only the next thing against an API from before the week", () => {
+      const data = read() as Record<string, unknown>;
+      delete data.week;
+      activity.value = { ...activity.value, data };
+      const tree = render();
+      expect(
+        tree.root
+          .findAllByType(ProgressRing)
+          .filter((node) => node.props.testID === "activity-week-ring"),
+      ).toHaveLength(0);
+      expect(tree.root.findByType(WeekCard).props.next.title).toBe(
+        "Book the venue",
+      );
+      expect(screenText(tree)).not.toMatch(/this week/);
+    });
+  });
+
+  describe("the week strip and the Calendar row (#5310)", () => {
+    const stripDays = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          String(node.props.testID ?? "").startsWith("activity-strip-day:"),
+      );
+    const dots = (tree: ReactTestRenderer, id: string) =>
+      tree.root
+        .findAll(
+          (node) =>
+            (node.type as unknown) === "View" &&
+            String(node.props.testID ?? "").startsWith(
+              `activity-strip-dot-${id}-`,
+            ),
+        )
+        .map((node) =>
+          String(node.props.testID).slice(`activity-strip-dot-${id}-`.length),
+        );
+
+    it("draws today and six days on, today picked, a quiet day not pressable", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ needs_you: { ...read().needs_you, tasks: [] } }),
+      };
+      const tree = render();
+      const days = stripDays(tree);
+      expect(days).toHaveLength(7);
+      expect(days[0]!.props.accessibilityState).toEqual({
         selected: true,
+        disabled: true,
       });
-      expect(rowLabels(tree)).toEqual(["Book the venue"]);
-      act(() => {
-        tile(tree, "tasks").props.onPress();
-      });
-      expect(litChip(tree)).toBeNull();
+      expect(days.every((day) => day.props.disabled === true)).toBe(true);
+      expect(days[0]!.props.accessibilityLabel).toMatch(/nothing due$/);
     });
 
-    it("keeps the Tasks chip lit under To confirm, which narrows to the confirmations", () => {
-      links.permissions = ["tasks:manage"];
+    it("puts a dot per kind on the day it is due", () => {
       activity.value = {
         ...activity.value,
         data: read({
           needs_you: {
             ...read().needs_you,
-            task_confirmations: [
+            tasks: [
               task({
-                id: "task-2",
-                title: "Sweep the porch",
-                status: "COMPLETED",
+                id: "soon",
+                title: "Agenda",
+                due_date: null,
+                due_at: new Date(Date.now() + 48 * 3_600_000).toISOString(),
               }),
             ],
           },
+          coming_up: [eventIn(48)],
         }),
       };
       const tree = render();
-      act(() => {
-        tile(tree, "confirm").props.onPress();
+      const busy = stripDays(tree).find(
+        (day) =>
+          dots(tree, day.props.testID.slice("activity-strip-".length)).length >
+          0,
+      )!;
+      const id = busy.props.testID.slice("activity-strip-".length);
+      expect(dots(tree, id)).toEqual(["events", "tasks"]);
+      expect(busy.props.disabled).toBe(false);
+      expect(busy.props.accessibilityLabel).toMatch(/1 event, 1 task$/);
+    });
+
+    it("shows everything again when a day is pressed under a narrowed list", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [eventIn(48), eventIn(50, { id: "ev-2" })] }),
+      };
+      const tree = render();
+      act(() => weekLine(tree, "tasks").props.onPress());
+      expect(weekLine(tree, "tasks").props.accessibilityState).toEqual({
+        selected: true,
       });
-      expect(litChip(tree)).toBe("task");
-      expect(rowLabels(tree)).toEqual(["Sweep the porch"]);
-      expect(tile(tree, "tasks").props.accessibilityState).toEqual({
+      const day = stripDays(tree).find((each) => !each.props.disabled)!;
+      act(() => day.props.onPress());
+      expect(weekLine(tree, "tasks").props.accessibilityState).toEqual({
         selected: false,
       });
-    });
-
-    it("is all caught up at zero, and never over a section that failed", () => {
-      const empty = {
-        tasks: [],
-        task_confirmations: [],
-        hours_approvals: [],
-        polls: [],
-      };
-      activity.value = {
-        ...activity.value,
-        data: read({ needs_you: empty, needs_you_count: 0 }),
-      };
-      const tree = render();
-      expect(screenText(tree)).toContain("You're all caught up");
-      act(() => tree.unmount());
-      activity.value = {
-        ...activity.value,
-        data: read({
-          needs_you: empty,
-          needs_you_count: 0,
-          unavailable: ["polls"],
-        }),
-      };
-      const failed = render();
-      const text = screenText(failed);
-      expect(text).not.toContain("You're all caught up");
-      expect(text).toContain("Some of what needs you couldn't load");
-      // Unknown, never 0: a dash on the tile, "Couldn't load" to a reader.
-      expect(tile(failed, "polls").props.accessibilityValue).toEqual({
-        text: "Couldn't load",
-      });
-      expect(drawnText(tile(failed, "polls"))).toBe("–Polls to vote on");
-    });
-
-    it("dims a tile with nothing waiting, and not one that has something", () => {
-      const tree = render();
-      expect(tileStyle(tree, "polls").opacity).toBe(0.6);
-      expect(tileStyle(tree, "tasks").opacity).toBeUndefined();
-    });
-
-    it("shows no tile for a module the chapter has off", () => {
-      chapter.data = { enabled_modules: { polls: false } };
-      const tree = render();
       expect(
-        tree.root.findAll(
-          (node) => node.props.testID === "activity-tile-polls",
-        ),
-      ).toHaveLength(0);
-      expect(tile(tree, "tasks").props.accessibilityLabel).toBe("Your tasks");
+        stripDays(tree).find((each) => each.props.testID === day.props.testID)!
+          .props.accessibilityState.selected,
+      ).toBe(true);
     });
 
-    it("names the next event under the headline", () => {
+    it("scrolls To do to the day pressed, and to the top for the card's one thing", () => {
+      // Host views stand in for the scroll view and the views it measures:
+      // every day section sits 300 below the page's body.
+      const scrollTo = vi.fn();
+      const measureLayout = vi.fn(
+        (_to: unknown, done: (x: number, y: number) => void) => done(0, 300),
+      );
       activity.value = {
         ...activity.value,
         data: read({
-          coming_up: [
-            {
-              id: "ev-1",
-              name: "Exec Board Sync",
-              start_time: "2099-03-07T19:00:00.000Z",
-              end_time: null,
-              location: null,
-              attendance: "optional",
-              check_in_open: false,
-              checked_in: false,
-            },
-          ],
+          needs_you: { ...read().needs_you, tasks: [] },
+          coming_up: [eventIn(26), eventIn(50, { id: "ev-2" })],
         }),
       };
-      expect(screenText(render())).toMatch(/Next up: Exec Board Sync · /);
+      const tree = render({
+        createNodeMock: () => ({ scrollTo, measureLayout }),
+      });
+      const days = stripDays(tree).filter((day) => !day.props.disabled);
+      expect(days).toHaveLength(2);
+      // The first event is the week card's Next: its day goes to the top.
+      act(() => days[0]!.props.onPress());
+      expect(scrollTo).toHaveBeenLastCalledWith({ y: 0, animated: true });
+      expect(measureLayout).not.toHaveBeenCalled();
+      // The second is in To do: its day section, a little above its heading.
+      act(() => days[1]!.props.onPress());
+      expect(measureLayout).toHaveBeenCalledTimes(1);
+      expect(scrollTo).toHaveBeenLastCalledWith({
+        y: 300 - tokens.spacing.sm,
+        animated: true,
+      });
+    });
+
+    // #5310 step 2: the month is a pushed screen, not a tab.
+    it("pushes the chapter's month from the Calendar row", () => {
+      vi.mocked(useRouter().push).mockClear();
+      const tree = render();
+      act(() => pressable(tree, "activity-calendar-row").props.onPress());
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/events");
     });
   });
 
-  describe("Show all", () => {
+  describe("To do, by day (#4766)", () => {
+    const busy = () =>
+      read({
+        needs_you: {
+          ...read().needs_you,
+          tasks: [
+            task({
+              id: "late",
+              title: "Receipts",
+              status: "OVERDUE",
+              due_date: "2020-01-01",
+            }),
+            task({
+              id: "late-2",
+              title: "Old form",
+              status: "OVERDUE",
+              due_date: "2020-01-02",
+            }),
+            ...Array.from({ length: 5 }, (_, index) =>
+              task({
+                id: `far-${index}`,
+                title: `Far ${index}`,
+                due_date: "2099-01-01",
+              }),
+            ),
+          ],
+          polls: [
+            {
+              ...myPoll("p-ask", "Formal theme"),
+              sender_id: "officer",
+              has_voted: false,
+            },
+          ],
+        },
+        coming_up: [eventIn(30)],
+        week: week({ polls: { done: 0, total: 1 } }),
+      });
+
+    it("lists the member's own things under their days, Overdue first", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      // The first overdue task is the card's; the rest lead the list.
+      expect(tree.root.findByType(WeekCard).props.next.title).toBe("Receipts");
+      const headings = dayHeadings(tree);
+      expect(headings[0]).toBe("Overdue, 1");
+      expect(headings.at(-2)).toBe("Later, 5");
+      expect(headings.at(-1)).toBe("No deadline, 1");
+      expect(sectionCount(tree, "To do")).toBe(8);
+      // What waits on the member's review is never in this list.
+      const toDo = tree.root
+        .findAll((node) =>
+          String(node.props.testID ?? "").startsWith("activity-day-"),
+        )
+        .flatMap((day) => day.findAllByType(ActivityListRow))
+        .map((node) => node.props.row.title);
+      expect(toDo).not.toContain("Food bank");
+    });
+
+    it("draws Overdue in the warning hue, without repeating it as a chip", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      const overdue = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.testID === "activity-day-overdue",
+      );
+      const label = overdue.find(
+        (node) =>
+          (node.type as unknown) === "Text" && drawnText(node) === "Overdue",
+      );
+      expect(StyleSheet.flatten(label.props.style).color).toBe(
+        tokens.color.semantic.warning,
+      );
+      expect(overdue.findAllByType(StatusChip)).toHaveLength(0);
+    });
+
+    it("says only what is news on a row: no To do chip, and Required on an event", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      expect(row(tree, "Far 0").findAllByType(HairlineChip)).toHaveLength(0);
+      expect(row(tree, "Chapter").findByType(HairlineChip).props.label).toBe(
+        "Required",
+      );
+      // An ask that isn't the card's stays the tinted ask, which opens it.
+      expect(
+        row(tree, "Formal theme").findByType(ActivityAsk).props,
+      ).toMatchObject({ label: "Vote", filled: false });
+    });
+
+    it("draws a day's first three, then the rest on Show more", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      const far = () =>
+        rowLabels(tree).filter((label) => label.startsWith("Far"));
+      // Later is not a day, so nothing is held back there.
+      expect(far()).toHaveLength(5);
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: {
+            ...read().needs_you,
+            tasks: Array.from({ length: 6 }, (_, index) =>
+              task({
+                id: `soon-${index}`,
+                title: `Soon ${index}`,
+                due_date: null,
+                due_at: new Date(Date.now() + 26 * 3_600_000).toISOString(),
+              }),
+            ),
+          },
+        }),
+      };
+      const days = render();
+      const soon = () =>
+        rowLabels(days).filter((label) => label.startsWith("Soon"));
+      // One is the card's next thing; the day draws three of the other five.
+      expect(soon()).toHaveLength(4);
+      const more = days.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityState?.expanded === false &&
+          drawnText(node) === "Show 2 more",
+      );
+      act(() => {
+        more.props.onPress();
+      });
+      expect(soon()).toHaveLength(6);
+      expect(screenText(days)).toContain("Show fewer");
+    });
+
+    it("narrows to one kind from a week line, and back from the same line or the note", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      act(() => {
+        weekLine(tree, "events").props.onPress();
+      });
+      expect(weekLine(tree, "events").props.accessibilityState).toEqual({
+        selected: true,
+      });
+      expect(dayHeadings(tree)).toHaveLength(1);
+      expect(screenText(tree)).toContain("Showing only events.");
+      // The card keeps its next thing; the rest of the page steps back.
+      expect(tree.root.findByType(WeekCard).props.next.title).toBe("Receipts");
+      expect(hasSection(tree, "Waiting on others")).toBe(false);
+      const note = tree.root
+        .findAllByType(InlineNote)
+        .find((node) => node.props.action?.label === "Show everything")!;
+      act(() => {
+        note.props.action.onPress();
+      });
+      expect(weekLine(tree, "events").props.accessibilityState).toEqual({
+        selected: false,
+      });
+      expect(hasSection(tree, "Waiting on others")).toBe(true);
+      // The same line clears it too.
+      act(() => {
+        weekLine(tree, "tasks").props.onPress();
+      });
+      expect(sectionCount(tree, "To do")).toBe(7);
+      act(() => {
+        weekLine(tree, "tasks").props.onPress();
+      });
+      expect(sectionCount(tree, "To do")).toBe(8);
+    });
+
+    it("drops a narrowing when its line leaves the card", () => {
+      activity.value = { ...activity.value, data: busy() };
+      const tree = render();
+      act(() => {
+        weekLine(tree, "answers").props.onPress();
+      });
+      expect(screenText(tree)).toContain("Showing only polls and sign-ups.");
+      activity.value = {
+        ...activity.value,
+        data: { ...busy(), week: week() },
+      };
+      act(() => {
+        tree.update(screen());
+      });
+      expect(screenText(tree)).not.toContain("Showing only");
+      expect(sectionCount(tree, "To do")).toBe(8);
+      // For good: the line coming back (a new poll on Monday) must not
+      // narrow the list again without a press.
+      activity.value = { ...activity.value, data: busy() };
+      act(() => {
+        tree.update(screen());
+      });
+      expect(weekLine(tree, "answers").props.accessibilityState).toEqual({
+        selected: false,
+      });
+      expect(screenText(tree)).not.toContain("Showing only");
+    });
+  });
+
+  describe("To review (#4766)", () => {
+    const queue = (length: number) =>
+      read({
+        needs_you: {
+          ...read().needs_you,
+          hours_approvals: [],
+          task_confirmations: Array.from({ length }, (_, index) =>
+            task({
+              id: `done-${index}`,
+              title: `Chore ${index}`,
+              status: "COMPLETED",
+              stored_status: "COMPLETED",
+            }),
+          ),
+        },
+      });
+
+    it("is one card with one count, and the week never counts it", () => {
+      const tree = render();
+      const card = tree.root.findByType(ReviewCard);
+      expect(reviewToggle(tree).props.accessibilityLabel).toBe("To review, 1");
+      expect(drawnText(card)).toContain("1 hours entry");
+      expect(screenText(tree)).toContain("2 left this week");
+    });
+
+    it("draws no card with nothing to review", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, hours_approvals: [] },
+        }),
+      };
+      const tree = render();
+      expect(tree.root.findAllByType(ReviewCard)).toHaveLength(0);
+      expect(screenText(tree)).not.toContain("To review");
+    });
+
+    it("starts a short queue open, so Confirm is still one press", () => {
+      activity.value = { ...activity.value, data: queue(3) };
+      const tree = render();
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: true,
+      });
+      expect(tree.root.findAllByType(ActivityAskButton)).toHaveLength(3);
+    });
+
+    it("stays open when a re-read takes the queue past three", () => {
+      activity.value = { ...activity.value, data: queue(3) };
+      const tree = render();
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: true,
+      });
+      // Two more finish while the officer works through it: the card they
+      // are in doesn't close under them. Only a press changes it.
+      activity.value = { ...activity.value, data: queue(5) };
+      act(() => {
+        tree.update(screen());
+      });
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: true,
+      });
+      expect(
+        rowLabels(tree).filter((label) => label.startsWith("Chore")),
+      ).toHaveLength(5);
+    });
+
+    it("keeps a long queue behind its count until pressed, five at a time", () => {
+      activity.value = { ...activity.value, data: queue(8) };
+      const tree = render();
+      const chores = () =>
+        rowLabels(tree).filter((label) => label.startsWith("Chore"));
+      expect(reviewToggle(tree).props.accessibilityState).toEqual({
+        expanded: false,
+      });
+      expect(reviewToggle(tree).props.accessibilityHint).toBe("8 tasks");
+      expect(chores()).toHaveLength(0);
+      act(() => {
+        reviewToggle(tree).props.onPress();
+      });
+      expect(chores()).toHaveLength(5);
+      const all = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          drawnText(node) === "Show all 8",
+      );
+      act(() => {
+        all.props.onPress();
+      });
+      expect(chores()).toHaveLength(8);
+      // A press sticks: it stays closed once the member closes it.
+      act(() => {
+        reviewToggle(tree).props.onPress();
+      });
+      expect(chores()).toHaveLength(0);
+    });
+
+    it("pushes a row's task screen, where Confirm and Send back are (#5513)", () => {
+      links.permissions = ["*"];
+      activity.value = { ...activity.value, data: queue(1) };
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => row(tree, "Chore 0").props.onPress());
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "done-0" },
+      });
+      expect(sheet.props?.row ?? null).toBeNull();
+    });
+
+    it("says its part couldn't load to the officer whose queue it is", () => {
+      links.permissions = ["service:approve"];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: { ...read().needs_you, hours_approvals: [] },
+          unavailable: ["hours_approvals"],
+        }),
+      };
+      const tree = render();
+      expect(drawnText(tree.root.findByType(ReviewCard))).toContain(
+        "Couldn't load hours waiting for approval. Pull down to try again.",
+      );
+      // Before the phone knows the member's role, too: the read tries that
+      // queue only for a member who approves hours, so a failed one is never
+      // drawn as an empty one.
+      links.permissions = [];
+      expect(drawnText(render().root.findByType(ReviewCard))).toContain(
+        "Couldn't load hours waiting for approval.",
+      );
+    });
+  });
+
+  describe("the card at the top (#5464)", () => {
+    const ITEM = {
+      id: null,
+      kind: "event_soon",
+      subject_key: "event-9",
+      headline: "Chapter Meeting",
+      meta: "Tonight 7:00 PM · Chapter House",
+      urgent: true,
+      chip: "Tonight",
+      action: "Open event",
+      target_type: "event",
+      target_id: "event-9",
+      channel_id: null,
+      task_id: null,
+      line: null,
+      start_here: null,
+      seen: false,
+    };
+    const CARD = { ...ITEM, id: "nudge-1" };
+    const QUEUE = {
+      ...ITEM,
+      kind: "officer_queue",
+      subject_key: "queue:h1",
+      headline: "6 waiting on you",
+      meta: "Oldest: service hours, 5 days",
+      chip: "6",
+      action: "Review oldest",
+      target_type: "review",
+      target_id: "h1",
+    };
+    const cards = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.testID === "activity-nudge-card",
+      );
+
+    it("is drawn without AI, plain", () => {
+      nudge.data = { card: CARD, tray: [] };
+      const tree = render();
+      expect(cards(tree)).toHaveLength(1);
+      expect(screenText(tree)).toContain("Chapter Meeting");
+      expect(screenText(tree)).toContain("Tonight 7:00 PM · Chapter House");
+      expect(
+        tree.root.findAll((n) => n.props.testID === "activity-nudge-line"),
+      ).toHaveLength(0);
+      expect(nudge.markSeen).toHaveBeenCalledWith("nudge-1");
+    });
+
+    it("draws AI's one sentence when it wrote one", () => {
+      nudge.data = {
+        card: { ...CARD, line: "Being there counts for 5 points." },
+        tray: [],
+      };
+      const tree = render();
+      expect(screenText(tree)).toContain("Being there counts for 5 points.");
+    });
+
+    it("draws nothing when the server sends no card", () => {
+      nudge.data = { card: null, tray: [] };
+      expect(cards(render())).toHaveLength(0);
+    });
+
+    it("opens the event its button names", () => {
+      nudge.data = { card: CARD, tray: [] };
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-open").props.onPress();
+      });
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/event-details",
+        params: { id: "event-9" },
+      });
+    });
+
+    it("brings a tray item into the card in place, with no sheet", () => {
+      nudge.data = { card: CARD, tray: [QUEUE] };
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-chip-officer_queue").props.onPress();
+      });
+      expect(screenText(tree)).toContain("6 waiting on you");
+      expect(screenText(tree)).toContain("Review oldest");
+    });
+
+    it("goes to the task board for a task the page does not hold", () => {
+      nudge.data = {
+        card: {
+          ...CARD,
+          kind: "task_due_soon",
+          target_type: "task",
+          target_id: "no-such-task",
+          task_id: "no-such-task",
+          action: "See the task",
+        },
+        tray: [],
+      };
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-open").props.onPress();
+      });
+      expect(push).toHaveBeenCalledWith("/tasks");
+    });
+
+    it("closes a word of thanks with its one button", () => {
+      nudge.data = {
+        card: {
+          ...CARD,
+          kind: "task_praise",
+          target_type: "task",
+          action: "Thanks",
+        },
+        tray: [],
+      };
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-open").props.onPress();
+      });
+      expect(nudge.dismiss).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "task_praise" }),
+      );
+    });
+
+    it.each([
+      [
+        "a sign-up, at its message",
+        { target_type: "message", target_id: "msg-1", channel_id: "ch-1" },
+        {
+          pathname: "/chat-thread",
+          params: { channelId: "ch-1", focusMessageId: "msg-1" },
+        },
+      ],
+      [
+        "a mention, in its channel",
+        { target_type: "channel", target_id: "ch-1", channel_id: "ch-1" },
+        { pathname: "/chat-thread", params: { channelId: "ch-1" } },
+      ],
+      [
+        "new minutes",
+        { target_type: "meeting", target_id: "m-1" },
+        { pathname: "/minutes-details", params: { id: "m-1" } },
+      ],
+      ["the study goal", { target_type: "study", target_id: null }, "/study"],
+    ])("opens %s", (_label, target, expected) => {
+      nudge.data = { card: { ...CARD, ...target }, tray: [] };
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-open").props.onPress();
+      });
+      expect(push).toHaveBeenCalledWith(expected);
+    });
+
+    it("waves off a card this build can't open, rather than doing nothing", () => {
+      nudge.data = {
+        card: { ...CARD, target_type: "from_the_future" },
+        tray: [],
+      };
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-open").props.onPress();
+      });
+      expect(push).not.toHaveBeenCalled();
+      expect(nudge.dismiss).toHaveBeenCalledWith(
+        expect.objectContaining({ subject_key: "event-9" }),
+      );
+    });
+
+    it("turns the cards off from More", () => {
+      nudge.data = { card: CARD, tray: [] };
+      const tree = render();
+      act(() => {
+        pressable(tree, "activity-nudge-more").props.onPress();
+      });
+      expect(currentItemMenu()!.title).toBe("This card");
+      act(() => pickItemMenuAction("Turn these off"));
+      expect(nudge.setEnabled).toHaveBeenCalledWith(false);
+    });
+
+    it("offers Ask about this only where the member has Ask", () => {
+      nudge.data = { card: CARD, tray: [] };
+      const ask = (tree: ReactTestRenderer) =>
+        tree.root.findAll((n) => n.props.testID === "activity-nudge-ask");
+      expect(ask(render())).toHaveLength(0);
+      nudge.ask = true;
+      expect(ask(render()).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Waiting on others, and Links", () => {
+    it("lists what the member made under its own name, by kind, with its count", () => {
+      const tree = render();
+      // Open polls only: the closed one is in the Archive, outside the count.
+      expect(sectionCount(tree, "Waiting on others")).toBe(1);
+      expect(screenText(tree)).toContain("Polls you posted");
+      expect(hasSection(tree, "Made by you")).toBe(false);
+    });
+
+    it("leaves out a group with nothing in it, rather than an empty line", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ made_by_you: { polls: [], tasks: [], events: [] } }),
+      };
+      const tree = render();
+      expect(hasSection(tree, "Waiting on others")).toBe(false);
+      expect(hasSection(tree, "Links")).toBe(false);
+      expect(hasSection(tree, "Coming up")).toBe(false);
+      expect(screenText(tree)).not.toMatch(/show up here/);
+    });
+
     it("draws the first few of a long part, then all of them on Show all", () => {
       activity.value = {
         ...activity.value,
@@ -520,7 +1490,6 @@ describe("Activity screen (#3897)", () => {
           node.props.accessibilityState?.expanded === false &&
           drawnText(node) === "Show all 5",
       );
-      expect(screenText(tree)).toContain("Show all 5");
       act(() => {
         showAll.props.onPress();
       });
@@ -528,37 +1497,334 @@ describe("Activity screen (#3897)", () => {
       expect(screenText(tree)).toContain("Show fewer");
     });
 
-    it("holds nothing back under a chip", () => {
+    it("says a part of it couldn't load instead of leaving it out", () => {
       activity.value = {
         ...activity.value,
         data: read({
-          made_by_you: {
-            ...read().made_by_you,
-            tasks: Array.from({ length: 5 }, (_, index) =>
-              task({ id: `made-${index}`, title: `Assigned ${index}` }),
-            ),
-          },
+          made_by_you: { polls: [], tasks: [], events: [] },
+          unavailable: ["made_events"],
         }),
       };
       const tree = render();
-      act(() => {
-        tree.root.findByType(FilterChips).props.onSelect("task");
-      });
-      expect(
-        rowLabels(tree).filter((label) => label.startsWith("Assigned")),
-      ).toHaveLength(5);
-      expect(screenText(tree)).not.toMatch(/Show all/);
+      expect(hasSection(tree, "Waiting on others")).toBe(true);
+      expect(screenText(tree)).toContain(
+        "Couldn't load events you made. Pull down to try again.",
+      );
     });
+  });
+
+  it("names what a row asks of the member as the action, for the eye and for a screen reader", () => {
+    const tree = render();
+    const approval = row(tree, "Food bank");
+    // A one-press ask is the button (#4437), drawn in the ask's place.
+    expect(approval.findByType(ActivityAskButton).props.action.label).toBe(
+      "Approve",
+    );
+    expect(approval.findAllByType(StatusChip)).toHaveLength(0);
+    const press = approval.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityRole === "button",
+    );
+    expect(press.props.accessibilityValue).toEqual({ text: "Approve" });
+    expect(press.props.accessibilityHint).toBe("Sam Hill · 1h 30m.");
+  });
+
+  it("leads a row with the face of who it is from, its kind on the corner, else its glyph", () => {
+    activity.value = {
+      ...activity.value,
+      data: read({
+        coming_up: [eventIn(30, { attendance: "optional" })],
+        needs_you: {
+          ...read().needs_you,
+          tasks: [
+            task({
+              due_date: null,
+              due_at: new Date(Date.now() + 3_600_000).toISOString(),
+            }),
+          ],
+        },
+      }),
+    };
+    const tree = render();
+    const lead = (label: string, id: string) =>
+      row(tree, label).findAll((node) => node.props.testID === id);
+    // Sam has left the roster, so their hours lead with the glyph alone.
+    expect(lead("Food bank", "activity-glyph-hours").length).toBeGreaterThan(0);
+    // Olive assigned the task: her face, with the task glyph on its corner.
+    const face = lead("Book the venue", "activity-face-task");
+    expect(face.length).toBeGreaterThan(0);
+    expect(drawnText(face[0]!)).toContain("OO");
+    // The drawn View, not the shared `FaceWithBadge` that carries its id.
+    const drawn = face.find((node) => (node.type as unknown) === "View")!;
+    expect(drawn.props.accessibilityElementsHidden).toBe(true);
+    // Her photo and tint reach the avatar, and the kind's glyph its corner.
+    const avatar = face[0]!.findByType(MemberAvatar);
+    expect(avatar.props.uri).toBe("https://photos.example/olive.png");
+    expect(avatar.props.tint).toEqual({ fill: "#102030", text: "#405060" });
+    expect(
+      face[0]!.findAll((node) => node.props.testID === "activity-face-glyph")
+        .length,
+    ).toBeGreaterThan(0);
+    // A poll the member made shows no face of their own.
+    expect(lead("Dues vote", "activity-glyph-poll").length).toBeGreaterThan(0);
+    // Under its day's heading an event leads with its glyph: the heading
+    // says the date, and the detail the time and place.
+    expect(lead("Chapter", "activity-glyph-event").length).toBeGreaterThan(0);
+    expect(lead("Chapter", "activity-date-block")).toHaveLength(0);
+    expect(row(tree, "Chapter").props.row.detail).toContain("Great Hall");
+  });
+
+  it("leads the card's event with its date, month over day", () => {
+    activity.value = {
+      ...activity.value,
+      data: read({
+        needs_you: { ...read().needs_you, tasks: [] },
+        coming_up: [eventIn(30)],
+      }),
+    };
+    const tree = render();
+    const block = row(tree, "Chapter").findAll(
+      (node) =>
+        (node.type as unknown) === "View" &&
+        node.props.testID === "activity-date-block",
+    );
+    expect(block).toHaveLength(1);
+    // The block is decoration; the detail still says the day in words.
+    expect(block[0]!.props.accessibilityElementsHidden).toBe(true);
+  });
+
+  it("says a closing time less than a day away relatively, in the warning hue (#4402)", () => {
+    const base = read();
+    activity.value = {
+      ...activity.value,
+      data: read({
+        needs_you: {
+          ...base.needs_you,
+          polls: [
+            {
+              ...myPoll("p-soon", "Formal venue?"),
+              sender_id: "officer",
+              has_voted: false,
+              closes_at: new Date(Date.now() + 150 * 60_000).toISOString(),
+            },
+          ],
+        },
+      }),
+    };
+    const tree = render();
+    const [phrase] = row(tree, "Formal venue?").findAll(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        node.props.testID === "activity-soon",
+    );
+    expect(drawnText(phrase!)).toBe("closes in 2 hours");
+    // Its detail names only the channel, so the label says who posted it.
+    expect(
+      row(tree, "Formal venue?").findAll(
+        (node) =>
+          node.props.accessibilityLabel === "Formal venue?, from Olive Officer",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(StyleSheet.flatten(phrase!.props.style).color).toBe(
+      getSignetTokens("dark").color.semantic.warning,
+    );
+  });
+
+  it("opens a sign-up or form row on its card in chat, reading it, with no sheet (#3926)", () => {
+    activity.value = {
+      ...activity.value,
+      data: read({
+        needs_you: {
+          tasks: [],
+          task_confirmations: [],
+          hours_approvals: [],
+          polls: [],
+          cards: [
+            {
+              kind: "form",
+              message_id: "m-form",
+              channel_id: "chan-rush",
+              channel_name: "rush",
+              channel_type: "PUBLIC",
+              sender_id: "u-2",
+              title: "Room picks",
+              item_count: 3,
+              closes_at: null,
+              created_at: "2026-11-01T00:00:00.000Z",
+              unread: true,
+            },
+          ],
+        },
+      }),
+    };
+    links.markRead.mockClear();
+    const tree = render();
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+
+    act(() => row(tree, "Room picks").props.onPress());
+
+    expect(push).toHaveBeenLastCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "chan-rush", focusMessageId: "m-form" },
+    });
+    expect(links.markRead).toHaveBeenCalledWith([
+      { kind: "form", item_id: "m-form" },
+    ]);
+    expect(sheet.props?.row ?? null).toBeNull();
   });
 
   it("opens a row's record in the sheet, with the viewer's id", () => {
     const tree = render();
     expect(sheet.props?.row).toBeNull();
     act(() => {
+      row(tree, "Food bank").props.onPress();
+    });
+    expect(sheet.props?.row?.key).toBe("needs:hours:entry-1");
+    expect(sheet.props?.viewerId).toBe("me");
+  });
+
+  it("pushes a task's own screen, never the sheet (#5492)", () => {
+    const tree = render();
+    const push = vi.mocked(useRouter().push);
+    push.mockClear();
+    act(() => {
       row(tree, "Book the venue").props.onPress();
     });
-    expect(sheet.props?.row?.key).toBe("needs:task:task-1");
-    expect(sheet.props?.viewerId).toBe("me");
+    expect(push).toHaveBeenCalledWith({
+      pathname: "/task-details",
+      params: { id: "task-1" },
+    });
+    expect(sheet.props?.row ?? null).toBeNull();
+  });
+
+  it("re-reads before opening a review push's task, so a warm cache can't miss it", async () => {
+    // "Shawn Klein submitted: …" lands here as `/activity?review=<taskId>`.
+    // The read in hand predates the submission: only the re-read has it.
+    const router = vi.mocked(useRouter)() as unknown as {
+      setParams?: (params: unknown) => void;
+    };
+    const setParams = vi.fn();
+    router.setParams = setParams;
+    const stale = read({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    // The completion waits on the officer's sign-off: its screen holds
+    // Confirm and Send back (#5513).
+    const fresh = read({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [
+          task({
+            id: "task-9",
+            title: "Sweep the porch",
+            assignee_id: "sam",
+            status: "COMPLETED",
+            stored_status: "COMPLETED",
+            unread: true,
+          }),
+        ],
+        hours_approvals: [],
+        polls: [],
+      },
+    });
+    const refetch = vi.fn(() => Promise.resolve({ data: fresh }));
+    activity.value = { ...activity.value, data: stale, refetch };
+    links.markRead.mockClear();
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      review: "task-9",
+    });
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
+    try {
+      render();
+      await act(async () => {});
+      expect(refetch).toHaveBeenCalledTimes(1);
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "task-9" },
+      });
+      expect(sheet.props?.row ?? null).toBeNull();
+      // Opened from the push reads it, as a tap on the row does.
+      expect(links.markRead).toHaveBeenCalledWith([
+        { kind: "task", item_id: "task-9" },
+      ]);
+      expect(setParams).toHaveBeenCalledWith({ review: undefined });
+    } finally {
+      vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+      delete router.setParams;
+    }
+  });
+
+  it("pushes the screen by id for a review the re-read doesn't hold, and drops the param", async () => {
+    const router = vi.mocked(useRouter)() as unknown as {
+      setParams?: (params: unknown) => void;
+    };
+    const setParams = vi.fn();
+    router.setParams = setParams;
+    activity.value = {
+      ...activity.value,
+      refetch: vi.fn(() => Promise.resolve({ data: read() })),
+    };
+    vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({
+      review: "gone",
+    });
+    const push = vi.mocked(vi.mocked(expoRouter.useRouter)().push);
+    push.mockClear();
+    try {
+      render();
+      await act(async () => {});
+      expect(sheet.props?.row).toBeNull();
+      // A copy of a task for everyone, one past the read's cap, or one
+      // deleted since: its screen reads it, and says so if it's gone.
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "gone" },
+      });
+      expect(setParams).toHaveBeenCalledWith({ review: undefined });
+    } finally {
+      vi.mocked(expoRouter.useLocalSearchParams).mockReturnValue({});
+      delete router.setParams;
+    }
+  });
+
+  it("dots an unread row, says so, and records the open (#4405)", () => {
+    const data = read();
+    activity.value = {
+      ...activity.value,
+      data: {
+        ...data,
+        needs_you: {
+          ...data.needs_you,
+          tasks: data.needs_you.tasks.map((task, index) => ({
+            ...task,
+            unread: index === 0,
+          })),
+        },
+      },
+    };
+    links.markRead.mockClear();
+    const tree = render();
+    const unread = row(tree, "Book the venue");
+    expect(
+      unread.findAllByProps({ testID: "activity-unread-dot" }),
+    ).toHaveLength(1);
+    const pressable = unread.find(
+      (node) => typeof node.props.accessibilityLabel === "string",
+    );
+    expect(pressable.props.accessibilityLabel).toBe("Unread: Book the venue");
+    act(() => {
+      unread.props.onPress();
+    });
+    expect(links.markRead).toHaveBeenCalledWith([
+      { kind: "task", item_id: "task-1" },
+    ]);
   });
 
   it("keeps the sheet on the row it opened after that row leaves the list", () => {
@@ -582,23 +1848,227 @@ describe("Activity screen (#3897)", () => {
   it("hands the sheet the row as the latest read has it", () => {
     const tree = render();
     act(() => {
-      row(tree, "Book the venue").props.onPress();
+      row(tree, "Food bank").props.onPress();
     });
+    const data = read();
     activity.value = {
       ...activity.value,
-      data: read({
+      data: {
+        ...data,
         needs_you: {
-          ...read().needs_you,
-          tasks: [task({ title: "Book the venue (moved)" })],
+          ...data.needs_you,
+          hours_approvals: data.needs_you.hours_approvals.map((entry) => ({
+            ...entry,
+            description: "Food bank (moved)",
+          })),
         },
-      }),
+      },
     };
     act(() => {
       tree.update(screen());
     });
     expect(
       (sheet.props?.row as unknown as { title: string } | null)?.title,
-    ).toBe("Book the venue (moved)");
+    ).toBe("Food bank (moved)");
+  });
+
+  describe("Last week (#4983)", () => {
+    const recapRead = {
+      start: new Date(2026, 10, 8).toISOString(),
+      end: new Date(2026, 10, 15).toISOString(),
+      events_attended: 2,
+      tasks_done: 3,
+      points: null,
+      service_minutes: 0,
+      study_minutes: 90,
+      unavailable: [],
+    };
+    beforeEach(() => {
+      // A Monday morning: the card's season.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 10, 16, 9));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      recap.value = { data: undefined };
+      activeChapter.id = "chapter-1";
+      recapDismissal.resetForTests();
+    });
+
+    it("sums up what the member did, and stays gone once dismissed", () => {
+      recap.value = { data: recapRead };
+      const tree = render();
+      const card = tree.root.findByProps({ testID: "activity-recap" });
+      expect(drawnText(card)).toContain("Last week");
+      expect(drawnText(card)).toContain("November 8 – November 14");
+      const figure = (id: string) =>
+        card.findByProps({ testID: `activity-recap-${id}`, accessible: true })
+          .props.accessibilityLabel;
+      expect(figure("events")).toBe("2 events attended");
+      expect(figure("tasks")).toBe("3 tasks done");
+      expect(figure("study")).toBe("1h 30m studied");
+      // Points are off and service is zero: neither is drawn.
+      expect(
+        card.findAll(
+          (node) =>
+            node.props.testID === "activity-recap-points" ||
+            node.props.testID === "activity-recap-service",
+        ),
+      ).toHaveLength(0);
+
+      act(() => {
+        pressable(tree, "activity-recap-dismiss").props.onPress();
+      });
+      const drawn = (tree: ReactTestRenderer) =>
+        tree.root.findAll((node) => node.props.testID === "activity-recap")
+          .length;
+      expect(drawn(tree)).toBe(0);
+
+      // Another chapter's recap that week still shows.
+      activeChapter.id = "chapter-2";
+      expect(drawn(render())).toBeGreaterThan(0);
+
+      // And so does this chapter's next week.
+      activeChapter.id = "chapter-1";
+      vi.setSystemTime(new Date(2026, 10, 23, 9));
+      recap.value = {
+        data: {
+          ...recapRead,
+          start: new Date(2026, 10, 15).toISOString(),
+          end: new Date(2026, 10, 22).toISOString(),
+        },
+      };
+      expect(drawn(render())).toBeGreaterThan(0);
+    });
+
+    it("draws nothing after Tuesday, whatever the read still holds", () => {
+      vi.setSystemTime(new Date(2026, 10, 18, 9));
+      recap.value = { data: recapRead };
+      expect(screenText(render())).not.toContain("Last week");
+    });
+
+    it("draws nothing for a week with nothing to show", () => {
+      recap.value = {
+        data: {
+          ...recapRead,
+          events_attended: 0,
+          tasks_done: 0,
+          study_minutes: null,
+        },
+      };
+      expect(screenText(render())).not.toContain("Last week");
+    });
+  });
+
+  describe("This semester (the gauges)", () => {
+    const standingRead = {
+      points: { total: 42, rank: 5, ranked: 58, goal: null },
+      required_events: { required: 8, attended: 6, excused: 0 },
+      service: {
+        approved_minutes: 270,
+        pending_minutes: 0,
+        goal_minutes: 600,
+      },
+      study: {
+        minutes: 0,
+        week_start: "2026-11-08T05:00:00.000Z",
+        goal_minutes: null,
+      },
+      unavailable: [],
+    };
+    const gauge = (tree: ReactTestRenderer, id: string) =>
+      pressable(tree, `activity-standing-${id}`);
+    const gaugeRings = (tree: ReactTestRenderer) =>
+      tree.root
+        .findByType(SemesterStrip)
+        .findAllByType(ProgressRing)
+        .map((node) => node.props.testID);
+
+    it("draws a gauge per number, with a ring only where there is a target", () => {
+      standing.value = { ...standing.value, data: standingRead };
+      const tree = render();
+      const strip = tree.root.findByType(SemesterStrip);
+      expect(drawnText(strip)).toContain("This semester");
+      expect(drawnText(gauge(tree, "points"))).toBe("42Points · #5 of 58");
+      expect(drawnText(gauge(tree, "required_events"))).toBe("6 of 8Events");
+      expect(drawnText(gauge(tree, "service"))).toBe("4h 30m of 10hService");
+      expect(gauge(tree, "required_events").props.accessibilityLabel).toBe(
+        "Attended 6 of 8 required events this semester",
+      );
+      // Points have no goal here: the number stands alone.
+      expect(gaugeRings(tree)).toEqual([
+        "activity-gauge-ring-required_events",
+        "activity-gauge-ring-service",
+      ]);
+    });
+
+    it("leaves out a zero with nothing to aim at, and the whole strip with none left", () => {
+      standing.value = { ...standing.value, data: standingRead };
+      const tree = render();
+      // No study this week and no study goal: no gauge, not a zero.
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-standing-study",
+        ),
+      ).toHaveLength(0);
+      standing.value = {
+        ...standing.value,
+        data: {
+          points: { total: 0, rank: null, ranked: 0, goal: null },
+          required_events: { required: 0, attended: 0, excused: 0 },
+          service: {
+            approved_minutes: 0,
+            pending_minutes: 0,
+            goal_minutes: null,
+          },
+          study: standingRead.study,
+          unavailable: [],
+        },
+      };
+      expect(screenText(render())).not.toContain("This semester");
+    });
+
+    it("pushes the screen that owns each number", () => {
+      vi.mocked(useRouter().navigate).mockClear();
+      vi.mocked(useRouter().push).mockClear();
+      standing.value = { ...standing.value, data: standingRead };
+      const tree = render();
+      // The Calendar left the tab bar (#5310), so required events push it.
+      act(() => gauge(tree, "required_events").props.onPress());
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/events");
+      act(() => gauge(tree, "service").props.onPress());
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
+        "/service-hours",
+      );
+      // The board left the tab bar (#4610), so Points pushes it.
+      vi.mocked(useRouter().navigate).mockClear();
+      act(() => gauge(tree, "points").props.onPress());
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/tasks");
+      expect(vi.mocked(useRouter)().navigate).not.toHaveBeenCalled();
+    });
+
+    it("holds its place while it loads, and draws nothing when its read fails", () => {
+      standing.value = { ...standing.value, isPending: true };
+      expect(render().root.findAllByType(SemesterStripSkeleton)).toHaveLength(
+        1,
+      );
+      standing.value = { ...standing.value, isPending: false, data: undefined };
+      const tree = render();
+      expect(screenText(tree)).not.toContain("This semester");
+      // The rest of the page is unaffected.
+      expect(rowLabels(tree)).toContain("Book the venue");
+    });
+
+    it("reads again with the list when the member comes back, not on the first visit", () => {
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      render();
+      expect(invalidate).not.toHaveBeenCalled();
+      act(() => refocus());
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: activityStandingKeys.chapter("chapter-1"),
+        exact: true,
+      });
+    });
   });
 
   it("reads again when the member comes back to the screen", () => {
@@ -609,6 +2079,80 @@ describe("Activity screen (#3897)", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: activityKeys.chapter("chapter-1"),
       exact: true,
+    });
+  });
+
+  describe("the member's cards (#5520)", () => {
+    const editLink = (tree: ReactTestRenderer) =>
+      tree.root.find(
+        (node) =>
+          node.props.accessibilityHint ===
+            "Choose which cards Activity shows, and their order." &&
+          typeof node.props.onPress === "function",
+      );
+
+    it("leaves out a card the member hid", () => {
+      cards.layout = {
+        card_order: ["todo", "calendar"],
+        hidden_cards: ["calendar"],
+        saved: true,
+      };
+      const tree = render();
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-calendar-row",
+        ),
+      ).toHaveLength(0);
+    });
+
+    it("edits in place of the page; Done saves only a change", () => {
+      const tree = render();
+      act(() => {
+        editLink(tree).props.onPress();
+      });
+      const editor = tree.root.findByType(ActivityEditor);
+      act(() => {
+        editor.props.onDone(editor.props.initial);
+      });
+      expect(cards.save).not.toHaveBeenCalled();
+
+      act(() => {
+        editLink(tree).props.onPress();
+      });
+      const again = tree.root.findByType(ActivityEditor);
+      const hidden = {
+        shown: again.props.initial.shown.filter((k: string) => k !== "links"),
+        hidden: ["links"],
+      };
+      act(() => {
+        again.props.onDone(hidden);
+      });
+      expect(cards.save).toHaveBeenCalledWith(hidden, expect.anything());
+      expect(tree.root.findAllByType(ActivityEditor)).toHaveLength(0);
+    });
+
+    it("waits for the arrangement before offering Edit Activity or asking for the Frapp card", () => {
+      cards.pending = true;
+      const tree = render();
+      expect(
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityHint ===
+              "Choose which cards Activity shows, and their order." &&
+            typeof node.props.onPress === "function",
+        ),
+      ).toHaveLength(0);
+      expect(nudge.enabledCalls.at(-1)).toBe(false);
+    });
+
+    it("starts an officer with To review before their own To do", () => {
+      links.permissions = ["tasks:manage"];
+      const tree = render();
+      act(() => {
+        editLink(tree).props.onPress();
+      });
+      const { shown } = tree.root.findByType(ActivityEditor).props.initial;
+      expect(shown.indexOf("review")).toBeLessThan(shown.indexOf("todo"));
     });
   });
 
@@ -630,51 +2174,599 @@ describe("Activity screen (#3897)", () => {
     act(() => {
       sheet.props!.onActed();
     });
-    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(listRereads(invalidate)).toBe(1);
     act(() => {
       sheet.props!.onClosed();
     });
-    expect(invalidate).toHaveBeenCalledTimes(2);
-    expect(invalidate).toHaveBeenLastCalledWith({
+    expect(listRereads(invalidate)).toBe(2);
+    expect(invalidate).toHaveBeenCalledWith({
       queryKey: activityKeys.chapter("chapter-1"),
       exact: true,
     });
     expect(sheet.props?.row).toBeNull();
   });
 
-  it("keeps a closed poll behind Archived polls, which opens its card (#4258)", () => {
-    const tree = render();
-    expect(rowLabels(tree)).not.toContain("Old vote");
-    const toggle = tree.root
-      .findAll(
+  describe("Confirm and Approve on the row (#4437)", () => {
+    const confirmRead = () =>
+      read({
+        needs_you: {
+          ...read().needs_you,
+          task_confirmations: [
+            task({
+              id: "task-2",
+              title: "Sweep the porch",
+              status: "COMPLETED",
+              unread: true,
+            }),
+          ],
+        },
+      });
+    const button = (tree: ReactTestRenderer, label: string) =>
+      row(tree, label).find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.testID === "activity-row-action",
+      );
+    const rowPress = (tree: ReactTestRenderer, label: string) =>
+      row(tree, label).find(
         (node) =>
           (node.type as unknown) === "Pressable" &&
           node.props.accessibilityRole === "button",
-      )
-      .find((node) => drawnText(node) === "Archived polls (1)")!;
-    expect(toggle.props.accessibilityState).toEqual({ expanded: false });
+      );
 
-    act(() => {
-      toggle.props.onPress();
+    it("confirms a completed task in one press, reads it, and re-reads", async () => {
+      activity.value = { ...activity.value, data: confirmRead() };
+      links.markRead.mockClear();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const tree = render();
+      expect(row(tree, "Sweep the porch").props.action.label).toBe("Confirm");
+      await act(async () => {
+        button(tree, "Sweep the porch").props.onPress();
+      });
+      expect(writes.confirm).toHaveBeenCalledWith("task-2");
+      expect(links.markRead).toHaveBeenCalledWith([
+        { kind: "task", item_id: "task-2" },
+      ]);
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: activityKeys.chapter("chapter-1"),
+        exact: true,
+      });
+      // Pressing it never opened the sheet.
+      expect(sheet.props?.row).toBeNull();
     });
-    expect(rowLabels(tree)).toContain("Old vote");
+
+    it("approves pending hours with the sheet's write", async () => {
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(writes.review).toHaveBeenCalledWith({
+        id: "entry-1",
+        body: { status: "APPROVED" },
+      });
+    });
+
+    it("stays disabled once the write lands, so a second press can't repeat it", async () => {
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(button(tree, "Food bank").props.disabled).toBe(true);
+      // Nor is it offered to a screen reader any more; Snooze still is.
+      expect(rowPress(tree, "Food bank").props.accessibilityActions).toEqual([
+        { name: "menu:snooze", label: "Snooze" },
+      ]);
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(writes.review).toHaveBeenCalledTimes(1);
+    });
+
+    it("sends once for two taps in the same frame", async () => {
+      const tree = render();
+      await act(async () => {
+        const press = button(tree, "Food bank").props.onPress;
+        press();
+        press();
+      });
+      expect(writes.review).toHaveBeenCalledTimes(1);
+    });
+
+    it("says any other refusal in the sheet's words, naming the item, and can be pressed again", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      writes.review.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      // No answer came back, so asking again may work: Try again beside
+      // Not now, and it sends the same approval.
+      expect(alert).toHaveBeenCalledWith("Food bank", OFFLINE_COPY, [
+        expect.objectContaining({ text: "Not now", style: "cancel" }),
+        expect.objectContaining({ text: "Try again" }),
+      ]);
+      expect(button(tree, "Food bank").props.disabled).toBe(false);
+      const buttons = alert.mock.calls[0]![2] as { onPress?: () => void }[];
+      const sent = writes.review.mock.calls.length;
+      await act(async () => {
+        buttons[1]!.onPress!();
+      });
+      expect(writes.review).toHaveBeenCalledTimes(sent + 1);
+      alert.mockRestore();
+    });
+
+    it("offers no Try again for a refusal asking again can't change", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      writes.review.mockRejectedValueOnce({
+        statusCode: 409,
+        error: "Conflict",
+        message: "x",
+      });
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alert.mock.calls[0]).toHaveLength(2);
+      alert.mockRestore();
+    });
+
+    it("withdraws the buttons after a refusal from the plan, until the member comes back", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      writes.confirm.mockRejectedValueOnce({
+        statusCode: 403,
+        error: "Forbidden",
+        message:
+          "Chapter subscription is not active; complete checkout to use this feature.",
+      });
+      activity.value = { ...activity.value, data: confirmRead() };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Sweep the porch").props.onPress();
+      });
+      // The confirm says it in the task card's words, never the server's
+      // purchase path (lib/subscription-refusal.ts).
+      expect(alert).toHaveBeenCalledWith(
+        "Sweep the porch",
+        SUBSCRIPTION_REFUSAL_COPY.taskStatus,
+      );
+      // Pressing again would only fetch the same refusal: every row is its
+      // plain ask again, and opens its sheet.
+      expect(tree.root.findAllByType(ActivityAskButton)).toHaveLength(0);
+      expect(row(tree, "Food bank").findByType(ActivityAsk).props.label).toBe(
+        "Approve",
+      );
+      act(() => {
+        refocus();
+      });
+      expect(tree.root.findAllByType(ActivityAskButton)).toHaveLength(2);
+      alert.mockRestore();
+    });
+
+    it("says Approved once the write lands", async () => {
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(row(tree, "Food bank").props.action.label).toBe("Approved");
+    });
+
+    it("keeps a landed write across the row being drawn again, and tells the sheet", async () => {
+      const tree = render();
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      // Closing the card and opening it again draws every row afresh.
+      act(() => {
+        reviewToggle(tree).props.onPress();
+      });
+      expect(rowLabels(tree)).not.toContain("Food bank");
+      act(() => {
+        reviewToggle(tree).props.onPress();
+      });
+      expect(button(tree, "Food bank").props.disabled).toBe(true);
+      await act(async () => {
+        button(tree, "Food bank").props.onPress();
+      });
+      expect(writes.review).toHaveBeenCalledTimes(1);
+      // The sheet opened from the same row records the approval rather than
+      // offering it again.
+      act(() => {
+        rowPress(tree, "Food bank").props.onPress();
+      });
+      expect(sheet.props?.rowActionState).toBe("done");
+    });
+
+    it("leaves Vote as the row's ask, which opens the sheet", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          needs_you: {
+            ...read().needs_you,
+            polls: [
+              {
+                ...myPoll("p-ask", "Formal theme"),
+                sender_id: "officer",
+                has_voted: false,
+              },
+            ],
+          },
+        }),
+      };
+      const tree = render();
+      expect(
+        row(tree, "Formal theme").findAllByType(ActivityAskButton),
+      ).toHaveLength(0);
+      expect(
+        row(tree, "Formal theme").findByType(ActivityAsk).props.label,
+      ).toBe("Vote");
+    });
+
+    const openEvent = (id: string, name: string, zoned: boolean) => ({
+      id,
+      name,
+      start_time: new Date(Date.now() + 3_600_000).toISOString(),
+      end_time: new Date(Date.now() + 7_200_000).toISOString(),
+      location: "Great Hall",
+      attendance: "required",
+      point_value: 10,
+      check_in_opens_minutes: 15,
+      check_in_open: true,
+      check_in_needs_location: zoned,
+      checked_in: false,
+    });
+
+    it("checks in from the row, asking for the phone's position only for a zoned event (#4427)", async () => {
+      writes.checkIn.mockResolvedValue({});
+      writes.fix.mockResolvedValue({ lat: 1, lng: 2, accuracy: 5 });
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            openEvent("ev-plain", "Chapter", false),
+            openEvent("ev-zoned", "Formal", true),
+          ],
+        }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(writes.fix).not.toHaveBeenCalled();
+      expect(writes.checkIn).toHaveBeenLastCalledWith({ eventId: "ev-plain" });
+      await act(async () => {
+        button(tree, "Formal").props.onPress();
+      });
+      expect(writes.fix).toHaveBeenCalledTimes(1);
+      expect(writes.checkIn).toHaveBeenLastCalledWith({
+        eventId: "ev-zoned",
+        lat: 1,
+        lng: 2,
+      });
+      expect(button(tree, "Formal").props.disabled).toBe(true);
+    });
+
+    it("keeps Check in on the row while an officer's screen needs the code (#4808)", async () => {
+      // The phone scans; web leaves the row's Check in off for this.
+      writes.checkIn.mockResolvedValue({});
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            {
+              ...openEvent("ev-code", "Chapter", false),
+              check_in_needs_code: true,
+            },
+          ],
+        }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(writes.checkIn).toHaveBeenLastCalledWith({ eventId: "ev-code" });
+    });
+
+    it("says only that a row exists on a 409, and re-reads so the row shows which (#4427)", async () => {
+      // A 409 may be an officer's excused or absent mark, not a check-in.
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      writes.checkIn.mockRejectedValue({ status: 409 });
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            { ...openEvent("ev-plain", "Chapter", false), unread: true },
+          ],
+        }),
+      };
+      links.markRead.mockClear();
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(alert).toHaveBeenCalledWith(
+        "Chapter",
+        "You're already on the attendance list for this event.",
+      );
+      expect(links.markRead).toHaveBeenCalledWith([
+        { kind: "event", item_id: "ev-plain" },
+      ]);
+      alert.mockRestore();
+    });
+
+    it("asks for the position and sends again when the server says the event now needs one", async () => {
+      // A zone drawn since the read, or a read from before the field.
+      const { CHECK_IN_NEEDS_LOCATION_MESSAGES } =
+        await import("@/lib/events/check-in-outcome");
+      writes.checkIn.mockRejectedValueOnce({
+        status: 400,
+        message: CHECK_IN_NEEDS_LOCATION_MESSAGES[0],
+      });
+      writes.fix.mockResolvedValue({ lat: 3, lng: 4, accuracy: 5 });
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [openEvent("ev-plain", "Chapter", false)] }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      expect(writes.checkIn.mock.calls).toEqual([
+        [{ eventId: "ev-plain" }],
+        [{ eventId: "ev-plain", lat: 3, lng: 4 }],
+      ]);
+      expect(button(tree, "Chapter").props.disabled).toBe(true);
+    });
+
+    it("says a refused location in the card's words, and leaves the button to try again", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const { CHECK_IN_LOCATION_DENIED_COPY } =
+        await import("@/lib/events/check-in-outcome");
+      const { MemberFacingError } = await import("@repo/hooks/error-copy");
+      // What `requireForegroundFix` throws when permission is refused.
+      writes.fix.mockRejectedValue(
+        new MemberFacingError(CHECK_IN_LOCATION_DENIED_COPY),
+      );
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [openEvent("ev-zoned", "Formal", true)] }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Formal").props.onPress();
+      });
+      expect(writes.checkIn).not.toHaveBeenCalled();
+      expect(alert).toHaveBeenCalledWith(
+        "Formal",
+        CHECK_IN_LOCATION_DENIED_COPY,
+      );
+      expect(button(tree, "Formal").props.disabled).toBe(false);
+      alert.mockRestore();
+    });
+
+    it("offers Enter code, opening s18 on the event, once an officer's screen wants the code", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const { CHECK_IN_NEEDS_CODE_MESSAGE } =
+        await import("@/lib/events/check-in-outcome");
+      writes.checkIn.mockRejectedValue({
+        status: 403,
+        message: CHECK_IN_NEEDS_CODE_MESSAGE,
+      });
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [openEvent("ev-plain", "Chapter", false)] }),
+      };
+      const tree = render();
+      await act(async () => {
+        button(tree, "Chapter").props.onPress();
+      });
+      const buttons = alert.mock.calls.at(-1)![2] as {
+        text: string;
+        onPress?: () => void;
+      }[];
+      expect(buttons.map((each) => each.text)).toEqual([
+        "Not now",
+        "Scan code",
+      ]);
+      buttons[1]!.onPress!();
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/check-in",
+        params: { eventId: "ev-plain", scan: "1" },
+      });
+      alert.mockRestore();
+    });
+
+    it("offers Snooze on a row that waits on the member, and snoozes from its menu", async () => {
+      snoozeWrites.snooze.mockClear();
+      const tree = render();
+      const press = rowPress(tree, "Food bank");
+      await act(async () => {
+        press.props.onLongPress();
+      });
+      const menu = currentItemMenu()!;
+      expect(menu.title).toBe("Snooze until");
+      expect(snoozeWrites.snooze).not.toHaveBeenCalled();
+      await act(async () => pickItemMenuAction(menu.actions[0]!.label));
+      expect(snoozeWrites.snooze).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "hours_entry" }),
+        expect.any(Date),
+      );
+    });
+
+    // One glass menu on both platforms (owner, 2026-11-20): the row named
+    // under the caption, every time offered (no three-button cap), none red.
+    it("draws the same snooze menu on iOS and Android, every time offered", async () => {
+      const platform = Platform as { OS: string };
+      const os = platform.OS;
+      const seen: unknown[] = [];
+      snoozeWrites.snooze.mockClear();
+      try {
+        const tree = render();
+        // A Monday morning offers all four times.
+        vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 10, 16, 9) });
+        for (const each of ["ios", "android"]) {
+          platform.OS = each;
+          await act(async () => {
+            rowPress(tree, "Food bank").props.onLongPress();
+          });
+          const { title, message, actions } = currentItemMenu()!;
+          seen.push({
+            title,
+            message,
+            rows: actions.map((action) => [action.label, !!action.destructive]),
+          });
+          act(() => dismissItemMenu());
+        }
+      } finally {
+        vi.useRealTimers();
+        platform.OS = os;
+      }
+      expect(seen[1]).toEqual(seen[0]);
+      const times = activitySnoozeOptions(new Date(2026, 10, 16, 9));
+      expect(times).toHaveLength(4);
+      expect(seen[0]).toEqual({
+        title: "Snooze until",
+        message: expect.stringContaining("Food bank"),
+        rows: times.map((time) => [time.menuLabel, false]),
+      });
+      // A dismiss snoozes nothing.
+      expect(snoozeWrites.snooze).not.toHaveBeenCalled();
+    });
+
+    it("is offered to a screen reader as the row's named action", async () => {
+      const tree = render();
+      const press = rowPress(tree, "Food bank");
+      expect(press.props.accessibilityActions).toEqual([
+        { name: "rowAction", label: "Approve" },
+        { name: "menu:snooze", label: "Snooze" },
+      ]);
+      // The button itself is no second focus stop inside the row's.
+      expect(button(tree, "Food bank").props.accessible).toBe(false);
+      await act(async () => {
+        press.props.onAccessibilityAction({
+          nativeEvent: { actionName: "rowAction" },
+        });
+      });
+      expect(writes.review).toHaveBeenCalledTimes(1);
+    });
+
+    it("is disabled offline, with the reason as its hint, and the row still opens the sheet", () => {
+      writes.writeBlockedReason = "You're offline.";
+      const tree = render();
+      expect(button(tree, "Food bank").props.disabled).toBe(true);
+      // The button is no focus stop of its own, so the row says why.
+      expect(rowPress(tree, "Food bank").props.accessibilityHint).toBe(
+        "Sam Hill · 1h 30m. You're offline.",
+      );
+      act(() => {
+        rowPress(tree, "Food bank").props.onPress();
+      });
+      expect(sheet.props?.row?.key).toBe("needs:hours:entry-1");
+    });
+
+    it("is disabled while the chapter loads", () => {
+      chapter.isPending = true;
+      const tree = render();
+      expect(button(tree, "Food bank").props.disabled).toBe(true);
+    });
+
+    it("draws no button while the chapter's plan refuses those writes, so the row opens its sheet", () => {
+      chapter.data = { enabled_modules: {}, subscription_status: "canceled" };
+      const tree = render();
+      expect(
+        row(tree, "Food bank").findAllByType(ActivityAskButton),
+      ).toHaveLength(0);
+      expect(row(tree, "Food bank").findByType(ActivityAsk).props.label).toBe(
+        "Approve",
+      );
+    });
+
+    it("draws the button for an active plan", () => {
+      chapter.data = { enabled_modules: {}, subscription_status: "active" };
+      const tree = render();
+      expect(
+        row(tree, "Food bank").findAllByType(ActivityAskButton),
+      ).toHaveLength(1);
+    });
+  });
+
+  it("leaves a closed poll off the page, with no Archived polls button (#4258, #5127)", () => {
+    const tree = render();
+    expect(rowLabels(tree)).not.toContain("Old vote");
+    expect(screenText(tree)).not.toContain("Archived polls");
+  });
+
+  it("opens the Archive in place of the page, by kind, and goes back (#5127)", () => {
+    archive.value = {
+      ...archive.value,
+      data: {
+        events: [],
+        tasks: [],
+        polls: [
+          {
+            ...myPoll("p-closed", "Old vote", true),
+            closed_at: "2026-11-02T00:00:00.000Z",
+          },
+        ],
+        unavailable: ["events"],
+      },
+    };
+    const tree = render();
+    // Not read until it is opened.
+    expect(archive.enabled).toBe(false);
+    const pressables = () =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "button",
+      );
+    act(() => {
+      pressables()
+        .find((node) => drawnText(node) === "Archive")!
+        .props.onPress();
+    });
+    expect(archive.enabled).toBe(true);
+    const text = screenText(tree);
+    expect(text).toContain("Events, tasks and polls that are over.");
+    expect(text).toContain("Couldn't load events. Pull down to try again.");
+    expect(hasSection(tree, "To do")).toBe(false);
     expect(row(tree, "Old vote").props.row.badge?.label).toBe("Closed");
     act(() => {
       row(tree, "Old vote").props.onPress();
     });
-    expect(sheet.props?.row?.key).toBe("made:poll:p-closed");
+    expect(sheet.props?.row?.key).toBe("archive:poll:p-closed");
+
+    act(() => {
+      pressables()
+        .find((node) => node.props.accessibilityLabel === "Back to Activity")!
+        .props.onPress();
+    });
+    expect(screenText(tree)).not.toContain(
+      "Events, tasks and polls that are over.",
+    );
   });
 
-  it("narrows every group to one kind under a chip, keeping Needs you", () => {
+  it("says when the Archive holds nothing", () => {
+    archive.value = {
+      ...archive.value,
+      data: { events: [], tasks: [], polls: [], unavailable: [] },
+    };
     const tree = render();
     act(() => {
-      tree.root.findByType(FilterChips).props.onSelect("poll");
+      tree.root
+        .findAll(
+          (node) =>
+            (node.type as unknown) === "Pressable" &&
+            node.props.accessibilityRole === "button",
+        )
+        .find((node) => drawnText(node) === "Archive")!
+        .props.onPress();
     });
-    expect(rowLabels(tree)).toEqual(["Dues vote"]);
-    const text = screenText(tree);
-    expect(text).toContain("Needs you");
-    expect(text).toContain("Nothing of this kind here.");
-    expect(text).not.toContain("Coming up");
+    expect(screenText(tree)).toContain("Nothing finished in the last 30 days");
   });
 
   it("says which section couldn't load instead of showing it as empty", () => {
@@ -688,7 +2780,7 @@ describe("Activity screen (#3897)", () => {
     const tree = render();
     const text = screenText(tree);
     expect(text).toContain("Couldn't load polls. Pull down to try again.");
-    expect(text).not.toContain("Nothing is waiting on you.");
+    expect(text).not.toContain("Nothing to do right now.");
     // In the warning hue, as web says it, so it can't read as an empty list.
     const note = tree.root
       .findAllByType(InlineNote)
@@ -703,15 +2795,12 @@ describe("Activity screen (#3897)", () => {
     activity.value = { ...activity.value, data: undefined, isPending: true };
     const tree = render();
     expect(rowLabels(tree)).toEqual([]);
-    // The skeleton mirrors the screen: the fixed caption is real, the
-    // headline and the tiles are not drawn until the read lands.
+    // The skeleton mirrors the screen: the fixed captions are real, the
+    // ring and its headline are not drawn until the read lands.
     const text = screenText(tree);
-    expect(text).not.toMatch(/need you|caught up/);
-    expect(
-      tree.root.findAll((node) =>
-        String(node.props.testID ?? "").startsWith("activity-tile-"),
-      ),
-    ).toHaveLength(0);
+    expect(text).not.toMatch(/this week|Next/);
+    expect(tree.root.findAllByType(WeekCard)).toHaveLength(0);
+    expect(hasSection(tree, "To do")).toBe(true);
     expect(
       tree.root.findAll(
         (node) => node.props.accessibilityLabel === "Loading activity",
@@ -758,6 +2847,7 @@ describe("Activity screen (#3897)", () => {
       id: "l1",
       url: "https://forms.gle/abc",
       host: "forms.gle",
+      title: null,
       message_id: "m1",
       thread_root_id: null,
       channel_id: "chan-1",
@@ -789,11 +2879,29 @@ describe("Activity screen (#3897)", () => {
     it("lists them in their own group, and opens one in the sheet", () => {
       const tree = render();
       expect(sectionCount(tree, "Links")).toBe(1);
+      // Under what the member made, as the page's own order has it.
+      const headings = tree.root
+        .findAllByType(SectionHeader)
+        .map((node) => node.props.children as string);
+      expect(headings.indexOf("Waiting on others")).toBeGreaterThan(-1);
+      expect(headings.indexOf("Links")).toBeGreaterThan(
+        headings.indexOf("Waiting on others"),
+      );
       act(() => {
         row(tree, "Google Form").props.onPress();
       });
       expect(sheet.props?.row?.key).toBe("link:l1");
       expect(sheet.props?.linkActions.canRemove).toBe(false);
+    });
+
+    it("draws a link by its page's name, with its kind leading the detail (#4187)", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({ links: [link({ title: "5K volunteer shifts" })] }),
+      };
+      const tree = render();
+      expect(rowLabels(tree)).toContain("5K volunteer shifts");
+      expect(screenText(tree)).toMatch(/Google Form · Olive · #rush · /);
     });
 
     it("lets only a channels:manage holder remove one for everyone", () => {
@@ -833,7 +2941,9 @@ describe("Activity screen (#3897)", () => {
 
     it("says a failed write with the platform alert, and offers no Undo", async () => {
       const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-      links.hidden.mockRejectedValueOnce(new Error("nope"));
+      links.hidden.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
       const tree = render();
       await act(async () => {
         sheet.props!.linkActions.hide(linkRow());
@@ -841,8 +2951,21 @@ describe("Activity screen (#3897)", () => {
       expect(alert).toHaveBeenCalledWith(
         "Couldn't hide it",
         expect.any(String),
+        [
+          expect.objectContaining({ text: "Not now" }),
+          expect.objectContaining({ text: "Try again" }),
+        ],
       );
       expect(tree.root.findAllByType(UndoBar)).toHaveLength(0);
+      // Try again sends the same hide, and this time it lands with its Undo.
+      const buttons = alert.mock.calls[0]![2] as { onPress?: () => void }[];
+      const sent = links.hidden.mock.calls.length;
+      await act(async () => {
+        buttons[1]!.onPress!();
+      });
+      expect(links.hidden).toHaveBeenCalledTimes(sent + 1);
+      expect(links.hidden).toHaveBeenLastCalledWith("l1");
+      expect(tree.root.findAllByType(UndoBar)).toHaveLength(1);
     });
 
     it("opens the link in the in-app browser", () => {
@@ -867,7 +2990,7 @@ describe("Activity screen (#3897)", () => {
       act(() => {
         sheet.props!.onClosed();
       });
-      expect(invalidate).toHaveBeenCalledTimes(1);
+      expect(listRereads(invalidate)).toBe(1);
     });
 
     it("opens a thread reply in its thread, and a channel message in its channel", () => {
@@ -890,6 +3013,816 @@ describe("Activity screen (#3897)", () => {
         pathname: "/chat-thread",
         params: { channelId: "chan-1" },
       });
+    });
+  });
+
+  describe("Waiting on others: how far along each thing is (#4792)", () => {
+    it("draws a bar and the count under a poll the member posted, said with its title", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [
+              {
+                ...myPoll("p-open", "Dues vote"),
+                progress: { done: 17, total: 25 },
+              },
+              // Nobody else can answer it: no bar, never "0 of 0".
+              { ...myPoll("p-alone", "Exec only"), progress: null },
+            ],
+            tasks: [],
+            events: [],
+          },
+        }),
+      };
+      const tree = render();
+
+      const dues = row(tree, "Dues vote");
+      const bar = dues.findAll(
+        (node) => node.props.testID === "activity-row-progress",
+      );
+      expect(bar.length).toBeGreaterThan(0);
+      expect(drawnText(bar[0])).toContain("17 of 25");
+      // The bar is decoration; the row says the count.
+      expect(bar[0].props.accessibilityElementsHidden).toBe(true);
+      expect(
+        dues.findAll(
+          (node) =>
+            node.props.accessibilityLabel === "Dues vote, 17 of 25 voted",
+        ).length,
+      ).toBeGreaterThan(0);
+
+      const alone = row(tree, "Exec only");
+      expect(
+        alone.findAll((node) => node.props.testID === "activity-row-progress"),
+      ).toHaveLength(0);
+    });
+  });
+
+  describe("a task for everyone is one row (#5492)", () => {
+    /** One task sent to 30 members, as Paul's screenshot had it. */
+    const group = (overrides: Record<string, unknown> = {}) => ({
+      id: "group-1",
+      audience: "everyone",
+      target_id: null,
+      target_name: null,
+      total: 30,
+      done: 12,
+      confirmed: 4,
+      task_id: "copy-7",
+      title: "Clean the house",
+      description: null,
+      due_date: "2099-01-01",
+      due_at: null,
+      point_reward: 5,
+      proof_kind: "none",
+      overdue: false,
+      preview_assignee_ids: ["m1", "gone", "m2", "m3", "m4"],
+      created_at: "2026-11-17T00:00:00.000Z",
+      ...overrides,
+    });
+    const copies = Array.from({ length: 30 }, (_, index) =>
+      task({
+        id: `copy-${index}`,
+        title: "Clean the house",
+        assignee_id: `m${index}`,
+        assignee_name: `Member ${index}`,
+        created_by: "me",
+      }),
+    );
+    const madeRead = (items?: unknown[]) =>
+      read({
+        made_by_you: {
+          polls: [],
+          events: [],
+          tasks: copies,
+          ...(items ? { task_items: items } : {}),
+        },
+      });
+    const groupRow = (tree: ReactTestRenderer) => row(tree, "Clean the house");
+
+    beforeEach(() => {
+      roster.members = ["m1", "m2", "m3", "m4"];
+    });
+
+    it("draws 30 copies as one row: Everyone, three faces and +27, a bar of 30", () => {
+      activity.value = {
+        ...activity.value,
+        data: madeRead([{ kind: "group", group: group() }]),
+      };
+      const tree = render();
+      expect(
+        rowLabels(tree).filter((title) => title === "Clean the house"),
+      ).toHaveLength(1);
+      expect(screenText(tree)).not.toContain("Show all");
+      const drawn = groupRow(tree);
+      const press = drawn.find(
+        (node) => typeof node.props.accessibilityLabel === "string",
+      );
+      // Said with its title; the detail is the hint.
+      expect(press.props.accessibilityLabel).toBe(
+        "Clean the house, 12 of 30 done",
+      );
+      // The 30 is said once, in the bar: not in the detail.
+      expect(press.props.accessibilityHint).toMatch(/^Everyone · Due /);
+      // Three faces of those the roster holds ("gone" has left), then the
+      // rest counted.
+      const stack = drawn.find(
+        (node) => node.props.testID === "activity-face-stack",
+      );
+      expect(
+        stack.findAll(
+          (node) =>
+            (node.type as unknown) === "View" &&
+            node.props.testID === "activity-face-stack-face",
+        ),
+      ).toHaveLength(3);
+      expect(drawnText(stack)).toContain("+27");
+      const bar = drawn.find(
+        (node) => node.props.testID === "activity-row-progress",
+      );
+      expect(drawnText(bar)).toContain("12 of 30");
+      // Nothing overdue: no badge.
+      expect(drawn.findAllByType(StatusChip)).toHaveLength(0);
+    });
+
+    it("badges it Overdue in the destructive hue when any copy is", () => {
+      activity.value = {
+        ...activity.value,
+        data: madeRead([{ kind: "group", group: group({ overdue: true }) }]),
+      };
+      const chip = groupRow(render()).findByType(StatusChip);
+      expect(chip.props.label).toBe("Overdue");
+      expect(chip.props.hue).toBe(tokens.color.semantic.destructive);
+    });
+
+    it("pushes the task's screen on the group's copy", () => {
+      activity.value = {
+        ...activity.value,
+        data: madeRead([{ kind: "group", group: group() }]),
+      };
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => groupRow(tree).props.onPress());
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "copy-7" },
+      });
+      expect(sheet.props?.row ?? null).toBeNull();
+    });
+
+    it("lists each copy from an API before task_items", () => {
+      activity.value = { ...activity.value, data: madeRead() };
+      const tree = render();
+      // The first three, then the rest behind Show all.
+      expect(
+        rowLabels(tree).filter((title) => title === "Clean the house"),
+      ).toHaveLength(3);
+      expect(screenText(tree)).toContain("Show all 30");
+      expect(
+        tree.root.findAll(
+          (node) => node.props.testID === "activity-face-stack",
+        ),
+      ).toHaveLength(0);
+    });
+  });
+
+  describe("a row's long press (#5492)", () => {
+    /** A task as the viewer's `GET /v1/tasks` serves it. */
+    const listed = (overrides: Record<string, unknown> = {}) => ({
+      id: "task-1",
+      title: "Book the venue",
+      description: null,
+      created_by: "officer",
+      assignee_id: "me",
+      status: "TODO",
+      stored_status: "TODO",
+      due_date: "2099-01-01",
+      due_at: null,
+      point_reward: null,
+      points_awarded: false,
+      proof_kind: "none",
+      subtasks: [],
+      photos: [],
+      group_id: null,
+      group: null,
+      ...overrides,
+    });
+    const rowPress = (tree: ReactTestRenderer, label: string) =>
+      row(tree, label).find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityRole === "button",
+      );
+    /** Long-presses the row and returns the glass menu's rows, in order. */
+    const longPress = (tree: ReactTestRenderer, label: string) => {
+      act(() =>
+        rowPress(tree, label).props.onLongPress({
+          nativeEvent: { pageY: 300 },
+        }),
+      );
+      return menuRows(tree);
+    };
+    /** The open menu's items (the task and event hooks mount one each, closed). */
+    const menuItems = (tree: ReactTestRenderer) =>
+      tree.root
+        .findAllByType(ItemActionsMenu)
+        .flatMap((menu) =>
+          menu.findAll(
+            (node) =>
+              (node.type as unknown) === "Pressable" &&
+              node.props.accessibilityRole === "menuitem",
+          ),
+        );
+    const menuRows = (tree: ReactTestRenderer) =>
+      menuItems(tree).map((node) => node.props.accessibilityLabel as string);
+    const pick = (tree: ReactTestRenderer, label: string) =>
+      act(() =>
+        menuItems(tree)
+          .find((node) => node.props.accessibilityLabel === label)!
+          .props.onPress(),
+      );
+
+    /**
+     * A task write through the query client's own cache, as any screen's
+     * hook sends one: in flight across a render, then landed.
+     */
+    const writeElsewhere = async (name: string) => {
+      let land!: () => void;
+      const landed = new Promise<void>((resolve) => {
+        land = resolve;
+      });
+      let done!: Promise<unknown>;
+      await act(async () => {
+        done = queryClient
+          .getMutationCache()
+          .build(queryClient, {
+            mutationKey: ["tasks", name],
+            mutationFn: () => landed,
+          })
+          .execute(undefined);
+        // The cache tells its observers on the next tick.
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      await act(async () => {
+        land();
+        await done;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    };
+
+    /** What each status write sent, in order. */
+    const statusWrites = () =>
+      menuReads.updateStatus.mock.calls.map(([input]) => input);
+
+    it("offers a member their task's Mark done, Start and Snooze", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      const tree = render();
+      expect(longPress(tree, "Book the venue")).toEqual([
+        "Mark done",
+        "Start",
+        "Snooze",
+      ]);
+      await act(async () => pick(tree, "Mark done"));
+      // The board's checkbox writes: To do, then done.
+      expect(statusWrites()).toEqual([
+        { id: "task-1", body: { status: "IN_PROGRESS" } },
+        { id: "task-1", body: { status: "COMPLETED" } },
+      ]);
+    });
+
+    it("starts a To do from the menu, as chat's card did", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      const tree = render();
+      longPress(tree, "Book the venue");
+      await act(async () => pick(tree, "Start"));
+      expect(statusWrites()).toEqual([
+        { id: "task-1", body: { status: "IN_PROGRESS" } },
+      ]);
+    });
+
+    it("reads Activity again once a write from its menu settles, and not for one made elsewhere", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const tree = render();
+      invalidate.mockClear();
+      // A write made elsewhere (the board, a card) while Activity is mounted.
+      await writeElsewhere("update-task-status");
+      expect(listRereads(invalidate)).toBe(0);
+      expect(nudge.recheck).not.toHaveBeenCalled();
+      // The menu's own: read again, and the card asked again.
+      longPress(tree, "Book the venue");
+      await act(async () => pick(tree, "Start"));
+      expect(listRereads(invalidate)).toBe(1);
+      expect(nudge.recheck).toHaveBeenCalledTimes(1);
+      invalidate.mockRestore();
+    });
+
+    it("leaves a write made after Activity loses focus to the focus reread", async () => {
+      links.permissions = ["*"];
+      menuReads.tasks = [listed({ id: "out", assignee_id: "sam" })];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "task",
+                task: task({
+                  id: "out",
+                  title: "Assigned",
+                  assignee_id: "sam",
+                }),
+              },
+            ],
+          },
+        }),
+      };
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const tree = render();
+      // What Edit's sheet sends on save, in flight across a render.
+      const otherWrite = () => writeElsewhere("update-task");
+      try {
+        // Edit opens its sheet: picked, so a save from it rereads.
+        longPress(tree, "Assigned");
+        pick(tree, "Edit");
+        invalidate.mockClear();
+        await otherWrite();
+        expect(listRereads(invalidate), "a save from the menu's sheet").toBe(1);
+        // Picked again, then the member leaves before any write: whatever
+        // is written while Activity is behind another screen isn't its.
+        longPress(tree, "Assigned");
+        pick(tree, "Edit");
+        act(() => blur());
+        invalidate.mockClear();
+        await otherWrite();
+        expect(listRereads(invalidate)).toBe(0);
+      } finally {
+        act(() => refocus());
+        invalidate.mockRestore();
+      }
+    });
+
+    it("offers an officer the task's actions on one they assigned, with no Snooze", () => {
+      links.permissions = ["*"];
+      menuReads.tasks = [listed({ id: "out", assignee_id: "sam" })];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "task",
+                task: task({
+                  id: "out",
+                  title: "Assigned",
+                  assignee_id: "sam",
+                }),
+              },
+            ],
+          },
+        }),
+      };
+      const tree = render();
+      expect(longPress(tree, "Assigned")).toEqual([
+        "Mark done",
+        "Edit",
+        "Reassign",
+        "Duplicate",
+        "Delete",
+      ]);
+    });
+
+    it("offers a group's row the group's actions, as the Calendar's does", () => {
+      links.permissions = ["*"];
+      menuReads.tasks = [
+        listed({
+          id: "copy-7",
+          title: "Clean the house",
+          assignee_id: "m7",
+          group_id: "group-1",
+          group: { id: "group-1", audience: "everyone", total: 30, done: 12 },
+        }),
+      ];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "group",
+                group: {
+                  id: "group-1",
+                  audience: "everyone",
+                  target_id: null,
+                  target_name: null,
+                  total: 30,
+                  done: 12,
+                  confirmed: 4,
+                  task_id: "copy-7",
+                  title: "Clean the house",
+                  description: null,
+                  due_date: "2099-01-01",
+                  due_at: null,
+                  point_reward: null,
+                  proof_kind: "none",
+                  overdue: false,
+                  preview_assignee_ids: [],
+                  created_at: "2026-11-17T00:00:00.000Z",
+                },
+              },
+            ],
+          },
+        }),
+      };
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      expect(longPress(tree, "Clean the house")).toEqual([
+        "Remove people",
+        "Duplicate",
+        "Delete for everyone",
+      ]);
+      pick(tree, "Remove people");
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "copy-7", select: "1" },
+      });
+      // Each is a named action for a screen reader too.
+      expect(
+        rowPress(tree, "Clean the house").props.accessibilityActions,
+      ).toEqual([
+        { name: "menu:removePeople", label: "Remove people" },
+        { name: "menu:duplicate", label: "Duplicate" },
+        { name: "menu:deleteForEveryone", label: "Delete for everyone" },
+      ]);
+    });
+
+    it("offers an event row Edit, Duplicate and Delete, and still Snooze", () => {
+      links.permissions = ["*"];
+      menuReads.events = [
+        {
+          id: "ev-1",
+          name: "Chapter",
+          location: null,
+          start_time: new Date(Date.now() + 3 * 3_600_000).toISOString(),
+          end_time: new Date(Date.now() + 4 * 3_600_000).toISOString(),
+          point_value: null,
+          is_mandatory: false,
+        },
+      ];
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [eventIn(3)] }),
+      };
+      const tree = render();
+      // Destructive last, under the break.
+      expect(longPress(tree, "Chapter")).toEqual([
+        "Edit",
+        "Duplicate",
+        "Snooze",
+        "Delete",
+      ]);
+      expect(rowPress(tree, "Chapter").props.accessibilityActions).toEqual([
+        { name: "menu:edit", label: "Edit" },
+        { name: "menu:duplicate", label: "Duplicate" },
+        { name: "menu:delete", label: "Delete" },
+        { name: "menu:snooze", label: "Snooze" },
+      ]);
+    });
+
+    /** An event the chapter's list holds, for its menu. */
+    const listedEvent = (id = "ev-1") => ({
+      id,
+      name: "Chapter",
+      location: null,
+      start_time: new Date(Date.now() + 3 * 3_600_000).toISOString(),
+      end_time: new Date(Date.now() + 4 * 3_600_000).toISOString(),
+      point_value: null,
+      is_mandatory: false,
+    });
+
+    it("offers Unsnooze on a snoozed row beside its event's actions", async () => {
+      links.permissions = ["*"];
+      menuReads.events = [listedEvent()];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          coming_up: [
+            eventIn(3, {
+              snoozed_until: new Date(Date.now() + 86_400_000).toISOString(),
+            }),
+          ],
+        }),
+      };
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      try {
+        const tree = render();
+        act(() =>
+          tree.root
+            .findAll(
+              (node) =>
+                (node.type as unknown) === "Pressable" &&
+                drawnText(node) === "Snoozed (1)",
+            )[0]!
+            .props.onPress(),
+        );
+        expect(longPress(tree, "Chapter")).toEqual([
+          "Edit",
+          "Duplicate",
+          "Unsnooze",
+          "Delete",
+        ]);
+        alert.mockClear();
+        pick(tree, "Unsnooze");
+        // Asked first, as before the menu.
+        const [title, , buttons] = alert.mock.calls.at(-1)!;
+        expect(title).toBe("Chapter");
+        await act(async () => {
+          buttons!.find((button) => button.text === "Unsnooze")!.onPress!();
+        });
+        expect(snoozeWrites.unsnooze).toHaveBeenCalledWith({
+          kind: "event",
+          item_id: "ev-1",
+        });
+      } finally {
+        alert.mockRestore();
+      }
+    });
+
+    it("offers an Archive row its item's actions, never Snooze", () => {
+      links.permissions = ["*"];
+      menuReads.events = [listedEvent("ev-old")];
+      archive.value = {
+        ...archive.value,
+        data: {
+          events: [
+            eventIn(-48, {
+              id: "ev-old",
+              name: "Old meeting",
+              checked_in: true,
+            }),
+          ],
+          tasks: [],
+          polls: [],
+          unavailable: [],
+        },
+      };
+      const tree = render();
+      act(() => {
+        tree.root
+          .findAll(
+            (node) =>
+              (node.type as unknown) === "Pressable" &&
+              drawnText(node) === "Archive",
+          )[0]!
+          .props.onPress();
+      });
+      expect(longPress(tree, "Old meeting")).toEqual([
+        "Edit",
+        "Duplicate",
+        "Delete",
+      ]);
+    });
+
+    it("pushes a completion waiting on the officer to its screen, wherever it sits (#5513)", () => {
+      links.permissions = ["*"];
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [],
+            events: [],
+            tasks: [],
+            task_items: [
+              {
+                kind: "task",
+                task: task({
+                  id: "done-1",
+                  title: "Swept the porch",
+                  assignee_id: "sam",
+                  created_by: "me",
+                  status: "COMPLETED",
+                  stored_status: "COMPLETED",
+                  point_reward: null,
+                  proof_kind: "photo",
+                }),
+              },
+            ],
+          },
+        }),
+      };
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => row(tree, "Swept the porch").props.onPress());
+      // The task screen, which holds Confirm and Send back.
+      expect(push).toHaveBeenCalledWith({
+        pathname: "/task-details",
+        params: { id: "done-1" },
+      });
+      expect(sheet.props?.row ?? null).toBeNull();
+    });
+
+    it("asks the card again on the way back from a task the week card's Next pushed", () => {
+      const tree = render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      try {
+        act(() => row(tree, "Book the venue").props.onPress());
+        expect(push).toHaveBeenCalledWith({
+          pathname: "/task-details",
+          params: { id: "task-1" },
+        });
+        act(() => blur());
+        expect(nudge.recheck).not.toHaveBeenCalled();
+      } finally {
+        act(() => refocus());
+      }
+      expect(nudge.recheck).toHaveBeenCalledTimes(1);
+      // Once: a later return asks nothing more.
+      act(() => {
+        blur();
+        refocus();
+      });
+      expect(nudge.recheck).toHaveBeenCalledTimes(1);
+    });
+
+    it("shows the newest Undo, a link's or a Mark done's, never hiding one behind the other", async () => {
+      links.permissions = ["members:view"];
+      menuReads.tasks = [listed()];
+      links.hidden.mockResolvedValue(undefined);
+      const linkRow = {
+        link: { id: "l1" },
+        title: "Google Form",
+      } as unknown as Parameters<
+        NonNullable<typeof sheet.props>["linkActions"]["hide"]
+      >[0];
+      const tree = render();
+      const bars = () =>
+        tree.root
+          .findAllByType(UndoBar)
+          .map((bar) => bar.props.message as string);
+      await act(async () => sheet.props!.linkActions.hide(linkRow));
+      expect(bars()).toEqual(["Hidden"]);
+      longPress(tree, "Book the venue");
+      await act(async () => pick(tree, "Mark done"));
+      // The Mark done's replaces the link's, rather than wait behind it.
+      expect(bars()).toEqual(["Marked done"]);
+      await act(async () => sheet.props!.linkActions.hide(linkRow));
+      expect(bars()).toEqual(["Hidden"]);
+    });
+
+    it("gives a member's event row only Snooze, on the press itself", () => {
+      links.permissions = ["members:view"];
+      menuReads.events = [];
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [eventIn(3)] }),
+      };
+      const tree = render();
+      // `Alert.alert` is the setup's mock: only this press's calls count.
+      vi.mocked(Alert.alert).mockClear();
+      act(() => rowPress(tree, "Chapter").props.onLongPress());
+      // No row menu: the times open at once.
+      expect(menuRows(tree)).toEqual([]);
+      expect(currentItemMenu()!.title).toBe("Snooze until");
+      expect(Alert.alert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("message reminders (#4957)", () => {
+    const reminder = (overrides: Record<string, unknown> = {}) => ({
+      id: "r1",
+      message_id: "m1",
+      thread_root_id: null,
+      channel_id: "chan-1",
+      channel_name: "rush",
+      channel_type: "PUBLIC",
+      author_name: "Olive",
+      preview: "Bring the banner Friday",
+      message_created_at: "2026-11-10T15:00:00.000Z",
+      message_available: true,
+      remind_at: "2026-11-14T09:00:00.000Z",
+      fired_at: "2026-11-14T09:00:00.000Z",
+      due: true,
+      ...overrides,
+    });
+    type ReminderRow = Parameters<
+      NonNullable<typeof sheet.props>["reminderActions"]["done"]
+    >[0];
+    const reminderRow = (overrides: Record<string, unknown> = {}) =>
+      ({ reminder: reminder(overrides) }) as unknown as ReminderRow;
+
+    beforeEach(() => {
+      reminderWrites.set.mockReset().mockResolvedValue(undefined);
+      reminderWrites.clear.mockReset().mockResolvedValue(undefined);
+      activity.value = {
+        ...activity.value,
+        data: read({ reminders: [reminder()] }),
+      };
+    });
+
+    it("lists them first under Reminders, and opens one in the sheet without a read", () => {
+      links.markRead.mockClear();
+      const tree = render();
+      expect(sectionCount(tree, "Reminders")).toBe(1);
+      const headings = tree.root
+        .findAllByType(SectionHeader)
+        .map((node) => node.props.children as string);
+      expect(headings.indexOf("Reminders")).toBeLessThan(
+        headings.indexOf("Waiting on others"),
+      );
+      act(() => {
+        row(tree, "Bring the banner Friday").props.onPress();
+      });
+      expect(sheet.props?.row?.key).toBe("reminder:r1");
+      // A reminder is the member's own: it has no dot to clear.
+      expect(links.markRead).not.toHaveBeenCalled();
+    });
+
+    it("opens the message in its channel, or in its thread for a reply", () => {
+      render();
+      const push = vi.mocked(useRouter().push);
+      push.mockClear();
+      act(() => {
+        sheet.props!.reminderActions.open(reminderRow());
+      });
+      expect(push).toHaveBeenLastCalledWith({
+        pathname: "/chat-thread",
+        params: { channelId: "chan-1", focusMessageId: "m1" },
+      });
+      act(() => {
+        sheet.props!.reminderActions.open(
+          reminderRow({ thread_root_id: "root-1" }),
+        );
+      });
+      expect(push).toHaveBeenLastCalledWith({
+        pathname: "/chat-thread",
+        params: {
+          channelId: "chan-1",
+          threadRootId: "root-1",
+          focusMessageId: "m1",
+        },
+      });
+    });
+
+    it("snoozes to the preset's time, leaving the re-read to the write", async () => {
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      render();
+      const before = Date.now();
+      await act(async () => {
+        sheet.props!.reminderActions.snooze(reminderRow(), "1h");
+      });
+      expect(reminderWrites.set).toHaveBeenCalledTimes(1);
+      const [{ messageId, remindAt }] = reminderWrites.set.mock.calls[0] as [
+        { messageId: string; remindAt: Date },
+      ];
+      expect(messageId).toBe("m1");
+      expect(remindAt.getTime()).toBeGreaterThanOrEqual(before + 60 * 60_000);
+      act(() => {
+        sheet.props!.onClosed();
+      });
+      expect(invalidate).not.toHaveBeenCalled();
+    });
+
+    it("clears it on Done, and says a failure with Try again", async () => {
+      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      alert.mockClear();
+      reminderWrites.clear.mockRejectedValueOnce(
+        new TypeError("Network request failed"),
+      );
+      render();
+      await act(async () => {
+        sheet.props!.reminderActions.done(reminderRow());
+      });
+      expect(reminderWrites.clear).toHaveBeenCalledWith("m1");
+      expect(alert).toHaveBeenCalledWith(
+        "Couldn't clear the reminder",
+        expect.any(String),
+        [
+          expect.objectContaining({ text: "Not now" }),
+          expect.objectContaining({ text: "Try again" }),
+        ],
+      );
+      const buttons = alert.mock.calls[0]![2] as { onPress?: () => void }[];
+      await act(async () => {
+        buttons[1]!.onPress!();
+      });
+      expect(reminderWrites.clear).toHaveBeenCalledTimes(2);
     });
   });
 });

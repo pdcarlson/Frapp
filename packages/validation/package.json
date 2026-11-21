@@ -11,12 +11,20 @@
       "import": "./src/index.ts",
       "default": "./dist/index.js"
     },
-    "./beta-off-modules": {
-      "types": "./dist/beta-off-modules.d.ts",
-      "require": "./dist/beta-off-modules.js",
-      "import": "./src/beta-off-modules.ts",
-      "default": "./dist/beta-off-modules.js"
-    }
+    "./search-indexing": {
+      "types": "./search-indexing.d.mts",
+      "default": "./search-indexing.mjs"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "require": "./dist/*.js",
+      "import": "./src/*.ts",
+      "default": "./dist/*.js"
+    },
+    "./analytics": null,
+    "./everyone-role": null,
+    "./release-notes": null,
+    "./upload-allowlists": null
   },
   "scripts": {
     "build": "tsc",
@@ -26,6 +34,7 @@
     "test:cov": "vitest run --coverage"
   },
   "dependencies": {
+    "@repo/color": "*",
     "zod": "^4.6.7"
   },
   "devDependencies": {

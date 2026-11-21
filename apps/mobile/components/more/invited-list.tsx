@@ -1,8 +1,6 @@
 import { useRef, useState } from "react";
 import {
-  ActionSheetIOS,
-  Alert,
-  Platform,
+  type GestureResponderEvent,
   Share,
   StyleSheet,
   Text,
@@ -21,6 +19,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { formatSentLabel } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import {
   inviteShareContent,
   inviteShareOptions,
@@ -29,9 +28,9 @@ import {
 import { webJoinUrl } from "@/lib/onboarding/chapter-wizard/invite-link";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
-export const SHARE_LINK = "Share link";
-export const SEND_AGAIN = "Send again";
-export const REVOKE_INVITE = "Revoke invite";
+const SHARE_LINK = "Share link";
+const SEND_AGAIN = "Send again";
+const REVOKE_INVITE = "Revoke invite";
 
 const ACTION_LABEL: Record<InviteMenuAction, string> = {
   link: SHARE_LINK,
@@ -63,7 +62,7 @@ export function inviteActions(
  * address, a shared link as Invite link; each says when it was sent and where
  * it stands.
  *
- * Tapping a row opens its menu, the platform's action sheet: Share link opens
+ * Tapping a row opens its menu, the glass menu (`openItemMenu`): Share link opens
  * the share sheet with the same message Share invite sends, Send again emails
  * the address a fresh link through the same `POST /v1/invites/email` (the
  * server retires the older invite once the new one is delivered), and Revoke
@@ -203,42 +202,21 @@ export function InvitedList({
     }
   }
 
-  function openMenu(invite: InviteListItem) {
+  function openMenu(invite: InviteListItem, event?: GestureResponderEvent) {
     if (running.current) return;
     const actions = inviteActions(invite, !!chapterName);
     const title = invite.email ?? "Invite link";
-    if (Platform.OS === "ios") {
-      const options = [...actions, "Cancel"];
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title,
-          options,
-          destructiveButtonIndex: options.indexOf(REVOKE_INVITE),
-          cancelButtonIndex: options.length - 1,
-          userInterfaceStyle: "dark",
-        },
-        (index) => {
-          const picked = options[index];
-          if (picked && picked !== "Cancel") void run(invite, picked);
-        },
-      );
-      return;
-    }
-    // Android's dialog draws at most three buttons and drops the rest, and
-    // an emailed pending invite has three actions, so it has no Cancel
-    // button: back or a tap outside closes it (`cancelable`).
-    Alert.alert(
-      title,
-      undefined,
-      actions.map((action) => ({
-        text: action,
-        style:
-          action === REVOKE_INVITE
-            ? ("destructive" as const)
-            : ("default" as const),
-        onPress: () => void run(invite, action),
-      })),
-      { cancelable: true },
+    openItemMenu(
+      {
+        title,
+        actions: actions.map((action) => ({
+          key: action,
+          label: action,
+          destructive: action === REVOKE_INVITE,
+          run: () => void run(invite, action),
+        })),
+      },
+      pressAt(event),
     );
   }
 
@@ -267,7 +245,9 @@ export function InvitedList({
                 busy={busyId === invite.id}
                 accessibilityHint="Opens what you can do with this invite."
                 onPress={
-                  actions.length > 0 ? () => openMenu(invite) : undefined
+                  actions.length > 0
+                    ? (event) => openMenu(invite, event)
+                    : undefined
                 }
               />
             );

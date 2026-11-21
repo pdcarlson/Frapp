@@ -15,12 +15,14 @@ const { listeners } = vi.hoisted(() => ({
 
 vi.mock("@repo/api-sdk", () => ({
   createFrappClient: (config: { getChapterId: () => string | null }) => ({
+    use: () => undefined,
     __chapterId: config.getChapterId,
   }),
 }));
 
 vi.mock("@repo/hooks", () => ({
   FrappClientProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  PermissionPreviewProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("@/lib/supabase/client", () => ({

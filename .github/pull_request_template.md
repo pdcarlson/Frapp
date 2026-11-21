@@ -31,13 +31,15 @@
 - [ ] If this PR changes a fact a doc asserts, it updates **that** doc — not the nearest one, and not a new stray file. An unrelated doc edited to make the change look documented is a review finding. See `docs/ci-cd/docs-ci.md`.
 - [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
 - [ ] If I moved a heading other docs deep-link into, `npm run check:links` still passes (`npm run install:lychee` first).
-- [ ] If I changed `supabase/migrations/**`, the change set also updates the promotion log or the rollback playbook, and every migration it adds has an entry in both (CI's `check:migration-safety` fails otherwise).
+- [ ] Every migration this PR adds was created with `npm run migration:new` and has its ledger page in `docs/ops/database/migrations/` filled in (CI's `check:migration-safety` fails otherwise). No new entries in the shared promotion log or rollback playbook.
 - [ ] If this PR changes what members see or can do, it adds its What's new line as a file in `packages/validation/release-notes/` (rules: that folder's README).
 - [ ] No secrets committed (`.env*`, credentials, private keys).
 - [ ] No placeholder secrets in CI/CD workflows.
 
 ## UI/UX quality gate (required for UI-touching PRs)
 
+- [ ] Ran `.claude/skills/ui-development/review-checklist.md` and filled its **UI self-review** section below: captures as member, chair, exec and empty on web and phone, comparable apps, the sibling sweep table, and any rulebook or P1 to P8 failures with how each was fixed or filed.
+- [ ] Web and phone change together in this PR, with the same structure, options and wording, or the PR names the issue that brings the other platform along.
 - [ ] Token-only styling for colors/spacing/radius/motion (no ad hoc visual values).
 - [ ] One clear primary action per touched screen/section.
 - [ ] Async states complete (loading, empty, error, success, and offline/degraded when network-dependent).

@@ -187,7 +187,7 @@ describe("formatCheckInOpens", () => {
     );
     const later = at(2026, 3, 24, 19, 50);
     expect(formatCheckInOpens(later, now)).toBe(
-      `${later.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} at ${formatEventClock(later)}`,
+      `${later.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} at ${formatEventClock(later)}`,
     );
   });
 });

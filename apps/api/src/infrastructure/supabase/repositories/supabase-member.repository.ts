@@ -5,9 +5,44 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type {
+  IMemberRepository,
+  SelfAssignResult,
+} from '#domain/repositories/member.repository.interface';
 import { ChapterMemberIdentity, Member } from '#domain/entities/member.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
+import { readOncePerRequest, readSharedInBurst } from '../request-reads';
+
+/**
+ * The caller's membership row in one chapter. `ChapterGuard` and the access
+ * checks behind every chat route both ask this, so it is read once per request
+ * (`request-reads.ts`, #3728) and exported for the guard, which is wired into
+ * every module and so cannot inject the repository.
+ */
+export function readMemberByUserAndChapter(
+  supabase: FrappSupabaseClient,
+  userId: string,
+  chapterId: string,
+): Promise<Member | null> {
+  const key = memberReadKey(userId, chapterId);
+  return readOncePerRequest(key, () =>
+    readSharedInBurst(key, async () => {
+      const { data, error } = await supabase
+        .from('members')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('chapter_id', chapterId)
+        .maybeSingle();
+      if (error) throw new SupabaseQueryError(error);
+      return data;
+    }),
+  );
+}
+
+/** The request-store key `readMemberByUserAndChapter` reads under. */
+export function memberReadKey(userId: string, chapterId: string): string {
+  return `members:${userId}:${chapterId}`;
+}
 
 /**
  * The wire shape of the `users!inner(id, display_name)` embed, written out
@@ -45,14 +80,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
     userId: string,
     chapterId: string,
   ): Promise<Member | null> {
-    const { data, error } = await this.supabase
-      .from('members')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-    if (error) throw new SupabaseQueryError(error);
-    return data;
+    return readMemberByUserAndChapter(this.supabase, userId, chapterId);
   }
 
   async findByUser(userId: string): Promise<Member[]> {
@@ -71,6 +99,15 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .eq('chapter_id', chapterId);
     if (error) throw new SupabaseQueryError(error);
     return data || [];
+  }
+
+  async countByChapter(chapterId: string): Promise<number> {
+    const { count, error } = await this.supabase
+      .from('members')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId);
+    if (error) throw new SupabaseQueryError(error);
+    return count ?? 0;
   }
 
   async findChapterMemberIdentities(
@@ -139,6 +176,57 @@ export class SupabaseMemberRepository implements IMemberRepository {
       .single();
     if (error) throw new SupabaseQueryError(error);
     return data;
+  }
+
+  async completeOnboarding(
+    id: string,
+  ): Promise<{ member: Member; changed: boolean }> {
+    const { data, error } = await this.supabase
+      .from('members')
+      .update({ has_completed_onboarding: true })
+      .eq('id', id)
+      .eq('has_completed_onboarding', false)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    if (data) return { member: data, changed: true };
+    // Already done: read the row as it stands.
+    return {
+      member: await this.update(id, { has_completed_onboarding: true }),
+      changed: false,
+    };
+  }
+
+  async setRoleIds(
+    chapterId: string,
+    memberId: string,
+    expectedRoleIds: string[],
+    roleIds: string[],
+  ): Promise<Member | null> {
+    const { data, error } = await this.supabase.rpc('set_member_role_ids', {
+      p_chapter_id: chapterId,
+      p_member_id: memberId,
+      p_expected: expectedRoleIds,
+      p_role_ids: roleIds,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    return data?.[0] ?? null;
+  }
+
+  async setSelfAssignedRole(
+    chapterId: string,
+    memberId: string,
+    roleId: string,
+    join: boolean,
+  ): Promise<SelfAssignResult> {
+    const { data, error } = await this.supabase.rpc('self_assign_role', {
+      p_chapter_id: chapterId,
+      p_member_id: memberId,
+      p_role_id: roleId,
+      p_join: join,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    return data?.[0] ?? { outcome: 'not_assignable', role_ids: null };
   }
 
   async delete(id: string): Promise<void> {

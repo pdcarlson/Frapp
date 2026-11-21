@@ -35,9 +35,9 @@ on:
       plan:
         description: "Staging: plan-staging-deploy.mjs's API verdict: deploy, current, forward or stale"
         value: ${{ jobs.deploy.outputs.plan }}
-      render-deploy-id:
-        description: "Production: the Render deploy id this run created, if any"
-        value: ${{ jobs.deploy.outputs.render-deploy-id }}
+      cloud-run-revision:
+        description: "The Cloud Run revision this run deployed, if any"
+        value: ${{ jobs.deploy.outputs.cloud-run-revision }}
       replay-outcome:
         description: "Production: check-migration-replay.mjs's replay_outcome"
         value: ${{ jobs.deploy.outputs.replay-outcome }}
@@ -59,11 +59,19 @@ jobs:
     runs-on: ubuntu-latest
     # The caller's environment: its secrets, its main-only rule, its reviewers.
     environment: ${{ inputs.environment }}
-    # The steps' own ceilings (Render 20, served commit 5, client checks under 5,
-    # Vercel READY 30, source maps under 3: 63) plus the installs, builds and
-    # production's rehearsal, which took about 5 of the job's 9 minutes on run
-    # 36873240684 (2026-10-01, before the API build). 75 bounds them all.
-    timeout-minutes: 75
+    # `id-token: write` lets the job sign in to Google Cloud as the
+    # environment's deployer, with no key (#5228, scripts/ci/lib/gcp.mjs). A
+    # called job gets no more than its caller grants, so both callers grant
+    # it too.
+    permissions:
+      contents: read
+      id-token: write
+    # The steps' own ceilings (the API image 30, Cloud Run 20, served commit
+    # 5, client checks under 5, Vercel READY 30, source maps under 3: 93) plus
+    # the installs, builds and production's rehearsal, which took about 5 of the
+    # job's 9 minutes on run 36873240684 (2026-10-01, before the API build).
+    # 105 bounds them all.
+    timeout-minutes: 105
     # The environment's migration lock, and a lock only while this job is the one
     # thing that migrates either database. Never cancel a running deploy: it can
     # leave a half-migrated database or hosts on different commits. Why, and what
@@ -77,7 +85,7 @@ jobs:
     # `sourcemaps` apart from "nothing built". The rest feed production's summary.
     outputs:
       plan: ${{ steps.plan.outputs.plan }}
-      render-deploy-id: ${{ steps.render.outputs.deploy_id }}
+      cloud-run-revision: ${{ steps.cloud-run.outputs.revision }}
       replay-outcome: ${{ steps.replay.outputs.outcome }}
       applied: ${{ steps.apply.outcome }}
       sourcemaps: ${{ steps.sourcemaps-staging.outputs.verdicts }}${{ steps.sourcemaps-production.outputs.verdicts }}
@@ -96,7 +104,6 @@ jobs:
           SCOPE: ${{ inputs.scope }}
           HAS_INFISICAL_MACHINE_IDENTITY_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID != '' }}
           HAS_INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET != '' }}
-          HAS_RENDER_API_KEY: ${{ secrets.RENDER_API_KEY != '' }}
           HAS_VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY != '' }}
         run: |
           set -euo pipefail
@@ -129,13 +136,12 @@ jobs:
           missing=()
           [ "$HAS_INFISICAL_MACHINE_IDENTITY_ID" = "true" ] || missing+=(INFISICAL_MACHINE_IDENTITY_ID)
           [ "$HAS_INFISICAL_CLIENT_SECRET" = "true" ] || missing+=(INFISICAL_CLIENT_SECRET)
-          [ "$HAS_RENDER_API_KEY" = "true" ] || missing+=(RENDER_API_KEY)
           [ "$HAS_VERCEL_API_KEY" = "true" ] || missing+=(VERCEL_API_KEY)
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "::error::The '$TARGET_ENVIRONMENT' environment's secrets did not reach this called job: ${missing[*]}. A called workflow's job gets environment secrets only through its own environment: key, and only when its caller passes secrets: inherit; check both, and the environment's secrets (docs/ci-cd/agent-infra.md § GitHub environments and bootstrap secrets)."
             exit 1
           fi
-          echo "The '$TARGET_ENVIRONMENT' environment's secrets reached this called job (its environment: key, and the caller's secrets: inherit): INFISICAL_MACHINE_IDENTITY_ID, INFISICAL_CLIENT_SECRET, RENDER_API_KEY, VERCEL_API_KEY (names only)."
+          echo "The '$TARGET_ENVIRONMENT' environment's secrets reached this called job (its environment: key, and the caller's secrets: inherit): INFISICAL_MACHINE_IDENTITY_ID, INFISICAL_CLIENT_SECRET, VERCEL_API_KEY (names only)."
 
       # The deployed commit, for the installs. Nothing trusted runs from it until
       # the move to the trusted ref.
@@ -157,20 +163,24 @@ jobs:
           package-manager-cache: false
 
       # Before any secret is injected (#2801). A migrations-only run builds nothing.
+      # `env -u`: with the job's `id-token: write` (#5228), GitHub hands every
+      # step what it needs to ask for an OIDC token, which Google trades for the
+      # environment's deployer. Code that installs or builds a dependency gets
+      # no credential (#2801), so these steps run without it.
       - name: Install dependencies
         if: ${{ inputs.scope != 'migrations-only' }}
-        run: npm ci
+        run: env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN npm ci
 
       # Pinned, like every CLI that CI installs.
       - name: Install Vercel CLI
         if: ${{ inputs.scope != 'migrations-only' }}
-        run: npm install --global vercel@59.11.7
+        run: env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN npm install --global vercel@59.11.7
 
       # For the config check's boot check (#3112), before any secret (#2801). None
       # under migrations-only, or for a commit from before the boot check (c7c698fc).
       - name: Build the API, for its boot check
         if: ${{ inputs.scope != 'migrations-only' && hashFiles('apps/api/src/config/env.validation.ts') != '' }}
-        run: npx --no-install turbo run build --filter=api
+        run: env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN npx --no-install turbo run build --filter=api
 
       # The local actions and the checks run from `github.sha` (`main`). `--force` and
       # the null hooksPath keep an install script's edits and hooks out of the trusted
@@ -194,15 +204,13 @@ jobs:
       - name: Setup Supabase CLI
         uses: ./.github/actions/supabase-cli
 
-      # Render auto-deploy and a Vercel Git link both fail open, so check them before
-      # anything ships. migrations-only drops only frapp-landing's check, the one
-      # project with no Supabase client (production-guardrails.mjs).
+      # A Vercel Git link fails open, so check it before anything ships.
+      # migrations-only drops only frapp-landing's check, the one project with
+      # no Supabase client (production-guardrails.mjs).
       - name: Provider guardrail preflight
         if: inputs.environment == 'production'
         env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
-          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
           VERCEL_WEB_PROJECT_ID: ${{ steps.ids.outputs.vercel_web_project_id }}
           VERCEL_LANDING_PROJECT_ID: ${{ steps.ids.outputs.vercel_landing_project_id }}
           VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
@@ -399,6 +407,65 @@ jobs:
         id: builds-start
         run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
+      # ── The API image (#2506, #5228) ─────────────────────────────────────
+      # Built on the runner and tagged for the environment's own registry
+      # (`cloud_run_image`), which the Cloud Run step pushes it to. Built before
+      # anything is applied, so a failed build ships nothing. Each environment
+      # builds the commit itself rather than copying the other's image: the
+      # source-map check below counts only maps uploaded by this run's builds,
+      # and Deploy production can ship a commit staging never deployed. A dry
+      # run builds it as a rehearsal, without the Sentry token, so no maps go up
+      # for a release that doesn't ship.
+      #
+      # Plain docker rather than the docker/* actions: this runs after the
+      # Infisical injection, so no third-party action sees the job's env, and the
+      # build gets one value from it, SENTRY_AUTH_TOKEN, as a BuildKit secret that
+      # never enters the image or its metadata (apps/api/Dockerfile). The base
+      # comes from Google's Docker Hub mirror, as in ci.yml's api-docker-build:
+      # anonymous Docker Hub pulls from runner IPs hit its rate limit.
+      - name: Build the API image
+        id: api-image
+        if: (inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true') || (inputs.environment == 'production' && inputs.scope != 'migrations-only')
+        # A cold build of the whole API, both npm installs included; the
+        # build's own bound (20 minutes) fires first. Counted in the job's
+        # timeout above.
+        timeout-minutes: 30
+        env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          DEPLOY_SHA: ${{ inputs.sha }}
+          CLOUD_RUN_IMAGE: ${{ steps.ids.outputs.cloud_run_image }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CLOUD_RUN_IMAGE" ]; then
+            echo "::error::.github/environments.json gives no Cloud Run image to tag the build with."
+            exit 1
+          fi
+          TAG="$CLOUD_RUN_IMAGE:$DEPLOY_SHA"
+
+          BASE="$(grep -m1 -oP '^FROM \K\S+(?= AS deps$)' apps/api/Dockerfile)"
+          docker pull --quiet "mirror.gcr.io/library/$BASE"
+          docker tag "mirror.gcr.io/library/$BASE" "$BASE"
+
+          secret=()
+          if [ "$DRY_RUN" = true ]; then
+            echo "A dry run: this image is built without SENTRY_AUTH_TOKEN, so no source maps go up for a release that doesn't ship."
+          elif [ -n "${SENTRY_AUTH_TOKEN:-}" ]; then
+            secret=(--secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN)
+          else
+            echo "::warning::SENTRY_AUTH_TOKEN is not in Infisical $DEPLOY_ENVIRONMENT, so this image uploads no source maps and frapp-api stack traces stay compiled JS."
+          fi
+
+          timeout 20m docker build \
+            --file apps/api/Dockerfile \
+            --build-arg RENDER_GIT_COMMIT="$DEPLOY_SHA" \
+            "${secret[@]}" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$DEPLOY_SHA" \
+            --tag "$TAG" \
+            .
+          echo "Built $TAG for the Cloud Run step."
+
       # Built before anything is applied, so a failed build ships nothing.
       - name: Build the Vercel preview bundles (web + landing)
         if: steps.plan.outputs.upload == 'true'
@@ -461,8 +528,8 @@ jobs:
             echo "between that step and this summary."
             echo ""
             echo "The config check passed. Its section of this summary lists what it checked in"
-            echo "Infisical \`prod\` and anything it skipped. It can't see whether the Render sync"
-            echo "has copied those values."
+            echo "Infisical \`prod\` and anything it skipped. It can't see whether the Secret Manager"
+            echo "sync has copied those values to the project the API runs in."
             if [ "$SCOPE" != "migrations-only" ]; then
               echo ""
               echo "Both Vercel production bundles were BUILT — \`vercel pull --environment=production\`"
@@ -470,9 +537,13 @@ jobs:
               echo "app config currently in Infisical \`prod\`. Nothing was uploaded:"
               echo "no deployment was created and production still serves what it served before."
               echo ""
+              echo "The API image was BUILT too, without \`SENTRY_AUTH_TOKEN\`, and kept on the runner:"
+              echo "nothing was pushed."
+              echo ""
               echo "Still unrehearsed, and reachable only on a real run: the migration apply, the"
-              echo "Render deploy, the served-commit check, the client checks (CORS, the minimum"
-              echo "app version, the attachment-copy function), and the Vercel upload."
+              echo "API deploy (the push to Google's registry, the new revision and its candidate"
+              echo "check), the served-commit check, the client checks (CORS, the minimum app"
+              echo "version, the attachment-copy function), and the Vercel upload."
               echo ""
               echo "One difference inside the build itself: a real run compiles with"
               echo "\`SENTRY_AUTH_TOKEN\` when Infisical \`prod\` holds it, and then uploads source"
@@ -519,32 +590,65 @@ jobs:
           TARGET_ENVIRONMENT: production
         run: node scripts/ci/deploy-edge-functions.mjs
 
-      # By commit through the Render API (#2505). A deploy hook builds `main`'s tip.
-      - name: Deploy the commit to Render (staging)
-        if: steps.plan.outputs.deploy == 'true'
+      # The image built above, pushed to the project's own registry and deployed
+      # as a new revision that takes traffic only once `candidate.<API host>`,
+      # the load balancer's way to it, serves this commit (deploy-cloud-run.mjs,
+      # #5228, #5269). API_HEALTHCHECK_URL comes from the environment's
+      # Infisical. The job signs in to Google as the project's deployer with
+      # GitHub's OIDC token, no key; the access token goes to a file the step
+      # deletes. Both scripts run from the trusted copy, so a deploy of a commit
+      # from before them still has them. After the migrations, on every real
+      # run but a production migrations-only one.
+      - name: Deploy the API to Cloud Run
+        id: cloud-run
+        if: (inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true') || (inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only')
+        # Usually under 5: the push, the new revision, its check and the
+        # traffic move. Each write's own bound is 10 and each check's 5, but
+        # one that slow means something is wrong, so this stops it first.
+        timeout-minutes: 20
         env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
-          SERVICE_LABEL: frapp-api-staging
           DEPLOY_SHA: ${{ inputs.sha }}
-        run: node scripts/ci/deploy-render-production.mjs
-
-      - name: Deploy the commit to Render (production)
-        id: render
-        if: ${{ inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only' }}
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-          RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
-          SERVICE_LABEL: frapp-api-prod
-          DEPLOY_SHA: ${{ inputs.sha }}
+          GCP_PROJECT_ID: ${{ steps.ids.outputs.gcp_project_id }}
+          GCP_REGION: ${{ steps.ids.outputs.gcp_region }}
+          CLOUD_RUN_SERVICE: ${{ steps.ids.outputs.cloud_run_service }}
+          CLOUD_RUN_IMAGE: ${{ steps.ids.outputs.cloud_run_image }}
+          CLOUD_RUN_DEPLOYER: ${{ steps.ids.outputs.cloud_run_deployer }}
+          CLOUD_RUN_RUNTIME: ${{ steps.ids.outputs.cloud_run_runtime }}
+          CLOUD_RUN_PROVIDER: ${{ steps.ids.outputs.cloud_run_provider }}
+          CLOUD_RUN_MIN_INSTANCES: ${{ steps.ids.outputs.cloud_run_min_instances }}
+          CLOUD_RUN_MAX_INSTANCES: ${{ steps.ids.outputs.cloud_run_max_instances }}
+          SERVICE_LABEL: ${{ inputs.environment == 'production' && 'frapp-api-prod' || 'frapp-api-staging' }} (Cloud Run)
+          # The trusted ref's scripts, like the checks: which tree they run from
+          # can't depend on whether the deployed commit predates them.
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+          # Infisical's keys are the names the injection added to it; a secret
+          # Secret Manager still holds after Infisical dropped it is left out.
+          ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
         run: |
           set -euo pipefail
-          node scripts/ci/deploy-render-production.mjs | tee "${RUNNER_TEMP:-/tmp}/render.log"
-          ID="$(grep -oP '^render_deploy_id=\K.*' "${RUNNER_TEMP:-/tmp}/render.log" || true)"
-          echo "deploy_id=$ID" >> "$GITHUB_OUTPUT"
+          REGISTRY_HOST="${CLOUD_RUN_IMAGE%%/*}"
+          TOKEN_FILE="$(mktemp)"
+          trap 'rm -f "$TOKEN_FILE"; docker logout "$REGISTRY_HOST" >/dev/null 2>&1 || true' EXIT
+          TOKEN_FILE="$TOKEN_FILE" node "$TRUSTED_CI/gcp-access-token.mjs"
+          docker login --username oauth2accesstoken --password-stdin "$REGISTRY_HOST" < "$TOKEN_FILE"
+          rm -f "$TOKEN_FILE"
 
-      # Render's `live` can still be the old instance, so poll /health/ready for the
-      # commit, whenever anything ships and before any frontend: docs/ops/deployment/ci-cd.md § Deploy verification.
+          TAG="$CLOUD_RUN_IMAGE:$DEPLOY_SHA"
+          timeout 5m docker push --quiet "$TAG"
+          IMAGE_REF="$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$TAG" \
+            | grep -m1 -xE "${CLOUD_RUN_IMAGE//./\\.}@sha256:[0-9a-f]{64}" || true)"
+          if [ -z "$IMAGE_REF" ]; then
+            echo "::error::Pushed $TAG, but docker reports no $CLOUD_RUN_IMAGE digest for it."
+            exit 1
+          fi
+          echo "Pushed $TAG as $IMAGE_REF."
+          IMAGE_REF="$IMAGE_REF" node "$TRUSTED_CI/deploy-cloud-run.mjs"
+
+      # Poll the public /health/ready for the commit, whenever anything ships and
+      # before any frontend: the load balancer, DNS and an old revision all sit
+      # between the deploy and a client. docs/ops/deployment/ci-cd.md § Deploy verification.
+      # The staging host every client calls, so no web ships against an API it
+      # can't reach.
       - name: Verify staging serves the commit
         if: steps.plan.outputs.verify_sha != ''
         env:

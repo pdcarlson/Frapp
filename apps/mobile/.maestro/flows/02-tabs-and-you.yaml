@@ -1,0 +1,87 @@
+# Device pass: every tab opens, and each You row every member sees opens its
+# screen and comes back (the smoke checklist's dead-end rule, §§ 2-3). Rows
+# drawn only for some chapters or roles (Documents, Study hours, Dues, Minutes,
+# Invite members, Host check-in, Chapter settings) are left to the hand pass.
+appId: live.frapp.mobile
+name: "Every tab and You row opens and comes back"
+tags:
+  - smoke
+---
+- launchApp
+- runFlow: ../subflows/sign-in.yaml
+- tapOn:
+    id: "tab-activity"
+- takeScreenshot: tab-activity
+# The task board left the tab bar for Activity (#4610): its door is on
+# Activity's title row, and it goes back there.
+- tapOn: "Task board"
+- assertVisible: "Back to Activity"
+- takeScreenshot: task-board
+- tapOn: "Back to Activity"
+- assertVisible:
+    id: "tab-activity"
+# The Calendar left the tab bar for Activity (#5310): its door is Activity's
+# Calendar row, and it goes back there.
+- tapOn:
+    id: "activity-calendar-row"
+- assertVisible: "Back to Activity"
+- takeScreenshot: calendar
+- tapOn: "Back to Activity"
+- assertVisible:
+    id: "tab-activity"
+# Messages took the Calendar's place as tab 3 (#5310).
+- tapOn:
+    id: "tab-messages"
+# Its search field, which only the Messages screen draws.
+- assertVisible: "Find or start a conversation"
+- takeScreenshot: tab-messages
+- tapOn:
+    id: "tab-you"
+- takeScreenshot: tab-you
+# Your profile is the top of the You tab (#3839): no screen of its own.
+- assertVisible: "points"
+- runFlow:
+    file: ../subflows/open-you-row.yaml
+    env:
+      ROW: "Service hours"
+- runFlow:
+    file: ../subflows/open-you-row.yaml
+    env:
+      ROW: "Directory"
+- runFlow:
+    file: ../subflows/open-you-row.yaml
+    env:
+      ROW: "Settings"
+# The edge swipe back on iOS (#3588): it must land where the back row does.
+- runFlow:
+    when:
+      platform: iOS
+    commands:
+      - tapOn: "Settings"
+      - assertVisible: "Back to You"
+      - swipe:
+          start: 1%, 50%
+          end: 85%, 50%
+          duration: 600
+      - assertNotVisible: "Back to You"
+      - assertVisible:
+          id: "tab-you"
+# Android's back button does the same.
+- runFlow:
+    when:
+      platform: Android
+    commands:
+      - tapOn: "Settings"
+      - assertVisible: "Back to You"
+      - back
+      - assertNotVisible: "Back to You"
+      - assertVisible:
+          id: "tab-you"
+- tapOn:
+    id: "tab-index"
+# The inbox's bell is on Chat home's title row, beside Search (#3839, #5139).
+- tapOn: "Notifications"
+- assertVisible: "Back to Chat"
+- tapOn: "Back to Chat"
+- assertVisible:
+    id: "tab-index"

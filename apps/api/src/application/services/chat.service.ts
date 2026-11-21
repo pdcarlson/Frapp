@@ -10,11 +10,29 @@ import {
 import {
   CHAT_SINCE_NOT_FOUND_CODE,
   canChangeMessageFlag,
+  isAnnouncementChannel,
+  isAskAnswerPostedBy,
   isDirectChannel,
   isModuleEnabled,
+  mentionPicksIn,
+  readMentionPicks,
+  withoutObjectReplacement,
   type ChatMessageFlag,
+  type MentionPick,
 } from '@repo/validation';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
+import { stampCardClosed } from './card-close';
+import { normalizeSignupCard } from '#domain/utils/signup-card-rules';
+import { isCardClosed } from '#domain/utils/card-closing';
+import { normalizeFormCard } from '#domain/utils/form-card-rules';
+import { normalizeRolePickerCard } from '#domain/utils/role-picker-card-rules';
+import { normalizePollCard } from '#domain/utils/poll-card-rules';
+import { jsonLength } from '#domain/utils/json-length';
+import {
+  CHAT_CARD_PAYLOAD_MAX_CHARS,
+  CHAT_FORM_CARD_PAYLOAD_MAX_CHARS,
+  MAX_GROUP_DM_MEMBERS,
+} from '#domain/constants/chat';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -35,12 +53,18 @@ import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
+import {
+  USER_REPOSITORY,
+  type IUserRepository,
+} from '#domain/repositories/user.repository.interface';
 import { clampListLimit } from '#domain/constants/list-query-limits';
 import { instantOrThrow } from './instant-bound';
 import type {
   ChatChannel,
   ChatChannelListItem,
   ChatChannelView,
+  ChatForwardedGif,
+  ChatForwardedMessage,
   ChatMessage,
   ChatMessageKind,
   ChannelType,
@@ -50,6 +74,7 @@ import type {
 import {
   ChannelAccessService,
   type ChannelMemberEntry,
+  type MessageOperation,
   type ReportedMessageGrant,
 } from './channel-access.service';
 import { assertModuleEnabled, type EnabledModules } from './module-gate';
@@ -59,23 +84,36 @@ import {
   attachmentMetadataOf,
   type SendMessageAttachmentInput,
 } from './chat-attachment.service';
-import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
+import {
+  DELETED_MESSAGE_CONTENT,
+  maskBlockedMessages,
+  redactDeletedMessage,
+  tombstoneMetadata,
+  tombstonePayload,
+  type MaskedChatMessage,
+} from './chat-block-mask';
 import { ActivationService } from './activation.service';
 import { ChannelCacheService } from './channel-cache.service';
 import { ChannelAccessListService } from './channel-access-list.service';
 import { ChatMentionService } from './chat-mention.service';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { chatPushPreview } from './chat-push-preview';
+import type { MessageGif } from './gif.service';
 import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
-const MAX_GROUP_DM_MEMBERS = 10;
 // `required_permissions` and `is_read_only` were how a page from before #3722
 // said who could see and post. A page left open across the deploy may still
 // send them; one that would change access is refused rather than ignored, so
 // an officer never believes a channel is locked down when it isn't.
 const LEGACY_ACCESS_FIELDS_MESSAGE =
   'Frapp was updated. Reload the page to choose who can see and post in this channel.';
+
+// A DM or group DM belongs to its members (#3633), so `PATCH /v1/channels/:id`
+// refuses every field of one.
+const DIRECT_CHANNEL_SETTINGS_MESSAGE =
+  'A DM or group DM has no channel settings to change';
 
 export interface CreateChannelInput {
   chapter_id: string;
@@ -139,6 +177,19 @@ export interface SendMessageInput {
   thread_root_id?: string | null;
   metadata?: Record<string, any>;
   /**
+   * A GIF from the picker (#4631), already checked by `GifService.messageGif`.
+   * Stored as the server's own `metadata.gif`; the message has no text and no
+   * files.
+   */
+  gif?: MessageGif | null;
+  /**
+   * The members the composer's `@` picker wrote into `content` (#3835): a
+   * token spelling a picked label reaches that member or nobody. Stored as
+   * the server's own `metadata.mention_picks`, so an edit reads the body the
+   * same way.
+   */
+  mention_picks?: readonly MentionPick[] | null;
+  /**
    * The chapter's `enabled_modules`, as `ChapterGuard` read it. Required on a
    * client send: it is what refuses a card kind whose module is off
    * ({@link MODULE_GATED_KINDS}). Absent or `null` reads as every module on,
@@ -152,6 +203,22 @@ export interface SendMessageInput {
    * client request can never set it.
    */
   system_originated?: boolean;
+  /**
+   * Who may post a role picker and what it may list (#4958), checked by the
+   * caller that can read roles (`RbacService.assertMayPostRolePicker`, passed
+   * by `ChatController.sendMessage`). Called with the card's normalized role
+   * ids after the replay check, so a picker that already committed is
+   * answered as a duplicate even if a role was unmarked since. A
+   * `role_picker` send without it is refused.
+   */
+  assertRolePicker?: (roleIds: readonly string[]) => Promise<void>;
+  /**
+   * Internal-only: the copy `forwardMessage` built of the message being
+   * forwarded (#4864). Never on `SendMessageDto`, so a client can't claim a
+   * copy of something it never read. With it, `content` (the forwarder's
+   * comment) may be empty.
+   */
+  forwarded_from?: ChatForwardedMessage | null;
 }
 
 /**
@@ -175,6 +242,11 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
   // policy, and it short-circuits the push worker. A client that could post one
   // would have a message that never notifies and never appears live.
   'imported',
+  // An Ask Frapp answer posted to the channel (#4713). Written only by
+  // `AskPostService`, from an answer the server itself sealed, under the
+  // Frapp sender. A client that could post one would be writing in Frapp's
+  // name with sources it made up.
+  'ask_answer',
 ]);
 
 /**
@@ -195,22 +267,133 @@ const MODULE_GATED_KINDS: Readonly<Partial<Record<ChatMessageKind, string>>> = {
 };
 
 /**
- * A poll card's early close (`payload.closed_at` / `closed_by`, #3794) is
- * written only by `PollService.close`, which checks the caller is the poll's
- * creator. A client composes the rest of the card, so the pair is dropped from
- * what it posts: a card can't arrive already closed, or "closed by" someone
- * else.
+ * The member ids a DM or group DM is made of, lowercased. A UUID is the same
+ * id in either case, and Postgres stores it lowercase, so an id compared or
+ * counted as sent (the self-DM check, a group's duplicates) would let
+ * `ABC…` and `abc…` pass as two people.
  */
-function withoutServerPollFields(
+function normalizedMemberIds(memberIds: readonly string[]): string[] {
+  return memberIds.map((id) => id.toLowerCase());
+}
+
+/**
+ * `ChatService.closeCard`'s refusals for each kind it closes. The sign-up
+ * wording is step 2's, which `@repo/validation`'s member copy keys on.
+ */
+const CLOSE_COPY: Readonly<
+  Record<
+    'signup' | 'form',
+    {
+      deleted: string;
+      forbidden: string;
+      malformed: string;
+      alreadyClosed: string;
+    }
+  >
+> = {
+  signup: {
+    deleted: 'Cannot close a deleted sign-up',
+    forbidden:
+      'Only the sign-up’s creator or a member who manages channels can close it',
+    malformed: 'Malformed sign-up card',
+    alreadyClosed: 'Sign-ups are already closed',
+  },
+  form: {
+    deleted: 'Cannot close a deleted form',
+    forbidden:
+      'Only the form’s creator or a member who manages channels can close it',
+    malformed: 'Malformed form card',
+    alreadyClosed: 'This form is already closed',
+  },
+};
+
+/**
+ * The card payload a client's send stores. A poll card is checked and rebuilt
+ * from its known fields (`normalizePollCard`), which drops the early close
+ * only `PollService.close` writes (`closed_at` / `closed_by`, #3794), so a
+ * card can't arrive already closed, or "closed by" someone else. A sign-up or
+ * form card (#3926) is checked and rebuilt too, because `claim_signup_slots`
+ * trusts its slots' ids and limits on every claim; a card that can't be read
+ * is refused with a 400 rather than stored as a card nobody can sign up on.
+ *
+ * Then a client's card is held to a length as JSON, since every reader of
+ * the channel downloads it and the kinds stored as sent (an announcement, a
+ * dues card) had no bound but the body limit: a form to
+ * {@link CHAT_FORM_CARD_PAYLOAD_MAX_CHARS}, every other kind to
+ * {@link CHAT_CARD_PAYLOAD_MAX_CHARS}.
+ */
+function cardPayloadForSend(
+  kind: ChatMessageKind,
+  payload: Record<string, any> | null | undefined,
+  fromClient: boolean,
+): Record<string, any> | null {
+  const card = checkedCardPayload(kind, payload);
+  if (!fromClient) return card;
+  if (kind === 'form') {
+    if (jsonLength(card) > CHAT_FORM_CARD_PAYLOAD_MAX_CHARS) {
+      throw new BadRequestException(
+        'This form is too long to post. Shorten some questions or options and try again.',
+      );
+    }
+  } else if (jsonLength(card) > CHAT_CARD_PAYLOAD_MAX_CHARS) {
+    throw new BadRequestException(
+      'This card is too long to post. Shorten it and try again.',
+    );
+  }
+  return card;
+}
+
+function checkedCardPayload(
   kind: ChatMessageKind,
   payload: Record<string, any> | null | undefined,
 ): Record<string, any> | null {
-  if (!payload) return null;
-  if (kind !== 'poll') return payload;
-  const card = { ...payload };
-  delete card.closed_at;
-  delete card.closed_by;
-  return card;
+  if (kind === 'poll') {
+    const checked = normalizePollCard(payload);
+    if ('error' in checked) throw new BadRequestException(checked.error);
+    return { ...checked.card };
+  }
+  if (kind === 'signup') {
+    const checked = normalizeSignupCard(payload);
+    if ('error' in checked) throw new BadRequestException(checked.error);
+    return { ...checked.card };
+  }
+  // A form card (#3926 step 3) the same way: the answer route checks every
+  // answer against its questions.
+  if (kind === 'form') {
+    const checked = normalizeFormCard(payload);
+    if ('error' in checked) throw new BadRequestException(checked.error);
+    return { ...checked.card };
+  }
+  // A role picker (#4958) keeps only its title and role ids. The caller has
+  // checked who may post one and that each role is marked
+  // (`ChatController.sendMessage`).
+  if (kind === 'role_picker') {
+    const checked = normalizeRolePickerCard(payload);
+    if ('error' in checked) throw new BadRequestException(checked.error);
+    return { ...checked.card };
+  }
+  return payload ?? null;
+}
+
+/**
+ * An announcement card is drawn with the chapter's official chrome (the
+ * megaphone and the "Announcement" label), so only the place that makes a
+ * message an announcement may carry one: a timeline post in the announcements
+ * channel (`isAnnouncementChannel`), whose who-can-post list `assertChannelAccess`
+ * has already checked (#3722). That is the predicate the push worker decides
+ * an announcement push by, so the card and the push can't disagree. Anywhere
+ * else (`#general`, a DM, a thread under an announcement) the send is refused
+ * rather than stored as plain text: `/announce` only ever posts to that
+ * channel, so a refusal here is a hand-built request, and quietly changing
+ * its kind would hide that from the sender (#3414).
+ */
+function misplacedAnnouncement(
+  kind: ChatMessageKind,
+  channel: Pick<ChatChannel, 'name' | 'type' | 'is_read_only'>,
+  threadRootId: string | null,
+): boolean {
+  if (kind !== 'announcement') return false;
+  return threadRootId !== null || !isAnnouncementChannel(channel);
 }
 
 /** What {@link ChatService.deleteReportedMessage} did, and where. */
@@ -258,6 +441,9 @@ export class ChatService {
     // Message threads (#3785): a thread reply's auto-follow and read cursor.
     @Inject(CHAT_THREAD_REPOSITORY)
     private readonly threads: IChatThreadRepository,
+    // A forward's copy names the original's author as they were then (#4864).
+    @Inject(USER_REPOSITORY)
+    private readonly users: IUserRepository,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -419,6 +605,11 @@ export class ChatService {
       throw new BadRequestException(LEGACY_ACCESS_FIELDS_MESSAGE);
     }
 
+    await this.accessLists.assertCategoryInChapter(
+      input.chapter_id,
+      input.category_id,
+    );
+
     // Who can see and post (#3722): the lists sent, else the category's.
     // Writes `type` and `is_read_only` to match, which the database checks.
     const access = await this.accessLists.forNewChannel(
@@ -462,6 +653,13 @@ export class ChatService {
     input: UpdateChannelInput,
   ): Promise<ChatChannel> {
     const existing = await this.requireChannelInChapter(id, chapterId);
+    // A DM or group DM belongs to its members, not the chapter's officers
+    // (#3633): no field of it is a `channels:manage` setting. Refused whole,
+    // which also covers the chapter default, Activity and the push default a
+    // DM has no use for (the push worker defaults every DM to `all`).
+    if (isDirectChannel(existing)) {
+      throw new BadRequestException(DIRECT_CHANNEL_SETTINGS_MESSAGE);
+    }
     const {
       who_can_see: whoCanSee,
       who_can_post: whoCanPost,
@@ -488,38 +686,14 @@ export class ChatService {
       }
     }
 
-    // Chat opens on the chapter default for everyone who can see it; a DM is
-    // two members' conversation, not somewhere to send the whole chapter.
-    if (isDirectChannel(existing) && data.is_default === true) {
-      throw new BadRequestException(
-        "A DM or group DM can't be the chapter's default channel",
-      );
-    }
-
-    // Leaving a channel out of Activity is an officer's call about the
-    // chapter's channels; a DM has no officer (`spec/behavior/activity.md`
-    // § Links).
-    if (isDirectChannel(existing) && data.activity_excluded === true) {
-      throw new BadRequestException(
-        "A DM or group DM can't be left out of Activity",
-      );
-    }
-
-    // A DM has no officer, and the push worker defaults every DM to `all`
-    // whatever this column holds (`defaultLevelFor`), so a stored value there
-    // would be a setting that does nothing. Refused rather than ignored.
-    if (isDirectChannel(existing) && data.default_notification_level != null) {
-      throw new BadRequestException(
-        'A DM or group DM has no channel default notification level',
-      );
-    }
-
     if (
       legacyPermissions !== undefined ||
       (legacyReadOnly !== undefined && legacyReadOnly !== existing.is_read_only)
     ) {
       throw new BadRequestException(LEGACY_ACCESS_FIELDS_MESSAGE);
     }
+
+    await this.accessLists.assertCategoryInChapter(chapterId, data.category_id);
 
     // Who can see and post (#3722). Moving a channel to another category
     // keeps its lists; `match_category_access` copies the category's.
@@ -605,9 +779,12 @@ export class ChatService {
     const existing = await this.requireChannelInChapter(id, chapterId);
     // The audit log (#3909) is the chapter's record of officer changes, and
     // the mirror has nowhere else to post. Refused like a rename; DMs and
-    // group DMs are #3633's half.
+    // group DMs belong to their members, so no officer deletes one (#3633).
     if (existing.is_audit_log) {
       throw new BadRequestException("The audit log channel can't be deleted");
+    }
+    if (isDirectChannel(existing)) {
+      throw new BadRequestException("A DM or group DM can't be deleted");
     }
     await this.channelRepo.delete(id, chapterId);
     // A deleted channel's stale row must not outlive it in the push worker's
@@ -627,19 +804,26 @@ export class ChatService {
    * `findDm`, but the database holds one DM per pair, so `createDm` hands the
    * slower one the row the faster one inserted. Both callers get the same
    * channel.
+   *
+   * A new DM is only between two members of the chapter
+   * ({@link assertChapterMembers}), so a conversation can't be opened with
+   * someone who isn't there to read it, or used to learn whether an id is a
+   * user. An existing one reopens whoever is in it now: DMs keep a member who
+   * left (§ Direct Messages), and reopening reveals nothing new.
    */
   async getOrCreateDm(
     input: CreateDmInput,
     openedBy?: string,
   ): Promise<ChatChannel> {
-    if (input.member_ids.length !== 2) {
+    const memberIds = normalizedMemberIds(input.member_ids);
+    if (memberIds.length !== 2) {
       throw new BadRequestException('A DM requires exactly 2 members');
     }
+    if (memberIds[0] === memberIds[1]) {
+      throw new BadRequestException("You can't start a DM with yourself");
+    }
 
-    const existing = await this.channelRepo.findDm(
-      input.chapter_id,
-      input.member_ids,
-    );
+    const existing = await this.channelRepo.findDm(input.chapter_id, memberIds);
     if (existing) {
       if (openedBy) {
         // Never at the cost of the open itself: a member messaging someone
@@ -659,19 +843,28 @@ export class ChatService {
       return existing;
     }
 
-    return this.channelRepo.createDm(input.chapter_id, input.member_ids);
+    await this.assertChapterMembers(input.chapter_id, memberIds);
+    return this.channelRepo.createDm(input.chapter_id, memberIds);
   }
 
+  /**
+   * A new group DM. `members` is everyone in it, the creator included, and
+   * every one of them must be a member of the chapter
+   * ({@link assertChapterMembers}). Each id counts once, however it is
+   * spelled ({@link normalizedMemberIds}).
+   */
   async createGroupDm(
     chapterId: string,
-    memberIds: string[],
+    members: string[],
     name?: string,
   ): Promise<ChatChannel> {
+    const memberIds = [...new Set(normalizedMemberIds(members))];
     if (memberIds.length < 2 || memberIds.length > MAX_GROUP_DM_MEMBERS) {
       throw new BadRequestException(
         `Group DMs require 2 to ${MAX_GROUP_DM_MEMBERS} members`,
       );
     }
+    await this.assertChapterMembers(chapterId, memberIds);
 
     return this.channelRepo.create({
       chapter_id: chapterId,
@@ -679,6 +872,29 @@ export class ChatService {
       type: 'GROUP_DM',
       member_ids: memberIds,
     });
+  }
+
+  /**
+   * Refuse a direct conversation with anyone who isn't a member of the
+   * chapter. One 404 for every such id, whether it is no user at all or
+   * someone in another chapter, naming none of them, so the answer says
+   * nothing about who exists. At most {@link MAX_GROUP_DM_MEMBERS} lookups,
+   * run together.
+   */
+  private async assertChapterMembers(
+    chapterId: string,
+    userIds: readonly string[],
+  ): Promise<void> {
+    const members = await Promise.all(
+      userIds.map((userId) =>
+        this.memberRepo.findByUserAndChapter(userId, chapterId),
+      ),
+    );
+    if (members.some((member) => !member)) {
+      throw new NotFoundException(
+        'Only members of your chapter can be in a direct message. Check who you picked and try again.',
+      );
+    }
   }
 
   /**
@@ -958,8 +1174,14 @@ export class ChatService {
    *   `chat-realtime-carrier.spec.ts`.
    */
   async sendMessage(
-    input: SendMessageInput,
+    sent: SendMessageInput,
   ): Promise<{ message: ChatMessage; deduplicated: boolean }> {
+    // The text loses U+FFFC, the placeholder a phone keyboard leaves where a
+    // picture or sticker couldn't go, before anything reads it: the emptiness
+    // rule, the mentions and the insert all see the cleaned text (#4346).
+    // Here rather than in the DTO, so the server's own cards built from a
+    // member's typing (a task title, an event name) are cleaned too.
+    const input = { ...sent, content: withoutObjectReplacement(sent.content) };
     // Validated before anything else, because the emptiness rule below depends
     // on it: a message that is nothing but a file is a real message.
     const attachments = this.attachments.validateAttachmentInputs(
@@ -968,7 +1190,21 @@ export class ChatService {
       input.channel_id,
     );
 
-    if (!input.content.trim() && attachments.length === 0) {
+    const gif = input.gif ?? null;
+    if (gif) {
+      if (input.content.trim() || attachments.length > 0) {
+        throw new BadRequestException(
+          'A GIF message has no text and no attachments',
+        );
+      }
+      if ((input.kind ?? 'text') !== 'text') {
+        throw new BadRequestException('Only a plain message can be a GIF');
+      }
+    } else if (
+      !input.content.trim() &&
+      attachments.length === 0 &&
+      !input.forwarded_from
+    ) {
       throw new BadRequestException(
         'A message needs content or at least one attachment',
       );
@@ -994,40 +1230,19 @@ export class ChatService {
       threadRootId ? 'thread' : 'post',
     );
 
-    const threadRoot = threadRootId
-      ? await this.assertThreadRoot(channel, threadRootId, input)
-      : null;
-
-    let replyTo: ChatMessage | null = null;
-    if (input.reply_to_id) {
-      // A quote reply is a post: whoever may post here may quote (#3722),
-      // which `assertChannelAccess` above already decided.
-      replyTo = await this.messageRepo.findById(input.reply_to_id);
-      if (!replyTo || replyTo.channel_id !== input.channel_id) {
-        throw new BadRequestException(
-          'reply_to_id must reference a message in the same channel',
-        );
-      }
-      // A quote in the timeline cannot point into a thread, whose replies the
-      // timeline never shows (#3785).
-      if (replyTo.thread_root_id) {
-        throw new BadRequestException(
-          'reply_to_id cannot reference a reply inside a thread',
-        );
-      }
-    }
+    const { threadRoot, replyTo } = await this.assertSendTargets(channel, {
+      reply_to_id: input.reply_to_id ?? null,
+      thread_root_id: threadRootId,
+    });
 
     const kind: ChatMessageKind = input.kind ?? 'text';
-
-    const gatedModule = MODULE_GATED_KINDS[kind];
-    if (
-      gatedModule &&
-      !isModuleEnabled(input.enabled_modules ?? null, gatedModule)
-    ) {
-      // A replay of a card that committed before the module was switched off
-      // is not a new write: answer it as the duplicate below would, or the
-      // client's outbox marks a card that exists on the server as failed.
-      // Nothing is written on this path, not even the attachment repair.
+    // A refusal below that only exists because something changed after the
+    // card committed (the module switched off, the announcements channel
+    // renamed or opened up) must not refuse that card's replay: answer it as
+    // the duplicate below would, or the client's outbox marks a card that
+    // exists on the server as failed. Nothing is written on this path, not
+    // even the attachment repair.
+    const committedReplay = async () => {
       const existing = input.client_message_id
         ? await this.messageRepo.findByClientMessageId(
             input.channel_id,
@@ -1035,9 +1250,64 @@ export class ChatService {
             input.client_message_id,
           )
         : null;
-      if (existing && existing.kind === kind) {
-        return { message: existing, deduplicated: true };
+      return existing && existing.kind === kind
+        ? { message: redactDeletedMessage(existing), deduplicated: true }
+        : null;
+    };
+
+    if (misplacedAnnouncement(kind, channel, threadRootId)) {
+      const replay = await committedReplay();
+      if (replay) return replay;
+      throw new ForbiddenException(
+        'Announcements can only be posted in the announcements channel',
+      );
+    }
+    // Before anything is written (thread follows, the attachment repair), so
+    // a card that can't be stored costs nothing. A card these checks refuse
+    // may still be one that committed before they were this strict (a poll
+    // checked since 2026-11-17, every card's length bound): an outbox retry
+    // of it is answered as the duplicate, like the refusals above.
+    let payload: Record<string, any> | null;
+    try {
+      payload = cardPayloadForSend(
+        kind,
+        input.payload,
+        input.system_originated !== true,
+      );
+    } catch (refusal) {
+      const replay = await committedReplay();
+      if (replay) return replay;
+      throw refusal;
+    }
+
+    // A role picker hands out roles, so it is an officer's post that lists
+    // only marked roles. A replay of one that already committed is answered
+    // as the duplicate, as the module gate's is, so a role unmarked or a
+    // grant lost since never fails a card that is already in the channel.
+    if (kind === 'role_picker') {
+      try {
+        if (!input.assertRolePicker) {
+          throw new ForbiddenException(
+            'Only officers who manage roles can post a role picker',
+          );
+        }
+        await input.assertRolePicker(
+          (payload as { role_ids: string[] }).role_ids,
+        );
+      } catch (refusal) {
+        const replay = await committedReplay();
+        if (replay) return replay;
+        throw refusal;
       }
+    }
+
+    const gatedModule = MODULE_GATED_KINDS[kind];
+    if (
+      gatedModule &&
+      !isModuleEnabled(input.enabled_modules ?? null, gatedModule)
+    ) {
+      const replay = await committedReplay();
+      if (replay) return replay;
       assertModuleEnabled(input.enabled_modules ?? null, gatedModule);
     }
 
@@ -1046,11 +1316,17 @@ export class ChatService {
     // list would let any member force a push to any other member in a channel
     // they had muted on purpose. `ChatMentionService` owns the rules,
     // including that a reply mentions the author it quotes (#3844).
+    // Only the picks the cleaned body still writes are read or kept.
+    const mentionPicks = mentionPicksIn(
+      input.content,
+      input.mention_picks ?? [],
+    );
     const mentions = await this.mentions.resolveForSend(
       input.chapter_id,
       input.sender_id,
       input.content,
       replyTo,
+      mentionPicks,
     );
 
     // Auto-follow BEFORE the insert, so the push worker, which reacts to the
@@ -1082,7 +1358,7 @@ export class ChatService {
         content: input.content,
         type: 'TEXT',
         kind,
-        payload: withoutServerPollFields(kind, input.payload),
+        payload,
         client_message_id: input.client_message_id ?? null,
         reply_to_id: input.reply_to_id ?? null,
         thread_root_id: threadRootId,
@@ -1096,14 +1372,16 @@ export class ChatService {
         // before the attachments read returns (#3879).
         // Both keys are the server's: a client's own copies are dropped, so a
         // text message can't claim files, or photo boxes, it doesn't have.
-        metadata:
-          attachments.length > 0
-            ? {
-                ...clientMetadata(input.metadata),
-                ...attachmentMetadataOf(attachments),
-              }
-            : clientMetadata(input.metadata),
+        metadata: {
+          ...clientMetadata(input.metadata),
+          ...(attachments.length > 0 ? attachmentMetadataOf(attachments) : {}),
+          ...(gif ? { gif } : {}),
+          ...(mentionPicks.length > 0 ? { mention_picks: mentionPicks } : {}),
+        },
         mentions,
+        ...(input.forwarded_from
+          ? { forwarded_from: input.forwarded_from }
+          : {}),
       });
     } catch (error) {
       if (
@@ -1117,6 +1395,15 @@ export class ChatService {
         );
         if (!existing) {
           throw error;
+        }
+        // Deleted since it committed: answer the tombstone, and repair nothing.
+        // Its attachments were purged with it, and re-writing their rows or
+        // count would draw dead files on a message that is gone.
+        if (existing.is_deleted) {
+          return {
+            message: redactDeletedMessage(existing),
+            deduplicated: true,
+          };
         }
         // A retry reaches here when the FIRST attempt committed the message and
         // then failed — which is exactly the case where the attachments were
@@ -1199,15 +1486,176 @@ export class ChatService {
   }
 
   /**
+   * Forward one message to one channel or DM (#4864,
+   * spec/behavior/chat/README.md § Forward).
+   *
+   * The forward is an ordinary text message in the destination, sent by the
+   * caller through {@link sendMessage}, so it dedupes on `client_message_id`,
+   * resolves the comment's mentions, notifies and counts unread like any
+   * post. Its `content` is the caller's comment, which may be empty, and its
+   * `forwarded_from` is a copy of the original built here, never taken from
+   * the client: the people in the destination may not be able to read the
+   * source, so the copy is what they see.
+   *
+   * - The source must be readable by the caller (404 otherwise, as every
+   *   message action answers), and the destination postable (404 / 403 from
+   *   {@link sendMessage}'s own check). The destination may be the source's
+   *   channel.
+   * - Only a live text message is forwarded: a card, a deleted message, or a
+   *   forward of a deleted original with no comment is a 400.
+   * - A forward of a forward never nests. With no comment of its own (no
+   *   text, GIF or files), the source's copy is passed on, so the new
+   *   forward still points at the original and follows its deletion.
+   *   Otherwise the source itself is copied and its own copy dropped.
+   * - Files are not copied: the copy counts them (`attachment_count`).
+   *
+   * Answers the new message masked for the caller, as a read would serve it,
+   * with `deduplicated` set when a retry on the same `client_message_id`
+   * answered the forward already made (so its analytics event isn't counted
+   * twice, #4875).
+   */
+  async forwardMessage(input: {
+    message_id: string;
+    chapter_id: string;
+    sender_id: string;
+    channel_id: string;
+    content?: string | null;
+    client_message_id?: string | null;
+    mention_picks?: readonly MentionPick[] | null;
+  }): Promise<MaskedChatMessage & { deduplicated: boolean }> {
+    const source = await this.assertMessageAccess(
+      input.message_id,
+      input.chapter_id,
+      input.sender_id,
+    );
+    const copy = await this.forwardedCopyOf(source);
+    const { message, deduplicated } = await this.sendMessage({
+      chapter_id: input.chapter_id,
+      channel_id: input.channel_id,
+      sender_id: input.sender_id,
+      content: input.content ?? '',
+      kind: 'text',
+      client_message_id: input.client_message_id ?? null,
+      mention_picks: input.mention_picks ?? null,
+      forwarded_from: copy,
+    });
+    const masked = await this.maskOne(
+      message,
+      input.chapter_id,
+      input.sender_id,
+    );
+    return { ...masked, deduplicated };
+  }
+
+  /** The copy a forward of `source` carries, or a 400 when it can't be forwarded. */
+  private async forwardedCopyOf(
+    source: ChatMessage,
+  ): Promise<ChatForwardedMessage> {
+    const refuse = () =>
+      new BadRequestException("This message can't be forwarded");
+    if (source.is_deleted || (source.kind ?? 'text') !== 'text') {
+      throw refuse();
+    }
+    const gif = forwardedGifOf(source.metadata?.gif);
+    const attachmentCount = attachmentCountOf(source.metadata);
+    const inner = source.forwarded_from ?? null;
+    if (inner && !source.content.trim() && !gif && attachmentCount === 0) {
+      // Nothing of its own to copy: pass the original's copy on.
+      if (inner.deleted === true) throw refuse();
+      return {
+        message_id: inner.message_id,
+        channel_id: inner.channel_id,
+        sender_id: inner.sender_id ?? null,
+        author_name: inner.author_name ?? null,
+        content: inner.content ?? '',
+        gif: inner.gif ?? null,
+        attachment_count: inner.attachment_count ?? 0,
+        created_at: inner.created_at,
+      };
+    }
+    return {
+      message_id: source.id,
+      channel_id: source.channel_id,
+      sender_id: source.sender_id,
+      author_name: await this.authorNameOf(source),
+      content: source.content,
+      gif,
+      attachment_count: attachmentCount,
+      created_at: source.created_at,
+    };
+  }
+
+  /**
+   * The source's author as a reader would name them now: their display name,
+   * or the row's own `author_name` for a message with no Frapp user. A failed
+   * read leaves it null rather than failing the forward: a reader falls back
+   * to the roster by `sender_id`, as it does for any message.
+   */
+  private async authorNameOf(source: ChatMessage): Promise<string | null> {
+    if (!source.sender_id) return source.author_name ?? null;
+    try {
+      const [identity] = await this.users.findDisplayIdentitiesByIds([
+        source.sender_id,
+      ]);
+      const name = identity?.display_name?.trim();
+      return name ? name : (source.author_name ?? null);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-forward-author-name',
+        message: `Could not read the author of message ${source.id}; the forward names no one`,
+        error,
+      });
+      return source.author_name ?? null;
+    }
+  }
+
+  /**
    * The root of a thread reply: a timeline message in this channel, in a
    * channel that takes threads (#3785, spec/behavior/chat/README.md § Message
    * threads). A thread never nests, a 1:1 DM has no threads in slice 1, and a
    * thread reply is never also a quote-reply.
    */
+  /**
+   * A send's quote and thread, checked against the channel it posts in: the
+   * one place their rules live, for a send now and a send scheduled for later
+   * (#4971), which checks when it is scheduled and the send checks again.
+   * The caller has already authorized the channel (as `thread` for a thread
+   * reply). Answers the messages the targets name.
+   */
+  async assertSendTargets(
+    channel: ChatChannel,
+    targets: { reply_to_id: string | null; thread_root_id: string | null },
+  ): Promise<{ threadRoot: ChatMessage | null; replyTo: ChatMessage | null }> {
+    const threadRoot = targets.thread_root_id
+      ? await this.assertThreadRoot(channel, targets.thread_root_id, targets)
+      : null;
+
+    let replyTo: ChatMessage | null = null;
+    if (targets.reply_to_id) {
+      // A quote reply is a post: whoever may post here may quote (#3722),
+      // which the caller's channel check already decided.
+      replyTo = await this.messageRepo.findById(targets.reply_to_id);
+      if (!replyTo || replyTo.channel_id !== channel.id) {
+        throw new BadRequestException(
+          'reply_to_id must reference a message in the same channel',
+        );
+      }
+      // A quote in the timeline cannot point into a thread, whose replies the
+      // timeline never shows (#3785).
+      if (replyTo.thread_root_id) {
+        throw new BadRequestException(
+          'reply_to_id cannot reference a reply inside a thread',
+        );
+      }
+    }
+    return { threadRoot, replyTo };
+  }
+
   private async assertThreadRoot(
     channel: ChatChannel,
     rootId: string,
-    input: SendMessageInput,
+    input: { reply_to_id?: string | null },
   ): Promise<ChatMessage> {
     if (!channelAllowsThreads(channel)) {
       throw new BadRequestException('This channel does not take threads');
@@ -1277,7 +1725,7 @@ export class ChatService {
     messageId: string,
     chapterId: string,
     userId: string,
-    operation: 'read' | 'post' | 'thread' = 'read',
+    operation: MessageOperation = 'read',
     grant?: ReportedMessageGrant,
   ): Promise<ChatMessage> {
     return this.channelAccess.assertMessageAccess(
@@ -1318,6 +1766,7 @@ export class ChatService {
     chapterId: string,
     senderId: string,
     content: string,
+    picked: readonly MentionPick[] = [],
   ): Promise<ChatMessage> {
     // Ownership alone is not enough: a member removed from another chapter
     // would still pass the sender check on their historical messages there.
@@ -1357,6 +1806,29 @@ export class ChatService {
       throw new BadRequestException('Cannot edit a deleted message');
     }
 
+    // A card's body is its payload, and its `content` is the line a push,
+    // the channel preview and search read for it (a form's or sign-up's
+    // title, a poll's question): not the member's words to edit. The clients
+    // hide Edit on every card (`CARD_KINDS` in `@repo/chat-core`); this is the
+    // rule, so an edit can't make that line disagree with the card.
+    if ((message.kind ?? 'text') !== 'text') {
+      throw new BadRequestException('A card cannot be edited');
+    }
+
+    // A GIF message is the GIF, with no text to change (#4631); the clients
+    // hide Edit on it (`canEditMessage`), and this is the rule.
+    if (message.metadata && 'gif' in message.metadata) {
+      throw new BadRequestException('A GIF cannot be edited');
+    }
+
+    // Cleaned as a send is (#4346). An edit has no attachments to stand in for
+    // text, so one that is blank once cleaned is refused here, in words a
+    // member can act on, as a blank send is.
+    content = withoutObjectReplacement(content);
+    if (!content.trim()) {
+      throw new BadRequestException('An edited message needs some text');
+    }
+
     // Re-resolve mentions against the new body. Skipping this leaves the stored
     // list describing text that no longer exists: editing `@jane` in never
     // counts toward her badge, and editing her out leaves a mention of a
@@ -1371,19 +1843,73 @@ export class ChatService {
     // A reply's ping of the author it quotes (#3844) is not re-resolved: the
     // edit keeps it exactly as the send stored it, since the reply still
     // quotes them (`ChatMentionService.resolveForEdit`).
+    //
+    // The picks the message was sent with are kept (#3835): a client sends
+    // only the ones made in this edit, and an old client none, so without the
+    // stored ones an edit would read a picked `@Jane Doe` whose member has
+    // since left as `@Jane`, and hand it to whoever is the only Jane now.
+    const storedPicks = readMentionPicks(message.metadata?.mention_picks);
+    const mentionPicks = mentionPicksIn(content, [...picked, ...storedPicks]);
     const mentions = await this.mentions.resolveForEdit(
       chapterId,
       senderId,
       content,
       message.mentions ?? [],
       await this.quotedAuthorId(message.reply_to_id ?? null),
+      message.content ?? '',
+      { previous: storedPicks, next: mentionPicks },
     );
 
-    return this.messageRepo.update(messageId, {
+    const edited = await this.messageRepo.update(messageId, {
       content,
       mentions,
+      // Written only when there are picks to keep or to drop, so an ordinary
+      // edit leaves the row's metadata as it was.
+      ...(storedPicks.length > 0 || mentionPicks.length > 0
+        ? { metadata: withPicks(message.metadata, mentionPicks) }
+        : {}),
       edited_at: new Date().toISOString(),
     });
+    await this.rewriteNotificationsForEdit(edited, chapterId, senderId);
+    return edited;
+  }
+
+  /**
+   * The in-app rows this message produced quote its old text (#4418). Only
+   * members who can still read the channel get the new text: a row its owner
+   * kept after losing access holds only what they were sent while they had
+   * it, and an edit must not hand them more. Best-effort, like the rewrite
+   * itself: the edit has landed, so a failed reader lookup is reported and
+   * leaves the old text.
+   */
+  private async rewriteNotificationsForEdit(
+    edited: ChatMessage,
+    chapterId: string,
+    editorId: string,
+  ): Promise<void> {
+    let readerIds: string[];
+    try {
+      const readers = await this.channelAccess.listChannelMembers(
+        edited.channel_id,
+        chapterId,
+        editorId,
+      );
+      readerIds = readers.map((r) => r.user_id);
+    } catch (err) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'chat-edit-notification-readers',
+        message: `Could not resolve the readers of channel ${edited.channel_id} to rewrite the notifications for edited message ${edited.id}`,
+        error: err,
+      });
+      return;
+    }
+    await this.notifications.rewriteChatMessagePreview(
+      chapterId,
+      edited.id,
+      chatPushPreview(edited),
+      readerIds,
+    );
   }
 
   async deleteMessage(
@@ -1392,13 +1918,22 @@ export class ChatService {
     requesterId: string,
     hasManagePermission: boolean,
   ): Promise<ChatMessage> {
+    // A `delete`: read access, and never one of Frapp's entries in the audit
+    // log, which nobody removes, `channels:manage` and the President included
+    // (#3909). A member's own post there, from before it was read-only, can
+    // still go.
     const message = await this.assertMessageAccess(
       messageId,
       chapterId,
       requesterId,
+      'delete',
     );
 
-    if (message.sender_id !== requesterId && !hasManagePermission) {
+    if (
+      message.sender_id !== requesterId &&
+      !hasManagePermission &&
+      !isAskAnswerPostedBy(message, requesterId)
+    ) {
       throw new ForbiddenException(
         'You can only delete your own messages unless you have channels:manage permission',
       );
@@ -1448,11 +1983,13 @@ export class ChatService {
     chapterId: string,
     officerUserId: string,
   ): Promise<ReportedMessageRemoval> {
+    // A `delete` through the grant: the report stands in for channel access,
+    // and the audit log still keeps Frapp's entries (#3909).
     const message = await this.assertMessageAccess(
       grant.messageId,
       chapterId,
       officerUserId,
-      'read',
+      'delete',
       grant,
     );
 
@@ -1500,20 +2037,33 @@ export class ChatService {
    * Callers authorize first; this does not.
    */
   private async softDeleteMessage(
-    message: Pick<ChatMessage, 'id' | 'kind' | 'metadata'>,
+    message: Pick<ChatMessage, 'id' | 'kind' | 'metadata' | 'payload'>,
     chapterId: string,
   ): Promise<ChatMessage> {
     const messageId = message.id;
     const deleted = await this.messageRepo.update(messageId, {
-      content: '[message deleted]',
+      content: DELETED_MESSAGE_CONTENT,
       is_deleted: true,
       metadata: tombstoneMetadata(message),
+      // A card's data lives here (an event's name and place, a poll's
+      // question and options, a task's fields), so a delete that left it
+      // would remove only the words around it (#1575). Cleared, not kept for
+      // an undelete: there is none, and an officer's removal of a reported
+      // card has to remove what was reported. `maskBlockedMessages` strips it
+      // on read too, for rows deleted before this cleared it. An imported
+      // row keeps only its Discord handle (`tombstonePayload`).
+      payload: tombstonePayload(message),
       // A flag labels content that is now gone (#3921), and a deleted
       // message must not keep raising the Important strip.
       flag: null,
       flagged_by: null,
       flagged_at: null,
+      // A deleted forward keeps nothing of the copy it carried (#4864).
+      forwarded_from: null,
     });
+    // The in-app notifications that quote the message go in the same
+    // statement: `chat_messages_forget_notifications` deletes every row whose
+    // `chat_message_id` is this message as `is_deleted` turns true (#4418).
 
     // Purge after the flag lands, not before. Soft delete leaves the attachment
     // rows in place (they cascade only with the message itself), so nothing is
@@ -1529,7 +2079,7 @@ export class ChatService {
     // member asked for, or turn it into a 500.
     await this.attachments.purgeRemovedMessageAttachments(messageId, chapterId);
 
-    return deleted;
+    return redactDeletedMessage(deleted);
   }
 
   // ── Flags (#3921) ────────────────────────────────────────────────────
@@ -1540,9 +2090,11 @@ export class ChatService {
    * Anyone who can read the channel may flag a message that has none; once it
    * is flagged, only its sender, whoever added the flag, or a
    * `channels:manage` holder may replace it (`canChangeMessageFlag` in
-   * `@repo/validation`, which the clients share). Authorized as a read, like
-   * a reaction: a flag adds no content, so a read-only channel or an alumnus
-   * may still flag (spec/behavior/chat/README.md § Message flags).
+   * `@repo/validation`, which the clients share). Authorized as a `flag`, a
+   * `modify`: a flag adds no content, so a read-only channel or an alumnus
+   * may still flag (spec/behavior/chat/README.md § Message flags), but the
+   * audit log takes none, since a flag there would raise its Important strip
+   * over the chapter's record (#3909).
    *
    * The write is a compare-and-set on the flag and flagger the check was made
    * against, and on the message still being live, so two members flagging the
@@ -1564,6 +2116,7 @@ export class ChatService {
       messageId,
       chapterId,
       userId,
+      'flag',
     );
     if (message.is_deleted) {
       throw new BadRequestException('Cannot flag a deleted message');
@@ -1586,7 +2139,11 @@ export class ChatService {
     return this.maskOne(updated, chapterId, userId);
   }
 
-  /** Take a message's flag off. Idempotent; same rule as replacing one. */
+  /**
+   * Take a message's flag off. Idempotent; same rule as replacing one. An
+   * `unflag`, which the audit log takes too, so a flag put on one of its
+   * lines before it was read-only can still come off.
+   */
   async clearMessageFlag(
     messageId: string,
     chapterId: string,
@@ -1597,6 +2154,7 @@ export class ChatService {
       messageId,
       chapterId,
       userId,
+      'unflag',
     );
     if (message.flag == null) {
       return this.maskOne(message, chapterId, userId);
@@ -1655,6 +2213,63 @@ export class ChatService {
     return maskBlockedMessages([message], blocked)[0];
   }
 
+  // ── Sign-up cards (#3926) ────────────────────────────────────────────
+
+  /**
+   * Close a sign-up card (#3926 step 2) or a form card (step 3) early, as
+   * `PollService.closeCard` closes a poll card: its creator may, whatever
+   * their permissions now, and so may a `channels:manage` holder
+   * (`canModerate`, asked only when the caller isn't the creator). Channel
+   * access is a `close`: read access, with archive and the audit log refusing
+   * it, but not who can post, so a card whose creator lost post rights can
+   * still be closed.
+   *
+   * Stamps `payload.closed_at` / `closed_by`, which `ChatService.sendMessage`
+   * never takes from a client (`normalizeSignupCard` and `normalizeFormCard`
+   * rebuild the card). The row update reaches every open card as a Realtime
+   * UPDATE; `claim_signup_slots` and `ChatFormService.saveResponse` refuse
+   * every answer once it is set. Answers already made stay.
+   */
+  async closeCard(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+    canModerate: () => Promise<boolean> = () => Promise.resolve(false),
+  ): Promise<ChatMessage> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) throw new NotFoundException('Message not found');
+    await this.channelAccess.assertChannelAccess(
+      message.channel_id,
+      chapterId,
+      userId,
+      'close',
+    );
+    const copy = CLOSE_COPY[message.kind as 'signup' | 'form'];
+    if (!copy) {
+      throw new BadRequestException('Message is not a sign-up or form card');
+    }
+    if (message.is_deleted) {
+      throw new BadRequestException(copy.deleted);
+    }
+    if (message.sender_id !== userId && !(await canModerate())) {
+      throw new ForbiddenException(copy.forbidden);
+    }
+    const payload = message.payload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new BadRequestException(copy.malformed);
+    }
+    if (isCardClosed(payload)) {
+      throw new BadRequestException(copy.alreadyClosed);
+    }
+    return stampCardClosed(
+      this.messageRepo,
+      message,
+      payload as Record<string, unknown>,
+      userId,
+      copy.deleted,
+    );
+  }
+
   // ── Pins ─────────────────────────────────────────────────────────────
 
   async pinMessage(
@@ -1663,12 +2278,20 @@ export class ChatService {
     userId: string,
   ): Promise<ChatMessage> {
     // Pin/unpin are moderation controls: `channels:manage` in the caller's own
-    // chapter must not reach a message in someone else's.
+    // chapter must not reach a message in someone else's. A `pin`, which the
+    // audit log takes on none of its lines (#3909).
     const message = await this.assertMessageAccess(
       messageId,
       chapterId,
       userId,
+      'pin',
     );
+
+    // Nothing to elevate, and pinning a tombstone would make it the
+    // channel's durable, prominent row (#1575).
+    if (message.is_deleted) {
+      throw new BadRequestException('Cannot pin a deleted message');
+    }
 
     if (message.is_pinned) {
       throw new BadRequestException('Message is already pinned');
@@ -1694,20 +2317,25 @@ export class ChatService {
     chapterId: string,
     userId: string,
   ): Promise<ChatMessage> {
+    // An `unpin`, which the audit log takes too: a pin from before it was
+    // read-only can still come off.
     const message = await this.assertMessageAccess(
       messageId,
       chapterId,
       userId,
+      'unpin',
     );
 
     if (!message.is_pinned) {
       throw new BadRequestException('Message is not pinned');
     }
 
-    return this.messageRepo.update(messageId, {
-      is_pinned: false,
-      pinned_at: null,
-    });
+    return redactDeletedMessage(
+      await this.messageRepo.update(messageId, {
+        is_pinned: false,
+        pinned_at: null,
+      }),
+    );
   }
 
   /**
@@ -1751,6 +2379,41 @@ export class ChatService {
     );
     await this.clearChannelNotifications(channelId, chapterId, userId, readAt);
     return receipt;
+  }
+
+  /**
+   * Mark unread (#3723): move the caller's read cursor in the message's
+   * channel back to just before it, so it and everything after it count as
+   * unread again, as Discord's and Slack's Mark unread do. One millisecond
+   * before, because a `Date` holds milliseconds and the column microseconds:
+   * the cursor lands strictly before the message, which is what makes it
+   * count (`get_channel_unread_counts` counts `created_at > last_read_at`).
+   *
+   * A timeline message only. A thread reply never counts toward its channel
+   * (#3785), so moving the channel's cursor to it would mark the wrong
+   * things unread; a deleted message has nothing to come back to. The chat
+   * notifications the read cleared stay cleared: the badge is the reminder.
+   */
+  async markMessageUnread(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+  ) {
+    const message = await this.assertMessageAccess(
+      messageId,
+      chapterId,
+      userId,
+    );
+    if (message.thread_root_id) {
+      throw new BadRequestException(
+        "A thread reply can't be marked unread in its channel",
+      );
+    }
+    if (message.is_deleted) {
+      throw new BadRequestException("A deleted message can't be marked unread");
+    }
+    const before = new Date(Date.parse(message.created_at) - 1).toISOString();
+    return this.readReceiptRepo.upsert(message.channel_id, userId, before);
   }
 
   /**
@@ -1855,6 +2518,52 @@ export class ChatService {
 }
 
 /**
+ * A GIF message's `metadata.gif`, as a forward's copy carries it (#4864), or
+ * null when there is none or it isn't the shape `GifService.messageGif`
+ * writes.
+ */
+function forwardedGifOf(gif: unknown): ChatForwardedGif | null {
+  if (!gif || typeof gif !== 'object') return null;
+  const g = gif as Record<string, unknown>;
+  if (
+    typeof g.provider !== 'string' ||
+    typeof g.id !== 'string' ||
+    typeof g.url !== 'string' ||
+    typeof g.width !== 'number' ||
+    typeof g.height !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    provider: g.provider,
+    id: g.id,
+    title: typeof g.title === 'string' ? g.title : '',
+    url: g.url,
+    width: g.width,
+    height: g.height,
+  };
+}
+
+/** `metadata.attachment_count` when it is a whole positive number, else 0. */
+function attachmentCountOf(
+  metadata: Record<string, unknown> | null | undefined,
+): number {
+  const raw = metadata?.attachment_count;
+  return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : 0;
+}
+
+/** `metadata` with its `mention_picks` replaced by `picks`, or dropped when none (#3835). */
+function withPicks(
+  metadata: Record<string, any> | null | undefined,
+  picks: readonly MentionPick[],
+): Record<string, any> {
+  const next: Record<string, any> = { ...(metadata ?? {}) };
+  delete next.mention_picks;
+  if (picks.length > 0) next.mention_picks = picks;
+  return next;
+}
+
+/**
  * A send's own `metadata`, without the keys only the server stamps.
  * `attachment_count` and `attachment_photos` describe the attachment rows, so
  * they come from `attachmentMetadataOf`, never the client: a forged count
@@ -1866,23 +2575,12 @@ function clientMetadata(
   const own = { ...(metadata ?? {}) };
   delete own.attachment_count;
   delete own.attachment_photos;
+  // The server's own too (#4631): a GIF's URL is checked against the
+  // provider's media host on the way in, so a client can't write one here.
+  delete own.gif;
+  // And the picks (#3835), which arrive as `mention_picks` and are kept only
+  // where the body still writes them: a client's own copy here would pin a
+  // token to a member the send never checked.
+  delete own.mention_picks;
   return own;
-}
-
-/**
- * What a soft-deleted message keeps of its `metadata`.
- *
- * Nothing, except an imported row's `discord_import_id`: it is the only key the
- * import purge selects on (`SupabaseDiscordImportRepository.deleteImportedMessages`),
- * so wiping it would leave the tombstone behind when its import is deleted,
- * still carrying the Discord author and an avatar path into purged storage. A
- * linked member can delete their own imported messages (#2878), so this is
- * reachable by any member, not only a moderator.
- */
-export function tombstoneMetadata(
-  message: Pick<ChatMessage, 'kind' | 'metadata'>,
-): Record<string, unknown> {
-  if (message.kind !== 'imported') return {};
-  const importId: unknown = message.metadata?.discord_import_id;
-  return typeof importId === 'string' ? { discord_import_id: importId } : {};
 }

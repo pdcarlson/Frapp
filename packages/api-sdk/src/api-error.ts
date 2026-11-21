@@ -76,32 +76,44 @@ export function codeOf(error: unknown): string | null {
 }
 
 /**
- * Throws unless the response was a 2xx, with the status on what it throws.
+ * What a non-2xx call failed with, always carrying its status.
  *
  * openapi-fetch 0.17 reports a non-2xx whose body is empty as `error:
  * undefined` (a `Content-Length: 0` failure) or `error: ""` (an empty text
  * body), both falsy, so `if (error) throw error` reads that failure as a
- * success. The status is the truth. What is thrown always carries it where
+ * success. The status is the truth. What this returns always carries it where
  * {@link statusOf} reads it: a body that names none gets `statusCode` from the
  * response, which also covers an edge's JSON or HTML refusal that isn't Nest's
  * shape. A plain-text body is kept as `message`; markup is not, because a
  * gateway's HTML error page would otherwise render as a toast's description.
+ *
+ * `createFrappClient` puts this on every failed call's `error` (#3394), so
+ * the hooks' `if (error) throw error` throws it; {@link throwUnlessOk} is the
+ * same rule for a caller that reads `response` itself.
  */
+export function failureOf(result: {
+  error?: unknown;
+  response: { status: number };
+}): object {
+  const { error } = result;
+  const statusCode = result.response.status;
+  if (error !== null && typeof error === "object") {
+    return statusOf(error) === undefined ? { ...error, statusCode } : error;
+  }
+  const text = typeof error === "string" ? error.trim() : "";
+  return {
+    statusCode,
+    message: text.length > 0 && !text.startsWith("<") ? text : undefined,
+  };
+}
+
+/** Throws {@link failureOf} unless the response was a 2xx. */
 export function throwUnlessOk(result: {
   error?: unknown;
   response: { ok: boolean; status: number };
 }): void {
   if (result.response.ok) return;
-  const { error } = result;
-  const statusCode = result.response.status;
-  if (error !== null && typeof error === "object") {
-    throw statusOf(error) === undefined ? { ...error, statusCode } : error;
-  }
-  const text = typeof error === "string" ? error.trim() : "";
-  throw {
-    statusCode,
-    message: text.length > 0 && !text.startsWith("<") ? text : undefined,
-  };
+  throw failureOf(result);
 }
 
 /**
@@ -120,8 +132,9 @@ const INCONCLUSIVE_CLIENT_ERRORS = new Set([408, 499, 460]);
  *
  * One definition, deliberately shared by chat-core's `classifyChatError` (the
  * outbox/send path) and `dispatch.ts` (heavy commands) and by `@repo/hooks`'
- * `useAdjustPoints`, because "4xx means do not retry" is one policy and copies
- * of it drift. The carve-out above is why that matters: a proxy 408 treated as
+ * `useAdjustPoints` and `canTryAgain` (whether a failed write's toast or
+ * alert offers Try again), because "4xx means do not retry" is one policy and
+ * copies of it drift. The carve-out above is why that matters: a proxy 408 treated as
  * definitive tells a caller their write failed when it may have landed, and
  * the retry that follows is a fresh attempt rather than a replay.
  */
@@ -136,8 +149,8 @@ export function isDefinitiveClientError(status: number): boolean {
  * definitive client refusal. A 5xx, an intermediary's 4xx
  * ({@link isDefinitiveClientError}'s carve-out) and a failure with no status
  * at all (a dropped connection, a timeout) may have reached the origin, or may
- * pass next time; a definitive 4xx, the throttler's 429 included, will be
- * refused again.
+ * pass next time, and so may a busy server's 429 ({@link isServerBusy}); a
+ * definitive 4xx, the throttler's 429 included, will be refused again.
  *
  * It is the web client's default mutation retry (`query-provider.tsx`) and the
  * gate on `useAdjustPoints`' retries, so "never retry a client error"
@@ -146,5 +159,80 @@ export function isDefinitiveClientError(status: number): boolean {
  */
 export function isRetryableFailure(error: unknown): boolean {
   const status = statusOf(error);
-  return status === undefined || !isDefinitiveClientError(status);
+  return (
+    status === undefined ||
+    !isDefinitiveClientError(status) ||
+    isServerBusy(error)
+  );
+}
+
+/**
+ * Whether a 429 came from in front of the API rather than from it: the
+ * server was too busy to take the request, not refusing this member's pace.
+ *
+ * Cloud Run answers a plain-text `Rate exceeded.` when every copy of the
+ * service is full, before the request reaches the API (a direct request to
+ * staging got `429 Rate exceeded.` during a load test on 2026-11-20).
+ * {@link failureOf} keeps that text as `message`. The API's own 429s carry their own sentence (the
+ * throttler's `THROTTLED_MESSAGE`, the points and invite caps), so this never
+ * matches them; a 429 with no text at all is left to read as the throttler's.
+ * A busy refusal is shared by everyone and passes as soon as the load does,
+ * so it is retried like a 5xx, and a member reads "busy", never "too many
+ * requests" (`spec/ui/resilience/api-retry.md` § Server busy).
+ */
+export function isServerBusy(error: unknown): boolean {
+  if ((statusOf(error) ?? responseStatusOf(error)) !== 429) return false;
+  const message = serverMessageOf(error);
+  return message !== null && EDGE_BUSY_MESSAGE.test(message.trim());
+}
+
+/**
+ * The status a wrapped `Error` carries on `response` or `context` (chat-core's
+ * `throwApiError`), where {@link statusOf} doesn't look. `@repo/hooks`'
+ * `errorCopy` and `canTryAgain` read it too.
+ */
+export function responseStatusOf(error: unknown): number | undefined {
+  const candidate = error as {
+    response?: { status?: unknown };
+    context?: { status?: unknown };
+  } | null;
+  const status = candidate?.response?.status ?? candidate?.context?.status;
+  return typeof status === "number" ? status : undefined;
+}
+
+/** Cloud Run's text for a request no copy of the service could take. */
+const EDGE_BUSY_MESSAGE = /^rate exceeded\.?$/i;
+
+/**
+ * How many more attempts a read gets while the server is busy
+ * ({@link isServerBusy}): with {@link readRetryDelayMs} between about 45 s and
+ * a minute and a half of waiting, under a loading state rather than an error.
+ */
+export const BUSY_READ_RETRIES = 6;
+
+/**
+ * The ceiling of the wait before busy retry number `attempt` (0-based): 2, 4,
+ * 8, 16, 30, 30 s.
+ */
+export function busyRetryDelayMs(attempt: number): number {
+  return Math.min(2000 * 2 ** attempt, 30_000);
+}
+
+/**
+ * The wait before a read's next attempt, web's and mobile's alike.
+ *
+ * A busy server's 429 waits {@link busyRetryDelayMs}, jittered to between half
+ * and all of it: every client is turned away at the same moment, and retries on
+ * one fixed schedule would come back as synchronized waves onto the copies
+ * that are already full. Anything else backs off 1, 2, 4 s up to 30 s,
+ * TanStack's own default. `random` is for tests.
+ */
+export function readRetryDelayMs(
+  attempt: number,
+  error: unknown,
+  random: () => number = Math.random,
+): number {
+  if (!isServerBusy(error)) return Math.min(1000 * 2 ** attempt, 30_000);
+  const ceiling = busyRetryDelayMs(attempt);
+  return Math.round(ceiling / 2 + random() * (ceiling / 2));
 }

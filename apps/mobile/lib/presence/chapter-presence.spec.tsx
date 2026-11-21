@@ -97,7 +97,7 @@ const {
   AWAY_RELEASE_DELAY_MS,
   FOREGROUND_REFRESH_MS,
 } = await import("./chapter-presence");
-const { useChapterPresence } = await import("./presence-store");
+const { usePresenceOf } = await import("./presence-store");
 
 function own(patch: Partial<OwnStatus> = {}): OwnStatus {
   return {
@@ -293,20 +293,22 @@ describe("useChapterPresenceRuntime (#3917)", () => {
 
   it("hands screens the roster, and nothing once the app is backgrounded", async () => {
     renderHook(() => useChapterPresenceRuntime());
-    const screen = renderHook(() => useChapterPresence());
-    expect(screen.result.current.isReady).toBe(false);
+    const screen = renderHook(() => ({
+      dnd: usePresenceOf("user-2"),
+      absent: usePresenceOf("user-3"),
+    }));
+    expect(screen.result.current.dnd.status).toBeNull();
     await settle();
     state.presenceState = {
       a: [{ userId: "user-2", ts: Date.now(), status: "dnd" }],
     };
     act(() => state.handlers.get("sync")?.());
-    expect(screen.result.current.isReady).toBe(true);
-    expect(screen.result.current.statusOf("user-2")).toBe("dnd");
-    expect(screen.result.current.statusOf("user-3")).toBe("offline");
+    expect(screen.result.current.dnd.status).toBe("dnd");
+    expect(screen.result.current.absent.status).toBe("offline");
 
     setAppState("background");
     await new Promise((resolve) => setTimeout(resolve, AWAY_RELEASE_DELAY_MS + 50));
     await settle();
-    expect(screen.result.current.isReady).toBe(false);
+    expect(screen.result.current.dnd.status).toBeNull();
   });
 });

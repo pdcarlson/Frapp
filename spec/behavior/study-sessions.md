@@ -51,6 +51,11 @@ a screen that does not exist:
   Both are derivable from data the client already holds if they are wanted.
 - Minimal UI. **Not shipped as specified**: Canvas draws the week summary and a
   recent-session list below the timer card, and that is what the screen renders.
+- A weekly study goal. Officers set one for everyone, or a different one per
+  role, in Chapter settings → Service hours; the week is Sunday to Saturday,
+  local time, as this screen counts it. The week summary reads "4.5 of 6.0
+  hrs" over a meter when the member has one. Rules:
+  [`activity.md` § Goals](activity.md#goals) (#1062).
 
 ## Points Award
 
@@ -58,12 +63,13 @@ a screen that does not exist:
 - Minimum session length must be met (chapter-configurable, default 15 minutes). Sessions shorter than the minimum award zero points.
 - Points = `floor(total_foreground_minutes / minutes_per_point) * points_per_interval`. Both `minutes_per_point` and `points_per_interval` are chapter-configurable.
 - `total_foreground_minutes` counts whole minutes only, but the remainder is **not** discarded: `last_heartbeat_at` advances by exactly the minutes credited, so sub-minute leftovers carry into the next interval instead of being truncated away on every heartbeat.
-- The `points_awarded` flag on the session prevents double-awarding.
+- A session is awarded at most once. The finish and its STUDY ledger row are written in one database transaction (`finish_study_session`), behind a compare-and-set on the row the API read: still ACTIVE, same `last_heartbeat_at`, same `paused_at`. Two requests that both read the session as ACTIVE (a double-tapped Stop, or a heartbeat and a history read settling the same grace-expired session) cannot both finish it, and a failed ledger insert rolls the finish back, leaving the session ACTIVE for the retry. The `points_awarded` flag records that the award happened; it is not what prevents a second one.
+- Every other session write (heartbeat, pause, resume, and the EXPIRED and LOCATION_INVALID transitions) is guarded the same way, so a request working from a stale read never overwrites a newer one. A request that loses recomputes from a fresh read: if the other request ended the session, it answers as it would a moment later (404 for stop, heartbeat, pause and resume); if the session only moved on, it reapplies to the new state.
 - Point transactions for study sessions include the session ID and geofence ID in the metadata for audit.
 
 ## Edge Cases
 
 - If the app is force-killed or the device loses power, the heartbeat stops and the session expires after the stale-heartbeat timeout (10 minutes). The user is notified and can start a new session.
 - If the user's GPS is spoofed or unreliable (accuracy > 100m), the heartbeat is rejected and the session is flagged. After 2 consecutive rejected heartbeats, the session is expired with status `LOCATION_INVALID`.
-- A user can only have one active study session at a time. Starting a new session while one is active returns 409 Conflict.
+- A user can only have one active study session at a time. Starting a new session while one is active returns 409 Conflict. A unique index (`idx_study_sessions_one_active`) holds this even when two Start requests pass the check together; the second gets the same 409.
 - Alumni-role members cannot record study hours: start and heartbeat return 403 Forbidden, so no minutes accrue and no STUDY points are awarded. Stopping is still permitted — nothing else transitions a session out of ACTIVE, so denying it would strand a session forever for someone granted the Alumni role mid-session. Their stop completes the session with zero points. See [alumni.md](alumni.md).

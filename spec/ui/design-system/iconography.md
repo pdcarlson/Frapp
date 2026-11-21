@@ -11,7 +11,12 @@ All Signet-reskinned surfaces draw icons with the duotone recipe locked in the
 throughout the [Canvas screens](reference/canvas-screens.dc.html). On web the
 recipe is one module — [`apps/web/components/ui/duotone.tsx`](../../../apps/web/components/ui/duotone.tsx)
 — which every stroke-recipe glyph composes, so a surface cannot drift off it
-while looking like it complies. The navigation glyphs, and the in-screen
+while looking like it complies. On mobile it is
+[`apps/mobile/components/glyph-recipe.tsx`](../../../apps/mobile/components/glyph-recipe.tsx)
+(`paint` and `Frame`, #3428), which every mobile stroke-recipe glyph draws
+through; the tab bar, the chat cards' eyebrows and the composer + sheet's rows
+keep `tab-glyphs.tsx`'s own recipe, which shares its stroke width and neutral
+fill and differs only in its 18% active fill. The navigation glyphs, and the in-screen
 glyphs that sit beside them, draw the two-tone nav set instead (§1.1):
 
 | Layer | Spec |
@@ -30,10 +35,10 @@ Color per state (roles defined in [foundations](foundations.md)):
 
 ### 1.1 Nav glyphs (two-tone, shared by web and mobile)
 
-The navigation glyphs (the web sidebar, the mobile tab bar and the More hub's
+The navigation glyphs (the web sidebar, the mobile tab bar and the You tab's
 rows), the web in-screen families' re-exports of them, and the few in-screen
-glyphs drawn beside those (folder, schedule, invite, profile, and Activity's
-`link` and `confirm`, §6.2.5a) draw one shared
+glyphs drawn beside those (folder, schedule, invite, and Activity's
+`link`, `confirm`, `signup` and `form`, §6.2.5a) draw one shared
 set instead of the stroke recipe above: [`packages/theme/src/nav-glyphs.ts`](../../../packages/theme/src/nav-glyphs.ts)
 (`@repo/theme/nav-glyphs`), path data from Phosphor's duotone weight (MIT),
 rendered by `apps/web/components/layout/nav-glyphs.tsx` and
@@ -56,6 +61,21 @@ Rules:
 1. A state change **recolors** the glyph (stroke + fill together). It MUST NOT
    swap to a solid-filled variant — solid fills are not part of the duotone
    family.
+   Changed in #4289 by pdcarlson for Shawn, 2026-11-11: one exception,
+   **Documents' Star and Pin** (§6.2.5). While on, the silhouette is solid in
+   its hue; while off, it is the outline. Chat's channel pin and bookmark
+   (§6.2.2) are the same kind of toggle and still take the tinted fill until
+   [#4292](https://github.com/pdcarlson/Frapp/issues/4292). At 16–18% an on star read as the off outline in another
+   colour, so the state rode on colour alone (Shawn: "it should fill in the
+   star. It shouldn't just turn purple"). Same path data, filled, as Google
+   Drive, Gmail and Dropbox draw a star. Web: `markFillProps` in
+   `apps/web/components/ui/duotone.tsx`; mobile: `markPaint` in
+   `apps/mobile/components/documents/document-glyphs.tsx`. Nav glyphs,
+   selection and every other state still recolor only.
+   Changed in #4292 by shawnatomklein-eng, 2026-11-13: the exception now
+   covers chat's pin (a pinned channel, a pinned message's marker) and its
+   bookmark ribbon too, as Slack fills a saved item's ribbon. Documents'
+   `PinGlyph` is chat's again.
 2. Tab bar active state = accent duotone glyph + 700-weight label, on a soft
    capsule (white at 8%) the full height of the pill's row, as iOS 26's own
    bars draw it. Corrected 2026-11-06 with the glass tab pill (owner pick, the
@@ -147,8 +167,8 @@ duotone. Interim rules:
 - Do not mix icon packs within a single surface. The §1 stroke recipe and the
   §1.1 nav set count as one Signet family for this rule, and the target is a
   single family: a glyph drawn in the same list as a nav glyph takes the nav
-  set (the folder rail, the event schedule rows, invite and profile,
-  §6.2.3–§6.2.7). The rest of the stroke-recipe glyphs, `SearchGlyph` in the
+  set (the folder rail, the event schedule rows and invite,
+  §6.2.3–§6.2.6). The rest of the stroke-recipe glyphs, `SearchGlyph` in the
   toolbars among them, move over under
   [#3491](https://github.com/pdcarlson/Frapp/issues/3491).
 - Surfaces built or rebuilt under the Signet reskin use the duotone recipe
@@ -176,59 +196,63 @@ second, filled variant to swap to.
 | Semantic intent | Glyph (nav set key, Phosphor name) | Notes |
 |---|---|---|
 | Chat tab (home) | `chat`, `chat-circle-dots` | |
-| Events tab | `events`, `calendar-dots` | |
-| Tasks tab | `tasks`, `seal-check` | |
-| More tab | `more`, `squares-four` | Not an ellipsis: Canvas draws a 2×2 grid, and Canvas wins for visuals. |
+| Activity tab | `activity`, `tray` | Tab 2 since #4610 (2026-11-12); the glyph web's Activity row draws. |
+| Messages tab | `direct`, `paper-plane-tilt` | Tab 3 since #5310, where the Calendar tab (`events`, `calendar-dots`; named Events until #4610) was. |
+| You tab | — | The member's own avatar, not a glyph (#3839, `components/you-tab-avatar.tsx`): their photo, else their initials in their member tint, never the accent; active, a 1.5pt accent ring with a gap ([`navigation.md` § Tab bar](../mobile/navigation.md#tab-bar--4-tabs-locked)). The More tab drew `more` (`squares-four`, a 2×2 grid) until then; nothing else drew it, so it left the nav set. |
+| Task board (pushed, and the task card) | `tasks`, `seal-check` | A tab until #4610; the glyph stays on the task card, Up next and the + panel. |
 
 Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
-Points no longer exist as screens; Profile moved into the More hub.
+Points no longer exist as screens; Profile moved into the More hub, which became the You tab (#3839).
 
 Chat home's UP NEXT rows (s04, `apps/mobile/components/chat/up-next-strip.tsx`)
-draw the same file's `EventsGlyph` and `TasksGlyph` at 20px (§2's list-row
-size), both unfocused in `text.muted`, since a row's label icon is neutral
-([foundations.md](foundations.md) §6, 2026-11-05). Until then the event row's
-was focused and in the chapter accent. The s05 chat cards reuse
-them too (§6.1.3).
+draw the nav set's `events` and `tasks` glyphs at 20px (§2's list-row size)
+in `text.mutedForeground`, each in a neutral 40pt lead tile
+([`../mobile/patterns.md`](../mobile/patterns.md#rows) § Rows), since a row
+that shows a state stays neutral ([foundations.md](foundations.md) §6). Until
+#4610 step 3 (2026-11-12) they drew this file's `EventsGlyph` and `TasksGlyph`
+bare in `text.muted`, and before 2026-11-05 the event row's was focused and
+in the chapter accent. The s05 chat cards draw `EventsGlyph` and `TasksGlyph`
+(§6.1.3).
 
 ### 6.1.1 Mobile in-screen icons (Ionicons, interim)
 
 Screens that have not been reskinned yet still draw Ionicons per §5. Each
 cluster replaces its own as it rebuilds; there is no separate icon migration.
 
-### 6.1.2 Mobile More hub (Signet duotone, shipped)
+### 6.1.2 Mobile You tab rows (Signet duotone, shipped; the More hub's until #3839)
 
 The tab bar's quick-actions panel (`apps/mobile/components/quick-actions/quick-actions-panel.tsx`,
 [`navigation.md` § Quick actions](../mobile/navigation.md#quick-actions)) draws
 each action at 26px on a 58pt glass disc, in `text.foreground`, with the nav
-shape of the place it leads: New event `events`, New task `tasks`, Invite
-`invite` (Phosphor `user-plus`), Message `chat`, Check in `checkIn` (Phosphor `map-pin`, added for it), Host check-in
+shape of the place it leads: New minutes `meetings`, Search `search` (Phosphor `magnifying-glass`, added for it, #5287), New event `events`, New task `tasks`, Invite
+`invite` (Phosphor `user-plus`), Message `chat`, Host check-in
 `hostCheckIn`, Log hours `service`, Study `study`, Upload `documents`. The
 active tab in the pill sits on a soft capsule (white at 8%) under its accent
 glyph and bold label, as iOS 26's own bars draw it, since 2026-11-06.
 
-The More hub's leading row glyphs (s09, #1048) live in
+The You tab's leading row glyphs (s09, #1048) live in
 `apps/mobile/components/more/more-glyphs.tsx` at 20px (§2's list-row size)
 and draw the shared nav set (§1.1), so one intent draws one shape on both
-surfaces. Every row, Member and Admin alike, is painted in `text.muted`
-([foundations.md](foundations.md) §6; the Member rows took the chapter accent
-until 2026-11-05).
+surfaces. Each sits in a 32pt lead tile and is painted in its place's fixed
+hue, the tile's fill the tint an initials avatar takes
+([foundations.md](foundations.md) §6, A place's hue, 2026-11-12). Every row was `text.muted` from 2026-11-05 until
+then, and the Member rows took the chapter accent before that.
 
 | Semantic intent | Glyph (nav set key, Phosphor name) | Web counterpart |
 |---|---|---|
-| Activity (#3897) | `activity`, `tray` | `ActivityGlyph` |
 | Study hours | `study`, `graduation-cap` | `StudyGlyph` |
 | Service hours | `service`, `hand-heart` | `ServiceGlyph` |
 | Dues | `billing`, `credit-card` | `BillingGlyph` |
 | Documents | `documents`, `file-text` | `DocumentsGlyph` |
 | Directory | `directory`, `users-three` | `DirectoryGlyph` |
 | Settings | `settings`, `gear-six` | `SettingsGlyph` |
-| Switch chapter, Create a chapter | `chapter`, `bank` (the columned chapter house) | none |
+| Create a chapter (Switch chapter until 2026-11-19) | `chapter`, `bank` (the columned chapter house) | none |
 | Invite members (Admin) | `invite`, `user-plus` (`InviteGlyph`) | `InviteGlyph` |
 | Host check-in (Admin) | `hostCheckIn`, `qr-code` | none |
 
 The same file's `NotificationsGlyph` (bell, clapper stroke-only, still in the
 §1 stroke recipe; s09 and web `NotificationsGlyph`) is drawn by Chat home's inbox bell
-(`components/chat/notifications-bell.tsx`), in `text.foreground` with the
+(`NotificationsButton` in `components/chat/home-header.tsx`, back since #3839), in `text.foreground` with the
 neutral fill, since the More row it was drawn for moved there (#3362).
 The More screens' empty states drew these glyphs in a tile until 2026-11-07, when every empty state became one line with no glyph ([components.md](components.md) §10). s15's avatar badge draws s20's camera (`CameraGlyph`, `components/service-hours/camera-glyph.tsx`) in the accent's on-colour, its body at §1's emphasis fill.
 
@@ -245,13 +269,15 @@ except the audit card's).
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
-| Event card | `EventsGlyph` (the Events tab's) | `components/tab-glyphs.tsx` |
-| Task card | `TasksGlyph` (the Tasks tab's) | `components/tab-glyphs.tsx` |
+| Event card | `EventsGlyph` (the Calendar row's on Activity) | `components/tab-glyphs.tsx` |
+| Task card | `TasksGlyph` (the task board's; a tab until #4610) | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (the nav set's trophy, §1.1) | `components/chat/card-glyphs.tsx` |
-| Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the More hub's shape) | `components/chat/card-glyphs.tsx` |
+| Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the You tab's row shape) | `components/chat/card-glyphs.tsx` |
 | Recruitment candidate card | `RushGlyph` (funnel, inner line stroke-only; the module catalog's `funnel`) | `components/chat/card-glyphs.tsx` |
 | Announcement card | `AnnouncementGlyph` (megaphone, sound arc stroke-only) | `components/chat/card-glyphs.tsx` |
-| `#chapter-audit` audit line, at 14 in `--muted` in the avatar gutter (a card's eyebrow until 2026-11-06) | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
+| `#chapter-audit` audit line, at 14 in `--muted` in the avatar gutter (a card's eyebrow until 2026-11-06); also the audit channel's row on chat home, in the sigil's slot (#4134). The channel was removed on 2026-11-21, so nothing draws it now; the glyph stays until its removal (#5808) | `AuditGlyph` (shield, record lines stroke-only) | `components/chat/card-glyphs.tsx` |
+| A private or role-gated channel's row on chat home, in the `#` sigil's slot, size (18) and colours, and its channel start's tile (32, accent), as web draws both (#4134; the rule is `channelMarkFor` in `@repo/hooks/channel-start`) | `LockGlyph` (body filled, shackle stroke-only; web's `LockGlyph`) | `components/chat/card-glyphs.tsx` |
+| A muted channel's row on chat home, straight after the name, at 14 in `text.muted`, as web's rail draws it (#4738; a crossed-out bell until then, which drew the inbox's silhouette) | `MuteGlyph` (web's speaker, box filled, split and × stroke-only; `active` draws the × in place of the waves) | `components/chat/card-glyphs.tsx` |
 
 The poll card has no glyph: its eyebrow is muted text on both surfaces.
 
@@ -283,13 +309,16 @@ the chapter accent in a back-row slot (2026-11-05).
 
 | Semantic intent | Glyph | Drawn by | Web counterpart |
 |---|---|---|---|
-| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px), the glass close on the check-in scanner (s18) and host QR (s22) (18px, `glass-close-button.tsx`) | Lucide `X` |
+| Dismiss, close, remove | `CloseGlyph` (an ×) | the network banner, the thread's error banner, the composer's reply strip (16px) and photo thumbnails (12px on a dark disc), the image viewer (24px), the service-hours proof row, Chat home's setup-checklist hide (16px), the glass close on member check-in (s18) and host QR (s22) (18px, `glass-close-button.tsx`) | Lucide `X` |
 | Try again | `RetryGlyph` (a circling arrow) | a chat photo that didn't upload, in the composer tray (22px, destructive ink) | Lucide `RotateCw` |
-| Edit | `PencilGlyph` | Profile's back row | Lucide `Pencil` |
+| Edit | `PencilGlyph` | Messages' new-message button, Event details' Edit, and the minutes ⋯ menu's Edit minutes (#4412) (Profile's back row until #3711) | Lucide `Pencil` |
+| Edit details (a record's facts, not its words) | `SlidersGlyph` (two sliders) | the minutes ⋯ menu's Edit details: type, visibility, linked event (#4412) | Lucide `SlidersHorizontal` |
 | Mark all read | `CheckAllGlyph` (two checks) | the Notifications screen header | None: the drawer words it, "Mark all read", since 2026-11-09 (#3929); it drew Lucide `CheckCheck` before |
 | Share | `ShareGlyph`: iOS's box with an arrow out of it, Android's three joined nodes, each platform's own mark (moved here from the image viewer's own file, 2026-11-06) | the image viewer (24px), chapter setup's `Share invite` gold button and Invite members' secondary one (`text.foreground`, 2026-11-09, #3828), in the button's ink | Lucide `Share` |
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
+| Opens something (a row's end mark, not a control) | `ForwardGlyph` (a right chevron, `BackGlyph` mirrored at the same stroke), at 16 in `text.mutedForeground`, the tone of web's row `ChevronRight` (`text.muted` until 2026-11-13, #4138) | every `ListRow` that opens a screen or a sheet, the Activity rows, Up next, the event and channel forms' option rows (which drew `DisclosureGlyph` at the lighter stroke), and at 20 the sign-in `ChoiceRow` and the study zone picker (2026-11-12, #3628; each of the others was a typed `›`) | Lucide `ChevronRight` |
 | Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
+| Show as grid / Show as list | `GridGlyph` (four squares), `ListGlyph` (three lines with dots), the layout a tap switches to, in the chapter accent | the List / Grid round on Documents, Directory and Tasks (2026-11-17) | None: web keeps a worded List / Grid segmented control |
 | Important (a status mark, not a control) | `AlertGlyph` (a circled !) | an Important message's flag caption in chat, at 14 in `destructiveText` ([components.md § A flagged row](components.md#a-flagged-row)) | Lucide `CircleAlert` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)
@@ -309,6 +338,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Semantic intent | Glyph | Shape (nav set key, Phosphor name) |
 |---|---|---|
 | Chat | `ChatGlyph` | `chat`, `chat-circle-dots` |
+| Direct messages ([#3774](https://github.com/pdcarlson/Frapp/issues/3774)) | `DirectMessagesGlyph` | `direct`, `paper-plane-tilt`: Instagram's sign for messages, so the row under Chat reads apart from Chat's bubble. Mobile's Messages tab draws the same plane (#5310), as its Messages door did from #4610 step 3 (2026-11-12); the door was a speech bubble before, which read as a second Chat tab. |
 | Activity (what needs you, what you made) | `ActivityGlyph` | `activity`, `tray` |
 | Events | `EventsGlyph` | `events`, `calendar-dots` |
 | Tasks | `TasksGlyph` | `tasks`, `seal-check` |
@@ -316,6 +346,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Study hours | `StudyGlyph` | `study`, `graduation-cap` |
 | Service hours | `ServiceGlyph` | `service`, `hand-heart` |
 | Polls (no nav row since #3871; kept for the chat composer's + menu, #3865) | `PollsGlyph` | `polls`, `chart-bar` |
+| Meetings (minutes) | `MeetingsGlyph` | `meetings`, `notebook` |
 | Documents | `DocumentsGlyph` | `documents`, `file-text` |
 | Backwork | `BackworkGlyph` | `backwork`, `books` |
 | Directory | `DirectoryGlyph` | `directory`, `users-three` |
@@ -373,16 +404,17 @@ composer controls, 16px in card eyebrows and inline metadata (§2).
 
 | Semantic intent | Glyph |
 |---|---|
-| Pinned message | `PinGlyph` |
-| Pin a channel to the top of your own list (#2877), filled while pinned | `PinGlyph` |
-| Bookmarked message (personal) | `BookmarkGlyph` |
+| Pinned message (the "Pinned" marker), solid (#4292) | `PinGlyph` |
+| Pin a channel to the top of your own list (#2877), solid while pinned (#4292, §1 rule 1's exception) | `PinGlyph` |
+| Bookmarked message (personal), solid while bookmarked (#4292) | `BookmarkGlyph` |
 | Attach a file | `AttachGlyph` |
 | Add a reaction | `ReactionGlyph` |
-| The composer's **+**, which opens Attach a file and every command's form (#3865): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
+| The composer's **+**, which opens Attach a file, GIF, Poll, Event and Task (#3865; cut to those in #5772): stroke only at 2, a plus has no area to fill | `PlusGlyph` |
 | Poll, in the composer's **+** menu | `PollsGlyph` (shared with the nav intent) |
 | Send a message: an up arrow, stroke only at 2.4 on the accent-filled round button, the web face of mobile's `↑` (2026-11-06) | `SendArrowGlyph` |
+| Jump to latest, on the round control over the thread's bottom-right corner: a down arrow, `SendArrowGlyph` turned over, the web face of mobile's `↓` (2026-11-12) | `JumpToLatestGlyph` |
 | Announcement | `AnnouncementGlyph` |
-| `#chapter-audit` / audit row | `AuditGlyph` |
+| `#chapter-audit` / audit row (channel removed 2026-11-21) | `AuditGlyph` |
 | Private / role-gated channel | `LockGlyph` |
 | Show or hide the channel member list (#3536), filled while shown | `MembersGlyph` (the nav set's `DirectoryGlyph`, re-exported); mobile's thread header draws the same shape, `NAV_GLYPHS.directory`, through `NavGlyph` |
 | Direct or group message | `DirectMessageGlyph` |
@@ -427,8 +459,7 @@ and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/component
 both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card titles,
 16px in table cells, and 14–16px as a badge companion (§2). Never before the title of a dialog, panel
 or sheet as decoration that repeats the button just pressed ([`components.md`](components.md#chrome-weight)
-§ Chrome weight and § Surface size, 2026-11-05). A mark that names the surface is not that: the
-onboarding tutorial's per-slide glyphs (§6.2.7) and the ✦ on s17's "Ask Frapp" (components.md §11) stay.
+§ Chrome weight and § Surface size, 2026-11-05). A mark that names the surface is not that: the mark on s17's "Ask Frapp" (components.md §11; the ✦ until #4702, the crest since) stays. (The onboarding slideshow's per-slide glyphs were the other example until the spotlight tour replaced it, #5080.)
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
 375px floor gate unaffected by a glyph swap.
@@ -536,7 +567,7 @@ points — and the events table drew its role-targeting and recurrence markers a
 ### 6.2.5 Resources & Reporting (Signet duotone)
 
 Since the #920 Resources & Reporting slice these families draw Signet
-glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph, chat's re-exported `PinGlyph` and the drawn `StarGlyph` (both #3934). The
+glyphs (`/polls` was one until #3871 retired it), from the nav set (§1.1) except the stroke-recipe search glyph, `PinGlyph` (chat's, re-exported) and the drawn `StarGlyph` (both #3934, solid while on since #4289). The
 glyphs live in
 [`apps/web/components/documents/resources-glyphs.tsx`](../../../apps/web/components/documents/resources-glyphs.tsx),
 one file for three screens rather than three files, for the reason §6.2.4 gives:
@@ -550,23 +581,26 @@ button, and the PDF a report exports to.
 | A folder, and the folder filter that names one | `FolderGlyph` |
 | A report, and the control that generates one | `ReportsGlyph` (re-export) |
 | Search, in the `/documents` and `/backwork` toolbars | `SearchGlyph` (re-export) |
-| A folder or file pinned for the whole chapter, and the Pin control (#3934), filled while pinned | `PinGlyph` (re-exported from the chat family, §6.2.2) |
-| A folder or file the member starred for themselves, and the Star control (#3934), filled while starred | `StarGlyph` |
+| A folder or file pinned for the whole chapter, and the Pin control (#3934), solid while pinned (#4289, §1 rule 1's exception) | `PinGlyph` (chat's pin shape, §6.2.2) |
+| A folder or file the member starred for themselves, and the Star control (#3934), solid while starred (#4289) | `StarGlyph` |
 
 **Backwork's copy markers are Lucide, on purpose (2026-11-05).** A backwork row marks which copy a file is with one icon per copy type, from one set and in the row's muted text tone (Paul: "with the copy, keep the icons consistent"): `FileCheck` a student copy, `File` a blank copy, `KeyRound` an answer key, and `Lock` beside any of them for a redacted file (`apps/web/components/backwork/backwork-row-parts.tsx`). They are small inline markers beside a text label, not domain glyphs that stand for a screen, so they stay in the control-furniture set rather than the duotone family; a later pass that draws them in the Signet set changes this paragraph and that file together.
 
 Three of the six are re-exports from
 [`apps/web/components/layout/nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx),
-which is §1 rule 1's rule and the two preceding families' practice.
+which is §1 rule 1's rule and the two preceding families' practice, and a
+fourth, `PinGlyph`, re-exports chat's (#4292).
 `FolderGlyph` is not a re-export, because no nav intent covers a folder (the
 sidebar links to Documents as a whole); it draws the nav set's `folder` entry
 (Phosphor `folder`, §1.1) so the folder rail's rows stay one family.
-`PinGlyph` is re-exported from the chat family (§6.2.2), since pinning a
-message, a channel and a document is one idea. `StarGlyph` is drawn here on
-the §1 recipe, because no set entry covers a personal star (#3934). Both
+`PinGlyph` takes chat's pin shape (§6.2.2), since pinning a message, a
+channel and a document is one idea, and it is a re-export of chat's again
+since #4292 (2026-11-13), when chat's pin took the same solid fill; from
+#4289 until then it was drawn here, because only a document's pin filled solid. `StarGlyph` is drawn here, because no
+set entry covers a personal star (#3934). Both
 draw their path data from `MARK_GLYPH_PATHS` (`@repo/theme/nav-glyphs`), which
 mobile's s12 draws too (`apps/mobile/components/documents/document-glyphs.tsx`,
-in the More family's paint), so the two apps keep one pin and one star.
+in the More family's strokes, solid while on since #4289), so the two apps keep one pin and one star.
 
 [`canvas-screens.dc.html`](reference/canvas-screens.dc.html) marks every
 document row on **s12** (the Documents screen) and **s21** (the upload sheet)
@@ -607,11 +641,22 @@ holding its kind's glyph at 20px in `--muted-foreground`
 or, for an event, its month and day in place of a glyph. The phone's Activity
 rows draw the same lead at the same sizes in `text.mutedForeground`
 ([`apps/mobile/components/activity/activity-row.tsx`](../../../apps/mobile/components/activity/activity-row.tsx),
-#4173 step 2), and both read which shape a kind takes from one map,
+#4173 step 2). Since #4766 an event listed under a day's heading leads with
+the events glyph on both clients, the heading having said the day; the month
+and day stay where a row stands apart from a day (the week card, Now, Later,
+Events you made). Both read which shape a kind takes from one map,
 `ACTIVITY_GLYPH_NAV` in `@repo/hooks`. The glyphs are
 the nav set's (§1.1), so a row draws the shape of the place its record lives;
-`link` and `confirm` were added for the two kinds that have no place of their own.
+`link`, `confirm`, `signup` and `form` were added for the kinds that have no place of their own.
 They stay neutral: the page's colour is for asks and status.
+
+A row from another member leads with that member's face instead
+([#4463](https://github.com/pdcarlson/Frapp/issues/4463), 2026-11-12): their
+photo or initials on their tint in a 40px circle, with the same kind glyph
+small on the face's lower corner. The glyph keeps its neutral colour there;
+only the member's own tint is coloured. Which rows take a face:
+[`spec/ui/web-dashboard/README.md` § Activity](../web-dashboard/README.md#activity).
+The face and its badge, and their measurements, are §6.2.5b's.
 
 | Row kind | Shape (nav set key, Phosphor name) |
 |---|---|
@@ -621,6 +666,41 @@ They stay neutral: the page's colour is for asks and status.
 | Poll | `polls`, `chart-bar` |
 | Event whose start can't be read (no date to draw) | `events`, `calendar-dots` |
 | Sign-up link | `link`, `link` (added for it) |
+| Sign-up sheet or headcount to answer (#3926) | `signup`, `list-checks` (added for it) |
+| Form to fill out (#3926) | `form`, `clipboard-text` (added for it) |
+
+### 6.2.5b A face with a kind badge (one recipe, #4476)
+
+Notifications (#4346) and Activity (#4463) both lead a row with a member's
+face and a small badge on its lower corner naming the kind, as Slack's and
+Teams' Activity draw the actor. Since
+[#4476](https://github.com/pdcarlson/Frapp/issues/4476) (2026-11-14) one
+component per platform draws both:
+[`apps/web/components/shared/face-with-badge.tsx`](../../../apps/web/components/shared/face-with-badge.tsx)
+and [`apps/mobile/components/face-with-badge.tsx`](../../../apps/mobile/components/face-with-badge.tsx).
+Each surface keeps its own face size (notifications 36, Activity 40); the
+badge is measured from it, by `@repo/hooks/face-badge`, which both clients read:
+
+| Part | Spec |
+|---|---|
+| Face | Photo, else initials on the member's tint (`avatarTintFor`), in a circle |
+| Badge | A disc half the face's diameter (18 on a 36 face, 20 on a 40) |
+| Glyph or mark | Three fifths of the disc (11 on 18, 12 on 20); a mark (`@`, `#`, `+`) at the caption size, bold. Which a notification kind wears is `NOTIFICATION_BADGE` in `@repo/hooks/notification-rows`, read by both clients |
+| Edge | A 1px `--border` hairline (on the phone, a 1pt `border.hairline` border, not `hairlineWidth`) |
+| Offset | The disc's edge 4px (4pt) past the face's lower right corner, so it clears the initials on the smaller 36 face |
+| Colour | Neutral: `--surface-1` with the glyph in `--muted-foreground`. A kind with a hue passes its own fill and ink (a mention's fixed gold, a join's success green; components.md § In-body mention chip) |
+
+It keeps Activity's hairline disc with the notifications list's offset. The
+list drew an 18px badge 4px past the corner, cut out of the face by a 2px ring in the
+popover's colour (on the phone, the screen's background); Activity drew the
+hairline disc 2px past the corner. Activity's 2px offset lands the badge on
+the initials of a 36 face, so the shared recipe takes the list's 4px. A ring cut in one ground's colour shows as a halo on any
+other ground, and the face sits on several: the popover, the page, a card,
+and a hovered or pressed row whose fill changes under it. The hairline reads
+on all of them. The neutral fill moved with it: the list's neutral badge was
+`--card-hover` on web and `popover` on the phone; both are `surface-1` now. A
+DM's badge is Direct messages' nav glyph on both clients: until #4476 web drew
+chat's two-bubble glyph for it and the phone fell back to the chat bubble.
 
 ### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately
 
@@ -639,8 +719,8 @@ the cutover skill calls out by name ("do not add a parallel token set next to
 the one in use"; "a definition or `index.ts` re-export is not evidence anything
 still calls it"). The four preceding family files each earn their place by
 drawing at least one glyph no nav intent covers; this family has none to draw.
-(Since 2026-11-05 the geometry of those glyphs, folder, schedule, invite and
-profile, lives in the shared set in `packages/theme` with the nav glyphs; the
+(Since 2026-11-05 the geometry of those glyphs, folder, schedule and invite
+(and profile, until the slideshow that drew it went in #5080), lives in the shared set in `packages/theme` with the nav glyphs; the
 family files still own the intent and the component.)
 
 **The tab rail stays text-only.** Its triggers (`SETTINGS_TABS`) carry no icons, and adding them would
@@ -655,27 +735,21 @@ draws for the same tone, not a domain intent.
 
 ### 6.2.7 Profile & pre-auth (Signet duotone)
 
-The #920 Profile & pre-auth slice — `/profile`, the onboarding wizard and
-tutorial, and the routes outside `(dashboard)`. Family file:
-[`apps/web/components/profile/profile-glyphs.tsx`](../../../apps/web/components/profile/profile-glyphs.tsx),
-homed in `profile/` because `ProfileGlyph` is a profile intent, though its one
-consumer today is the onboarding tutorial; §6.2.3's rule applies, so importing
-across a directory is fine and redrawing is not.
+The #920 Profile & pre-auth slice — the onboarding wizard and the routes
+outside `(dashboard)`. Family file:
+[`apps/web/components/profile/profile-glyphs.tsx`](../../../apps/web/components/profile/profile-glyphs.tsx);
+§6.2.3's rule applies, so importing across a directory is fine and redrawing
+is not. `ProfileGlyph` and the tutorial slides' nav re-exports went with the
+slideshow that was their one consumer; the first-run tour that replaced it
+(#5080) drew no glyph, and #5627 removed it too.
 
 | Semantic intent | Glyph |
 |---|---|
-| You — the viewer's own account (tutorial slide 7) | `ProfileGlyph`, defined here; its shape is the nav set's `profile` entry (Phosphor `user`, §1.1) |
 | An invite link (s02's hint card on `/join`) | `LinkGlyph`, **drawn here** |
-| Chat, Events, Backwork, Study hours, Points (tutorial slides 2–6) | `ChatGlyph`, `EventsGlyph`, `BackworkGlyph`, `StudyGlyph`, `PointsGlyph`, re-exported from [`nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx) |
-| Directory search (the wizard's no-results state) | `SearchGlyph`, same source |
+| Directory search (the wizard's no-results state) | `SearchGlyph`, re-exported from [`nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx) |
 | Locked out of the chapter (`/no-access`) | `LockGlyph`, re-exported from [`chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx) |
 
-**Two defined here, and both were genuinely undrawn.** `ProfileGlyph` has no nav
-intent to re-export because Profile left the sidebar for the account menu in
-the Wave 0 restructure, and neither neighbour is it: `DirectoryGlyph` is a
-group and `InviteGlyph` is a person *plus a mark*, the officer issuing a
-token. All three draw the nav set (§1.1), so the tutorial's slides 2–7 are one
-family. `LinkGlyph` is transcribed from the s02 hint card, which draws a chain
+**One defined here, and it was genuinely undrawn.** `LinkGlyph` is transcribed from the s02 hint card, which draws a chain
 link — reusing `InviteGlyph` there would contradict the drawing, and
 [`../README.md`](../README.md)'s precedence rule puts the board first. It is
 legitimately stroke-only, the `AttachGlyph` exception: an open curve fills into
@@ -684,14 +758,13 @@ a lens-shaped wedge across the break that makes the two halves read as links.
 **Deliberately not in this table:**
 
 - **The ✦.** `chapter-wizard.tsx` marked its header eyebrow with Lucide's
-  `Sparkles` and the tutorial marked its welcome slide with it. §11 reserves ✦
+  `Sparkles` and the slideshow (deleted in #5080) marked its welcome slide with it. §11 reserves ✦
   for the Ask entry point — it "MUST NOT mark anything that is not an Ask/AI
   entry point" — so this is the third time that correction has been made,
   after the slash-command trigger (§6.2.2) and `WandSparkles`. Neither site
   gained a replacement: the wizard's eyebrow now carries **no glyph**, because
   its label already names the intent, which is how the points adjustment
-  dialog resolved the same question (§6.2.3); and the tutorial's welcome slide
-  takes the **mark**, because the slide is literally a welcome to Frapp.
+  dialog resolved the same question (§6.2.3).
 - **`SignetMark`.** Locked emblem B (gold crest on charcoal)
   ([`components/auth/signet-mark.tsx`](../../../apps/web/components/auth/signet-mark.tsx))
   is a brand composition governed by [`../brand-identity.md`](../brand-identity.md)
@@ -702,10 +775,7 @@ a lens-shaped wedge across the break that makes the two halves read as links.
   §6.2.3 already records belong to `components/shared/**` rather than to any
   screen family.
 - **Control furniture**, per §6.2.2: `Loader2`, `ArrowLeft`, `ArrowRight`,
-  `Check`, `CheckCircle2`, `Copy` and `PencilLine`. `CheckCircle2` on the
-  tutorial's final slide is the borderline one and stays furniture: "confirm"
-  is a state the shared family already draws, and inventing a "done" intent no
-  other surface has would be new design rather than a repaint.
+  `Check`, `CheckCircle2`, `Copy` and `PencilLine`.
 
 **The wizard's steps stay text-only**, as Settings' tabs do (§6.2.6):
 adding per-step icons is new design, and the reference draws neither.

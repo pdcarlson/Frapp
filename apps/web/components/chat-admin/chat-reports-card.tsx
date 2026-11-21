@@ -6,6 +6,7 @@ import {
   memberFallbackLabel,
   removalOutcomeUnknown,
   resolveAuthorLabel,
+  useChannels,
   useChatReportAttachments,
   useChatReports,
   useMemberDisplayNames,
@@ -18,7 +19,10 @@ import { serverMessageOf, statusOf } from "@repo/api-sdk";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { isViewableImage } from "@repo/chat-core/attachments";
 import { formatBytes, formatTimestampFull } from "@repo/formatting";
-import { CHAT_REPORT_QUEUE_PERMISSIONS } from "@repo/validation";
+import {
+  auditLogAllowsChange,
+  CHAT_REPORT_QUEUE_PERMISSIONS,
+} from "@repo/validation";
 import { Can } from "@/components/shared/can";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -51,6 +55,7 @@ import {
 import type { ChatReportTab } from "./chat-report-copy";
 import { ReportRowsSkeleton } from "@/components/chat-admin/chat-admin-skeleton";
 import { InlineNote } from "@/components/shared/inline-note";
+import { CHAT_REPORTS_ANCHOR } from "@/components/settings/settings-paths";
 
 /**
  * The officer report queue (#2257) and its one destructive action (#2311).
@@ -172,8 +177,31 @@ function resolutionFailureMessage(error: unknown, next: Resolution): string {
     : FAILED_TOAST[next];
 }
 
-/** The queue's anchor: the new-report notification links to it. */
-export const CHAT_REPORTS_ANCHOR = "reported-messages";
+/** The chapter's audit log channel's id, or `null` while unknown or absent. */
+function useAuditLogChannelId(): string | null {
+  const { data } = useChannels();
+  if (!Array.isArray(data)) return null;
+  const auditLog = (data as { id: string; is_audit_log?: boolean }[]).find(
+    (channel) => channel.is_audit_log === true,
+  );
+  return auditLog?.id ?? null;
+}
+
+/**
+ * Whether the report names one of Frapp's entries in the audit log, which no
+ * removal can take out (`auditLogAllowsChange` in `@repo/validation`, which
+ * the API enforces). The report keeps who sent the line, not its kind.
+ */
+function namesAuditLogEntry(
+  report: Pick<ChatReport, "channel_id" | "reported_sender_id">,
+  auditLogChannelId: string | null,
+): boolean {
+  return (
+    auditLogChannelId !== null &&
+    report.channel_id === auditLogChannelId &&
+    !auditLogAllowsChange("delete", { sender_id: report.reported_sender_id })
+  );
+}
 
 function ChatReportsQueue({ channelId }: { channelId?: string }) {
   // Kept out of the way (Paul, 2026-11-11: "just not showing reports if
@@ -192,7 +220,7 @@ function ChatReportsQueue({ channelId }: { channelId?: string }) {
     Array.isArray(openQuery.data) && openQuery.data.length === 0;
   const [status, setStatus] = useState<ChatReportStatus>("open");
   // The queue sits last on the page, under the channel settings, so a
-  // new-report notification (`/chat-admin#reported-messages`) scrolls to it
+  // new-report notification (`CHAT_REPORTS_SETTINGS_PATH`) scrolls to it
   // once it mounts: the browser's own jump ran before the permission gate let
   // the section render.
   const sectionRef = useRef<HTMLElement>(null);
@@ -206,6 +234,10 @@ function ChatReportsQueue({ channelId }: { channelId?: string }) {
   const { toast } = useToast();
   const resolve = useResolveChatReport();
   const remove = useRemoveReportedMessage(reportedMessageTimeline);
+  // The audit log (#3909) keeps Frapp's entries: a report on one offers no
+  // Remove. The channel list is the one chat already reads, so this costs
+  // nothing extra; until it loads, Remove shows and the API refuses it.
+  const auditLogChannelId = useAuditLogChannelId();
 
   // Per row, so acting on one report leaves the others live; the shared
   // mutation's own `isPending` / `variables` describe only the latest call.
@@ -337,6 +369,7 @@ function ChatReportsQueue({ channelId }: { channelId?: string }) {
             <ReportList
               tab={tab}
               channelId={channelId}
+              auditLogChannelId={auditLogChannelId}
               busy={busy}
               onResolve={(report, next) => void handleResolve(report, next)}
               onRemove={(report, author) => void handleRemove(report, author)}
@@ -351,6 +384,8 @@ function ChatReportsQueue({ channelId }: { channelId?: string }) {
 interface ReportListProps {
   tab: ChatReportTab;
   channelId?: string;
+  /** The audit log's channel id (`useAuditLogChannelId`), or `null`. */
+  auditLogChannelId: string | null;
   busy: Readonly<Record<string, RowAction>>;
   onResolve: (report: ChatReport, next: Resolution) => void;
   onRemove: (report: ChatReport, author: string) => void;
@@ -376,6 +411,7 @@ function ReportList(props: ReportListProps) {
 
 function ReportListBody({
   tab,
+  auditLogChannelId,
   busy,
   onResolve,
   onRemove,
@@ -466,6 +502,7 @@ function ReportListBody({
             now={now}
             nameFor={nameFor}
             busy={busy[report.id] ?? null}
+            auditLogEntry={namesAuditLogEntry(report, auditLogChannelId)}
             offline={isOffline}
             onResolve={(next) => onResolve(report, next)}
             onRemove={() => onRemove(report, author)}
@@ -485,6 +522,7 @@ function ReportRow({
   now,
   nameFor,
   busy,
+  auditLogEntry,
   offline,
   onResolve,
   onRemove,
@@ -499,6 +537,8 @@ function ReportRow({
   now: number;
   nameFor: (userId: string) => string | null;
   busy: RowAction | null;
+  /** One of Frapp's audit log entries, which nothing removes (#3909). */
+  auditLogEntry: boolean;
   offline: boolean;
   onResolve: (next: Resolution) => void;
   onRemove: () => void;
@@ -579,6 +619,10 @@ function ReportRow({
         <div className="space-y-2">
           {messageGone ? (
             <p className="text-xs text-muted-foreground">{copy.messageGone}</p>
+          ) : auditLogEntry ? (
+            <p className="text-xs text-muted-foreground">
+              {copy.auditLogEntry}
+            </p>
           ) : null}
           <div className="flex flex-wrap justify-end gap-2">
             <RowButton
@@ -609,7 +653,7 @@ function ReportRow({
                 title={disabledTitle}
                 onClick={() => onResolve("actioned")}
               />
-            ) : (
+            ) : auditLogEntry ? null : (
               <RowButton
                 label="Remove message"
                 accessibleName={chatReportActionLabel.remove(subject, details)}

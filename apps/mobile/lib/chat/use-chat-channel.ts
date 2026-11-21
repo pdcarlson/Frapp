@@ -36,7 +36,7 @@
  *    `unconfirmed`/`recorded` rows have no replay path; the thread presents
  *    them read-only (#1910) until one exists. Do not invent a slash dispatch
  *    from here. The + sheet's forms (#3865) do post through
- *    `@repo/chat-core/dispatch`'s `postPoll`, `postTask`, `postHours` and
+ *    `@repo/chat-core/dispatch`'s `postPoll`, `postTask`, `linkTask` and
  *    `trackEventCard`, the calls web's commands make; none of them replays.
  *    Web's `dispatchSlash`, `retryUnconfirmed` and the persisted-notice merge
  *    in its channel query all hang off slash dispatch.
@@ -53,7 +53,7 @@
  * Imports stay subpath-only for the same reason the runtime's do.
  */
 
-import type { ChatMessageFlag } from "@repo/validation";
+import type { ChatMessageFlag, MentionPick } from "@repo/validation";
 import { errorCopy, MemberFacingError } from "@repo/hooks/error-copy";
 import {
   useCallback,
@@ -67,7 +67,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   actOnCard,
   closePoll as closePollAction,
+  closeCard as closeCardAction,
+  type ClosableCardKind,
   setMessageFlag as setMessageFlagAction,
+  setMessagePinned as setMessagePinnedAction,
   deleteMessage,
   discardOutboxRow,
   editMessage,
@@ -101,18 +104,18 @@ import {
   chatMessagesKey,
   type ChannelCache,
   type ChatMessage,
+  type OutgoingGif,
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { PollPayload } from "@repo/chat-core/polls";
 import {
-  postHours,
   postPoll,
+  linkTask,
   postTask,
   SIGNED_OUT_POST_COPY,
   trackEventCard,
   type DispatchResult,
   type EventCardTrack,
-  type HoursInput,
   type TaskInput,
 } from "@repo/chat-core/dispatch";
 import { randomClientId } from "@repo/api-sdk";
@@ -123,9 +126,11 @@ import {
   matchLocalPhotos,
   rememberLocalPhotos,
 } from "./local-photos";
-import { taskKeys, useFrappClient } from "@repo/hooks";
+import { useFrappClient, withChatRecordRefresh } from "@repo/hooks";
+import { dismissDeletedMessagePushes } from "@/lib/notifications/push";
 
 import { getSupabaseClient } from "@/lib/supabase";
+import { CHANNEL_MESSAGES_GC_TIME, takeReadAhead } from "./prefetch-channel";
 import { bootChatAdapters, useChatRuntime } from "./use-chat-runtime";
 
 /** Matches web's debounce so a draft write never rides every keystroke. */
@@ -135,7 +140,7 @@ const DRAFT_SAVE_DEBOUNCE_MS = 400;
 const PHOTO_UPLOAD_CONCURRENCY = 3;
 
 /** A photo just picked, with the upload that turns it into a claim. */
-export interface NewStagedPhoto {
+interface NewStagedPhoto {
   previewUri: string;
   width: number | null;
   height: number | null;
@@ -158,6 +163,7 @@ interface PendingPhotoSend {
   channelId: string;
   body: string;
   replyToId: string | null;
+  mentionPicks: readonly MentionPick[] | null;
   /** The photos' keys, in the order the message shows them. */
   keys: string[];
 }
@@ -181,6 +187,18 @@ export interface SendOptions {
    * (`replyTargetId` in `@repo/chat-core/message-actions`).
    */
   replyToId?: string | null;
+  /**
+   * The members the composer's `@` picker wrote into the body (#3835), so a
+   * picked name reaches that member or nobody, never another by name.
+   */
+  mentionPicks?: readonly MentionPick[] | null;
+}
+
+/** What a failed Close sign-ups or Close form says when chat-core says nothing. */
+export function closeCardFailure(kind: ClosableCardKind): string {
+  return kind === "form"
+    ? "Couldn't close the form. Try again."
+    : "Couldn't close sign-ups. Try again.";
 }
 
 /**
@@ -188,7 +206,7 @@ export interface SendOptions {
  * carrying the member-facing description chat-core classified, since mobile
  * has no toast to show it (#999).
  */
-async function withFailureMessage(
+export async function withFailureMessage(
   run: (onError: ChatErrorFn) => Promise<void>,
   fallback: string,
 ): Promise<void> {
@@ -273,15 +291,27 @@ export interface UseChatChannelResult {
     payload: PollPayload;
   }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
   /**
-   * The + sheet's Task and Service hours forms (#3865): chat-core's
-   * `postTask` / `postHours` into this channel, the calls web's `/task` and
-   * `/hours log` make, so the card gets the same placeholder, the `recorded`
-   * row when it didn't post, and `unconfirmed` (never `ok: false`) when the
-   * answer was lost. Neither route dedupes, so a form closes on anything but
-   * `ok: false`. Never rejects.
+   * The + sheet's GIF picker (#4631): the GIF as its own message, through
+   * the outbox like any message. It touches neither the draft nor the photo
+   * tray. Never rejects; resolves `ok: false` with the reason it couldn't
+   * queue.
+   */
+  sendGif: (
+    gif: OutgoingGif,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /**
+   * The + sheet's New task form (#3865): chat-core's `postTask` into this
+   * channel, the call web's `/task` makes, so the card gets the same
+   * placeholder, the `recorded` row when it didn't post, and `unconfirmed`
+   * (never `ok: false`) when the answer was lost. The route doesn't dedupe,
+   * so the form closes on anything but `ok: false`. Never rejects.
    */
   postTask: (input: TaskInput) => Promise<DispatchResult>;
-  postHours: (input: HoursInput) => Promise<DispatchResult>;
+  /**
+   * The + sheet's Task picker (#5772): chat-core's `linkTask`, posting an
+   * existing task's card into this channel. Never rejects.
+   */
+  linkTask: (task: { id: string; title: string }) => Promise<DispatchResult>;
   /**
    * The + sheet's Event form: chat-core's `trackEventCard` for this channel,
    * the timeline bookkeeping for a card the form's own `POST /v1/events`
@@ -293,7 +323,12 @@ export interface UseChatChannelResult {
    * is merged on success, and the Realtime echo of the same edit is a no-op.
    * Rejects with a member-facing message on failure, and changes nothing.
    */
-  edit: (messageId: string, content: string) => Promise<void>;
+  /** `mentionPicks`: members picked while editing (#3835). */
+  edit: (
+    messageId: string,
+    content: string,
+    mentionPicks?: readonly MentionPick[],
+  ) => Promise<void>;
   /**
    * Soft-deletes a message (own, or any with `channels:manage`). Pessimistic
    * like `edit`, per `spec/ui/resilience/`: the tombstone lands when the
@@ -307,11 +342,22 @@ export interface UseChatChannelResult {
    */
   closePoll: (messageId: string) => Promise<void>;
   /**
+   * Closes a sign-up card (#3926) or a form card (step 3) early, pessimistic
+   * like `closePoll`.
+   */
+  closeCard: (messageId: string, kind: ClosableCardKind) => Promise<void>;
+  /**
    * Puts a flag on a message, replaces it, or (`null`) takes it off (#3921).
    * Pessimistic like `closePoll`: the row draws the flag when the server's
    * answer lands. Rejects with a member-facing message, a lost race included.
    */
   flag: (messageId: string, flag: ChatMessageFlag | null) => Promise<void>;
+  /**
+   * Pins (`true`) or unpins a message for the channel (#3723). Pessimistic
+   * like `flag`: the row reads Pinned when the server's answer lands, and the
+   * channel's pin list refetches. Rejects with a member-facing message.
+   */
+  setPinned: (messageId: string, pinned: boolean) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
   /** Inline-card action dispatch (poll votes, #528; RSVP/Done in a future card). */
@@ -334,6 +380,13 @@ export interface UseChatChannelResult {
   retryPhoto: (key: string) => void;
   draft: string;
   setDraft: (body: string) => void;
+  /**
+   * Puts `body` back as `channelId`'s saved draft, unless the member has
+   * written another there since: for a message that left the composer and
+   * then didn't go (a scheduled one the API refused, #4956) after the screen
+   * moved to another channel.
+   */
+  restoreDraftFor: (channelId: string, body: string) => void;
   /**
    * Last send failure. `null` once a fresh `send` is attempted or the
    * member switches channels (#1431 — this used to outlive a channel
@@ -365,6 +418,11 @@ export interface UseChatChannelResult {
   typingUsers: readonly string[];
   emitTyping: () => void;
   connection: ConnectionStatus;
+  /**
+   * Realtime refused this channel because the member may not read it any more
+   * (#5765): deleted, or access taken away. Nothing retries it on a timer.
+   */
+  unavailable: boolean;
   retry: (clientMessageId: string) => Promise<void>;
   discard: (clientMessageId: string) => Promise<void>;
 }
@@ -414,7 +472,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     // for the whole cold read (3 s on prod that evening, the read queued
     // behind the resume burst). Kept, the rows paint at once and the
     // realtime join's backfill reads what arrived since (`mergeSincePage`).
-    gcTime: 30 * 60_000,
+    // Chat home reads ahead into this same key with the same life
+    // (`prefetch-channel.ts`, #3699).
+    gcTime: CHANNEL_MESSAGES_GC_TIME,
     queryFn: () => (channelId ? pager.readNewest(channelId) : emptyCache()),
   });
 
@@ -422,6 +482,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   const reload = useCallback(() => {
     void refetch();
   }, [refetch]);
+
+  // A page chat home read ahead (#3699) paints at once, then is read again
+  // here behind the rows already shown: nothing kept it current while no
+  // thread had the channel open, and this read, through the pager, is the one
+  // that records where a short channel's history starts.
+  const hasData = query.data !== undefined;
+  useEffect(() => {
+    if (!channelId || !hasData) return;
+    if (takeReadAhead(channelId)) void refetch();
+  }, [channelId, hasData, refetch]);
 
   // Older history (#2772), one page per call, merged into the same cache the
   // realtime merge, the outbox and the reconnect backfill write to. It only
@@ -534,6 +604,25 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     return chatRealtime.subscribeStatus(refresh);
   }, [channelId]);
   const typingUsers = channelId ? typingUsersState : NO_TYPING_USERS;
+
+  /*
+    Realtime refused this channel's join because the member may not read it
+    (#5765): it was deleted, or their access went. The manager has stopped
+    asking for it and the channel list is being read again; the thread shows
+    `CHANNEL_UNAVAILABLE_TITLE` in place of its timeline. Held with the channel
+    it is about, so a switch never carries it to the next one for a render.
+  */
+  const [unavailableFor, setUnavailableFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (!channelId) return;
+    const refresh = () =>
+      setUnavailableFor(
+        chatRealtime.isUnavailable(channelId) ? channelId : null,
+      );
+    refresh();
+    return chatRealtime.subscribeStatus(refresh);
+  }, [channelId]);
+  const unavailable = channelId !== null && unavailableFor === channelId;
 
   // Draft: load once per channel, debounce writes.
   const [draftState, setDraftState] = useState("");
@@ -712,6 +801,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, cancelDraftTimer, drafts],
   );
 
+  const restoreDraftFor = useCallback(
+    (target: string, body: string) => {
+      void drafts.load(target).then((held) => {
+        if (!held.trim()) return drafts.save(target, body);
+      });
+    },
+    [drafts],
+  );
+
   /**
    * Bumped once per `send` dispatch, mirroring `reactionGenerationRef`.
    * `sendMessage` resolves asynchronously, so without this the catch below
@@ -775,6 +873,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         channelId: pending.channelId,
         content: pending.body,
         replyToId: pending.replyToId,
+        mentionPicks: pending.mentionPicks,
         clientMessageId,
         attachmentsReady,
         attachmentCount: pending.keys.length,
@@ -872,6 +971,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           channelId,
           body,
           replyToId: options?.replyToId ?? null,
+          mentionPicks: options?.mentionPicks ?? null,
           keys,
         });
         cancelDraftTimer();
@@ -905,6 +1005,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           channelId,
           content: body,
           replyToId: options?.replyToId ?? null,
+          mentionPicks: options?.mentionPicks ?? null,
           clientMessageId,
           attachments:
             staged.length > 0
@@ -984,31 +1085,51 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const sendGif = useCallback(
+    async (
+      gif: OutgoingGif,
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
+      try {
+        await sendMessage(ctx, {
+          channelId,
+          content: "",
+          gif,
+          keepDraft: true,
+        });
+        return { ok: true };
+      } catch (error) {
+        return {
+          ok: false,
+          error:
+            error instanceof Error && error.message
+              ? error.message
+              : "The GIF didn't send.",
+        };
+      }
+    },
+    [channelId, ctx],
+  );
+
   // No channel or identity means no + (the composer can't send), so these,
   // like `sendPoll`, only answer a caller that raced a sign-out.
   const postTaskHere = useCallback(
     async (input: TaskInput): Promise<DispatchResult> => {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      const result = await postTask(ctx, channelId, input);
       // `postTask` writes the chat's cache, not the task board's. A lost
       // answer refreshes it too: the task may exist.
-      if (result.ok)
-        void queryClient.invalidateQueries({ queryKey: taskKeys.all });
-      return result;
+      return withChatRecordRefresh(queryClient, "task", () =>
+        postTask(ctx, channelId, input),
+      );
     },
     [channelId, ctx, queryClient],
   );
-  const postHoursHere = useCallback(
-    async (input: HoursInput): Promise<DispatchResult> => {
+  const linkTaskHere = useCallback(
+    async (task: { id: string; title: string }): Promise<DispatchResult> => {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      const result = await postHours(ctx, channelId, input);
-      // As above, for the Service page's entries.
-      if (result.ok) {
-        void queryClient.invalidateQueries({ queryKey: ["service-entries"] });
-      }
-      return result;
+      return linkTask(ctx, channelId, task);
     },
-    [channelId, ctx, queryClient],
+    [channelId, ctx],
   );
   const trackEventCardHere = useMemo(
     () =>
@@ -1019,13 +1140,20 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   const edit = useCallback(
-    async (messageId: string, content: string) => {
+    async (
+      messageId: string,
+      content: string,
+      mentionPicks?: readonly MentionPick[],
+    ) => {
       if (!channelId || !ctx) {
         throw new MemberFacingError("Couldn't edit message. Try again.");
       }
       await withFailureMessage(
         (onError) =>
-          editMessage({ ...ctx, onError }, { channelId, messageId, content }),
+          editMessage(
+            { ...ctx, onError },
+            { channelId, messageId, content, mentionPicks },
+          ),
         "Couldn't edit message. Try again.",
       );
     },
@@ -1060,6 +1188,19 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  const closeCard = useCallback(
+    async (messageId: string, kind: ClosableCardKind) => {
+      const failure = closeCardFailure(kind);
+      if (!channelId || !ctx) throw new MemberFacingError(failure);
+      await withFailureMessage(
+        (onError) =>
+          closeCardAction({ ...ctx, onError }, { channelId, messageId, kind }),
+        failure,
+      );
+    },
+    [channelId, ctx],
+  );
+
   const flag = useCallback(
     async (messageId: string, next: ChatMessageFlag | null) => {
       const failure = next
@@ -1076,6 +1217,29 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       );
     },
     [channelId, ctx],
+  );
+
+  const setPinned = useCallback(
+    async (messageId: string, pinned: boolean) => {
+      const failure = pinned
+        ? "Couldn't pin message. Try again."
+        : "Couldn't unpin message. Try again.";
+      if (!channelId || !ctx) throw new MemberFacingError(failure);
+      await withFailureMessage(
+        (onError) =>
+          setMessagePinnedAction(
+            { ...ctx, onError },
+            { channelId, messageId, pinned },
+          ),
+        failure,
+      );
+      // The header's Pinned list (`usePinnedMessages`) reads the server's
+      // list, which this write just changed.
+      void queryClient.invalidateQueries({
+        queryKey: ["channels", channelId, "pins"],
+      });
+    },
+    [channelId, ctx, queryClient],
   );
 
   const updatePhoto = useCallback(
@@ -1291,6 +1455,24 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
 
   const messages = useMemo(() => selectMessages(query.data), [query.data]);
 
+  // A deleted message in the conversation just loaded takes its push out of
+  // the tray (#4470): the delete the inbox can't have reported, made while
+  // the app was closed. Keyed on the set of deleted ids, so a page of
+  // messages doesn't re-read the tray unless a delete is new to it.
+  const deletedKey = useMemo(
+    () =>
+      messages
+        .filter((m) => m.is_deleted)
+        .map((m) => m.id)
+        .sort()
+        .join(","),
+    [messages],
+  );
+  useEffect(() => {
+    if (!deletedKey) return;
+    void dismissDeletedMessagePushes(new Set(deletedKey.split(",")));
+  }, [deletedKey]);
+
   return {
     messages,
     isLoading: query.isPending,
@@ -1304,13 +1486,16 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     send,
     sendInFlight,
     sendPoll,
+    sendGif,
     postTask: postTaskHere,
-    postHours: postHoursHere,
+    linkTask: linkTaskHere,
     trackEventCard: trackEventCardHere,
     edit,
     remove,
     closePoll,
+    closeCard,
     flag,
+    setPinned,
     react,
     unreact,
     act,
@@ -1320,6 +1505,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     retryPhoto,
     draft,
     setDraft,
+    restoreDraftFor,
     sendError,
     reactionError,
     clearReactionError,
@@ -1328,6 +1514,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     typingUsers,
     emitTyping,
     connection,
+    unavailable,
     retry,
     discard,
   };

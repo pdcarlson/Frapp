@@ -37,16 +37,18 @@ import { cn } from "@/lib/utils";
  *    re-export getting to three. The board's own note — "at native colors, never
  *    recolored" — is the half that governs, and the wash is the half that
  *    contradicts it. Quiet is carried instead by what the board also draws: no
- *    border, no interaction, `alt=""`, and the crest's own `#1A1A1A` field
- *    sitting flush on the page, so the tile edge does not show and the glyph
- *    floats. Until 2026-11-05 the page was `--surface-1`, which was `#1A1A1A`
- *    exactly. The neutral ladder (foundations.md §2) moved `--surface-1` to
- *    `#111111`, where the field read as a 1.085:1 square (assets.md, #2580),
- *    so the page now paints `--card` (`#171717`), 1.03:1 off the field.
- * 2. **Radius 24 rounds onto 20.** `foundations.md` §8 locks the map at a 20
- *    ceiling and calls an off-map radius "a defect, exactly as a raw hex value
- *    is". `signet-mark.tsx` already rounds its 30px chip from 9 onto the
- *    adjacent step for the same reason.
+ *    border, no interaction, `alt=""`, and no tile edge, so the glyph floats.
+ *    Until 2026-11-19 that came from the full tile's own `#1A1A1A` field
+ *    sitting flush on a matching ladder step (`--surface-1` or `--card`, by
+ *    ladder). The violet 2026-11-19 ladder has no neutral step, so the
+ *    neutral field read as a faint square on the violet card. The page now
+ *    draws the glyph raster instead (`signet-emblem-B-glyph.png`, the crest
+ *    alone on transparent, which `spec/ui/assets.md` names for surfaces that
+ *    are not the charcoal field): the same locked gold, with no field to show
+ *    on any ladder.
+ * 2. **Radius 24 is dropped.** It rounded the full tile's corners. The glyph
+ *    raster has no tile, so there is no corner to round (it rounded onto 20,
+ *    `foundations.md` §8's ceiling, while the page drew the tile).
  * 3. **The 40px buttons become the 44px `sm` size.** §9's touch floor is 44 on
  *    every platform, and `components.md` §3's ladder has no 40 step. This is
  *    `button.tsx`'s own argument ("foundations.md §7 locks the type scale and
@@ -118,13 +120,13 @@ export function CrestPage({
         chip).
       */}
       <Image
-        src="/brand/signet-emblem-B.png"
+        src="/brand/signet-emblem-B-glyph.png"
         alt=""
         aria-hidden="true"
         width={260}
         height={260}
         priority
-        className="h-[180px] w-[180px] shrink-0 rounded-2xl sm:h-[260px] sm:w-[260px]"
+        className="h-[180px] w-[180px] shrink-0 sm:h-[260px] sm:w-[260px]"
       />
       <div className="w-full max-w-[300px]">
         <p

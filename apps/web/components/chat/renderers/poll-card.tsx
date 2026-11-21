@@ -16,7 +16,6 @@ import {
   POLL_VOTE_ACTION_TYPE,
   canClosePoll,
   castPollVote,
-  isPollCardClosed,
   pollCardEyebrow,
   pollCardFooter,
   pollChoiceHint,
@@ -28,6 +27,7 @@ import {
   type PendingPollPicks,
   type PollOption,
 } from "@repo/chat-core/polls";
+import { isCardClosed } from "@repo/chat-core/card-closing";
 import { useMyPermissions, useNow } from "@repo/hooks";
 import { can } from "@repo/validation";
 
@@ -43,7 +43,8 @@ interface PollCardProps {
     payload: Record<string, unknown>,
   ) => void;
   /**
-   * Close poll on the viewer's own open poll (#3794). The caller confirms
+   * Close poll on an open poll the viewer started, or on anyone's for a
+   * `channels:manage` holder (#3794, #4046). The caller confirms
    * first (`ChatShell`); the card only offers it (`canClosePoll`).
    */
   onClosePoll?: (messageId: string) => void;
@@ -81,10 +82,11 @@ export function PollCard({
     fetchStatus: moduleGate.fetchStatus,
   });
   const gateReasonId = useId();
-  // The close route requires `polls:create`, which posting a card doesn't
-  // (#3007). Unknown until the read lands, which withholds Close poll.
-  const canCreatePolls = can(
-    "polls:create",
+  // A `channels:manage` holder may close anyone's poll, as its creator may
+  // their own (#4046). Unknown until the read lands, which offers it to the
+  // creator only.
+  const canManageChannels = can(
+    "channels:manage",
     useMyPermissions().data?.permissions,
   );
 
@@ -102,15 +104,15 @@ export function PollCard({
     );
   }
 
-  // Closed by its deadline or, early, by its creator (#3794). The server row's
+  // Closed by its deadline or, early, by its creator or a moderator (#3794). The server row's
   // `payload.closed_at` arrives as a Realtime UPDATE, so every open card
   // redraws closed the moment the creator closes it.
-  const isClosed = isPollCardClosed(payload, now);
+  const isClosed = isCardClosed(payload, now);
   const showClose =
     !!onClosePoll &&
     canClosePoll(message, payload, viewerId, now, {
       pollsGate,
-      canCreatePolls,
+      canManageChannels,
     });
   /*
     `!viewerId`, not `!== null`. The prop says `string` now, but a JSX spread of
@@ -143,7 +145,7 @@ export function PollCard({
       </p>
       <div className="mt-2 text-base font-bold">{payload.question}</div>
       {choiceHint ? (
-        <p className="mt-1 text-caption text-muted-foreground">{choiceHint}</p>
+        <p className="mt-2 text-caption text-muted-foreground">{choiceHint}</p>
       ) : null}
       <ul className="mt-3 space-y-2">
         {payload.options.map((option) => {

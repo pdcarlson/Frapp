@@ -292,4 +292,22 @@ describe("QueryProvider — which failed queries retry", () => {
   ])("retries %s three times", async (_label, failWith) => {
     expect(await attemptsFor(failWith)).toBe(4);
   });
+
+  it("keeps retrying a busy server's 429 six times", async () => {
+    expect(
+      await attemptsFor({ statusCode: 429, message: "Rate exceeded." }),
+    ).toBe(7);
+  });
+
+  it("waits longer, jittered, between a busy server's retries", () => {
+    // The client's own default, not the harness's `retryDelay: 0`.
+    const retryDelay = makeQueryClient().getDefaultOptions().queries
+      ?.retryDelay as (attempt: number, error: unknown) => number;
+    const busy = { statusCode: 429, message: "Rate exceeded." };
+    const first = retryDelay(0, busy);
+    expect(first).toBeGreaterThanOrEqual(1000);
+    expect(first).toBeLessThanOrEqual(2000);
+    expect(retryDelay(5, busy)).toBeGreaterThanOrEqual(15_000);
+    expect(retryDelay(0, { statusCode: 500 })).toBe(1000);
+  });
 });

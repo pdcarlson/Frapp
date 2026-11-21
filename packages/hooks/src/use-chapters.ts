@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { markLegalAcceptanceRecorded } from "./legal-acceptance";
 import { putSignedUpload } from "./put-signed-upload";
-import { readSignedUpload } from "@repo/validation";
+import { readSignedUpload, type SubscriptionStatus } from "@repo/validation";
 
 export interface ChapterMembershipSummary {
   chapter_id: string;
@@ -36,7 +36,7 @@ export interface ChapterMembershipSummary {
     id: string;
     name: string;
     university: string;
-    subscription_status: "incomplete" | "active" | "past_due" | "canceled";
+    subscription_status: SubscriptionStatus;
     past_due_since: string | null;
     accent_color: string | null;
     logo_path: string | null;
@@ -69,8 +69,8 @@ export function useListChapters(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: chapterQueryKey("accessible"),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/chapters");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/chapters", { signal });
       if (error) throw error;
       return (data ?? []) as ChapterMembershipSummary[];
     },
@@ -79,6 +79,10 @@ export function useListChapters(options?: { enabled?: boolean }) {
   });
 }
 
+/**
+ * @alias Both names have app callers; collapsing them into one is its own
+ * change across apps/web and apps/mobile (#4544), so knip lets the pair be.
+ */
 export const useAccessibleChapters = useListChapters;
 
 export function useCurrentChapter(options?: {
@@ -93,8 +97,10 @@ export function useCurrentChapter(options?: {
 
   return useQuery({
     queryKey: chapterQueryKey("current", chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/chapters/current");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/chapters/current", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

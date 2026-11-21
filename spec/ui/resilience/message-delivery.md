@@ -26,7 +26,7 @@ Chat messages are the most latency-sensitive and loss-sensitive data in the app.
 |-------|-----------|-------------|
 | SENDING | Subtle spinner or clock icon next to message | None needed |
 | SENT | Single checkmark (✓) | None needed |
-| DELIVERED | Double checkmark (✓✓) — future, requires read receipts | None needed |
+| DELIVERED | No mark of its own, and never ✓✓: on the Messages list a double check means **read** ([`chat/README.md` § Shown to the sender](../../behavior/chat/README.md#shown-to-the-sender), #5519) | None needed |
 | FAILED | Red warning icon (⚠) + "Failed to send" | [Retry] [Delete] buttons |
 | UNCONFIRMED | Neutral note + "outcome unknown" — **never red** | [Retry] only — **never Delete** |
 | RECORDED | Neutral note — write committed, chat card missing — **never red** | None — **never Retry, never Delete** |
@@ -140,7 +140,7 @@ online set on the same `chat:channel:<id>` topic (ADR-10). So an *open* client r
 when the Postgres Changes row arrives, or when the polling fallback below picks it up. (A member who
 is backgrounded or away learns of it a third way, outside this doc's scope: the push worker
 subscribes to the same `chat_messages` INSERT server-side and fans out an Expo notification — ADR-09,
-suppressed by the Presence read above.)
+suppressed by the Presence read above, except in an announcements channel.)
 The API used to emit a `new_message` broadcast that looked like a second delivery path and was not
 one; it was removed in #472 — see the ADR-11 amendment for why, and #1613 for whether a real
 sub-second path is wanted.
@@ -149,11 +149,13 @@ sub-second path is wanted.
 thread is open, so on its own it leaves everything that summarizes *all* channels (unread
 badges and bold rows, the Messages order, the app badge) waiting for focus or staleness. The
 realtime manager therefore also holds one global Postgres Changes subscription on
-`chat_messages` INSERTs (`chat:inbox:global`), unfiltered and scoped by the `chat_messages` RLS
+`chat_messages` (`chat:inbox:global`), unfiltered and scoped by the `chat_messages` RLS
 policy that Realtime runs per subscriber, so a member is told about exactly the messages a REST
 read would return them, archive imports excluded. It carries no message into a timeline. It
 reports each new message to the client (`onMessageActivity`), which, coalescing a burst into one
-round, re-reads `GET /v1/channels/unread` and `/latest`. When the message landed in the thread
+round, re-reads `GET /v1/channels/unread` and `/latest`. It reports an edit or a delete too
+(an UPDATE of a row with `edited_at` or `is_deleted` set, #4442), which re-reads the same two and
+stamps nothing, so a list's latest line never keeps a message its author changed or removed. When the message landed in the thread
 the member is looking at, the client first re-stamps that channel read
 (`POST /v1/channels/{id}/read`) (`createChatActivityHandler` in `@repo/hooks`). "Looking at"
 means the thread has claimed it on focus (`claimViewedChannel`) and the app or tab is in front of
@@ -161,10 +163,19 @@ them. Being subscribed is not enough, because a mobile thread stays mounted unde
 over it. A round's stamps wait for the previous round's, so a slow stamp can't be overtaken by a
 later round's re-read, but no round waits on a re-read. A `resync` also re-stamps the channel being
 looked at, which covers what arrived in it while the app was away. Each rejoin of the inbox after a drop reports a
-`resync`, which re-reads both. Mobile binds the manager app-wide from `components/app-runtime.tsx`
+`resync`, which re-reads both. Its first join reports `joined` instead (#4961): nothing was dropped,
+but a message that landed after the summaries were read and before the join reached no inbox. The
+client re-reads, as a `resync` does, only if the counts were read, or were being read, before the
+join and no read of them starts within `CHAT_JOIN_CHECK_MS` (1 s) after it; a read still running
+from before the join is waited out first, since an invalidation would fold into it. A cold open onto
+a thread needs no read of its own, because the thread's read stamp re-reads the counts; a cold open
+anywhere else (another web page, the phone's chat home) pays one, which is the price of closing the
+gap. Web binds the manager before `GET /v1/users/me` answers, so the first
+viewer to resolve is the session the inbox already joined with, and keeps that join; a viewer who
+changes after one was bound (a sign-out, then a sign-in) rejoins it. Mobile binds the manager app-wide from `components/app-runtime.tsx`
 so the inbox runs from launch. Web binds it for the whole dashboard from `DashboardShell`
-(`useChatRealtimeBinding`, #3745), so the nav's Chat row lights within seconds of a message on any
-page, not only on `/chat`; `ChatProvider` never configures or tears the manager down.
+(`useChatRealtimeBinding`, #3745), so the nav's Chat row lights, or its Direct messages row counts (#3774), within seconds of a
+message on any page, not only on `/chat`; `ChatProvider` never configures or tears the manager down.
 
 **Back in the foreground** (#3698). A socket can die while the app is in the background (mobile)
 or the tab is hidden (web), and Realtime only notices when a heartbeat goes unanswered, on its own
@@ -205,6 +216,20 @@ Supabase Realtime (preferred)
                                   When Realtime reconnects → switch back
                                   Fetch any messages missed during the gap
 ```
+
+A channel whose join Realtime keeps refusing because the member may not read it (deleted, or their
+access went) is not a disconnect: it is neither polled nor counted toward the switch, and the thread
+says the channel is no longer available instead
+([`realtime-connection.md` § A refused join is not a drop](realtime-connection.md#a-refused-join-is-not-a-drop), #5765).
+
+**A join means streaming** (#5022). Both the gap-recovery read below and the inbox's `joined` take a
+channel's join as the point from which every new row arrives live. Realtime can report a channel
+joined before the replication behind it is streaming, and a row written in between would reach no
+one, so the thread and inbox channels ask it to hold the join until the stream is live
+(`postgres_changes_options.wait`). A stream that can't start fails the join instead, about 20 s in.
+A thread takes that like any other failed join, through the reconnect backoff and the polling
+fallback. The inbox isn't polled: it retries on its backoff, and the join that succeeds reports a
+`resync`.
 
 **Gap recovery:** When Realtime reconnects after a disconnect:
 1. Fetch the messages created after the last known message, by its id (`since=`; the API

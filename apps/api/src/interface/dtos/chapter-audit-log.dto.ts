@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -13,6 +14,7 @@ import {
   ISO_INSTANT_REGEX,
 } from '#domain/constants/iso-instant';
 import { Type } from 'class-transformer';
+import { CHAPTER_LOG_KIND_VALUES, type ChapterLogKind } from '@repo/validation';
 
 export class ListChapterAuditLogQueryDto {
   @ApiPropertyOptional({
@@ -43,6 +45,15 @@ export class ListChapterAuditLogQueryDto {
   @IsString()
   @MaxLength(64)
   action?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Filter to one Logs kind: any of the actions it holds (`CHAPTER_LOG_KINDS` in `@repo/validation`).',
+    enum: CHAPTER_LOG_KIND_VALUES,
+  })
+  @IsOptional()
+  @IsIn(CHAPTER_LOG_KIND_VALUES)
+  kind?: ChapterLogKind;
 
   @ApiPropertyOptional({
     description:

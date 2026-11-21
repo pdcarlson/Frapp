@@ -80,7 +80,7 @@ describe("useQuickActions", () => {
 
   it("shows the saved arrangement once it is read", async () => {
     render();
-    expect(latest.shown[0]).toBe("newEvent");
+    expect(latest.shown[0]).toBe("newMinutes");
     await settle("chapter-1", ["study", "message"]);
     expect(latest.shown).toEqual(["study", "message"]);
   });
@@ -107,19 +107,19 @@ describe("useQuickActions", () => {
 
   it("keeps an edit made before the read came back", async () => {
     render();
-    act(() => latest.save(["checkIn"]));
+    act(() => latest.save(["invite"]));
     await settle("chapter-1", ["study", "message"]);
-    expect(latest.shown).toEqual(["checkIn"]);
+    expect(latest.shown).toEqual(["invite"]);
   });
 
   it("keeps an action its module hides through an unrelated edit", async () => {
     state.modules = { documents: false };
     render();
-    await settle("chapter-1", ["upload", "message", "checkIn"]);
-    expect(latest.shown).toEqual(["message", "checkIn"]);
-    act(() => latest.save(["checkIn", "message"]));
+    await settle("chapter-1", ["upload", "message", "invite"]);
+    expect(latest.shown).toEqual(["message", "invite"]);
+    act(() => latest.save(["invite", "message"]));
     expect(state.write).toHaveBeenLastCalledWith("user-1", "chapter-1", [
-      "checkIn",
+      "invite",
       "message",
       "upload",
     ]);
@@ -132,5 +132,11 @@ describe("useQuickActions", () => {
     state.permissions = ["*"];
     act(() => tree.update(<Harness />));
     expect(latest.ready).toBe(true);
+  });
+
+  it("offers New minutes to an officer who records them, drafting or not (#5288)", () => {
+    render();
+    expect(latest.ready).toBe(true);
+    expect(latest.available[0]).toBe("newMinutes");
   });
 });

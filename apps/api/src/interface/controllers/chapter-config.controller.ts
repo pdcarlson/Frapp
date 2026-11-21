@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -43,6 +44,8 @@ const CONFIG_SECTIONS: Readonly<Record<keyof PatchChapterConfigDto, true>> = {
   workflows: true,
   analytics_opt_out: true,
   default_invite_role_id: true,
+  birthday_channel_id: true,
+  members_can_change_name: true,
 };
 
 /**
@@ -74,7 +77,7 @@ export class ChapterConfigController {
     summary: 'Get merged chapter config (archetype defaults + overrides)',
   })
   async getConfig(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
   ) {
     this.assertMatchesActiveChapter(id, chapterId);
@@ -97,7 +100,7 @@ export class ChapterConfigController {
     },
   )
   async patchConfig(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: PatchChapterConfigDto,
@@ -112,7 +115,7 @@ export class ChapterConfigController {
     summary: 'Recompute and persist derived theme palette from branding.colors',
   })
   async recomputePalette(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
   ) {
     this.assertMatchesActiveChapter(id, chapterId);

@@ -3,6 +3,10 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { MemberController } from './member.controller';
 import { MemberService } from '../../application/services/member.service';
+import { MemberPhoneReachService } from '../../application/services/member-phone-reach.service';
+import { InviteService } from '../../application/services/invite.service';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
   DismissOpsNudgeDto,
   UpdateMemberRolesDto,
@@ -12,6 +16,7 @@ import {
 describe('MemberController', () => {
   let controller: MemberController;
   let memberService: jest.Mocked<MemberService>;
+  let inviteService: { announceJoin: jest.Mock };
 
   beforeEach(async () => {
     memberService = {
@@ -23,14 +28,24 @@ describe('MemberController', () => {
       searchByChapterAndName: jest.fn(),
       findAlumniByChapter: jest.fn(),
       updateRoles: jest.fn(),
+      correctProfile: jest.fn(),
       updateOnboarding: jest.fn(),
       dismissOpsNudge: jest.fn(),
       remove: jest.fn(),
     } as any;
 
+    inviteService = { announceJoin: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await createUnguardedTestingModule({
       controllers: [MemberController],
-      providers: [{ provide: MemberService, useValue: memberService }],
+      providers: [
+        { provide: MemberService, useValue: memberService },
+        {
+          provide: MemberPhoneReachService,
+          useValue: { findForViewer: jest.fn() },
+        },
+        { provide: InviteService, useValue: inviteService },
+      ],
     }).compile();
 
     controller = module.get(MemberController);
@@ -163,12 +178,18 @@ describe('MemberController', () => {
       const updatedMember = { id: 'member-1', role_ids: dto.role_ids } as any;
       memberService.updateRoles.mockResolvedValue(updatedMember);
 
-      const result = await controller.updateRoles('chapter-1', 'member-1', dto);
+      const result = await controller.updateRoles(
+        'chapter-1',
+        'user-1',
+        'member-1',
+        dto,
+      );
 
       expect(memberService.updateRoles).toHaveBeenCalledWith(
         'member-1',
         dto.role_ids,
         'chapter-1',
+        'user-1',
       );
       expect(result).toEqual(updatedMember);
     });
@@ -180,12 +201,13 @@ describe('MemberController', () => {
       };
       memberService.updateRoles.mockResolvedValue({ id: 'member-1' } as any);
 
-      await controller.updateRoles('chapter-1', 'member-1', dto);
+      await controller.updateRoles('chapter-1', 'user-1', 'member-1', dto);
 
       expect(memberService.updateRoles).toHaveBeenCalledWith(
         'member-1',
         dto.role_ids,
         'chapter-1',
+        'user-1',
       );
     });
 
@@ -196,9 +218,37 @@ describe('MemberController', () => {
       };
 
       await expect(
-        controller.updateRoles('chapter-1', 'member-1', dto),
+        controller.updateRoles('chapter-1', 'user-1', 'member-1', dto),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(memberService.updateRoles).not.toHaveBeenCalled();
+    });
+  });
+
+  // #4367: officers fix a member's name and graduation year.
+  describe('correctProfile', () => {
+    it('is gated on roles:manage, the officers who set roles and classes', () => {
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          MemberController.prototype.correctProfile,
+        ),
+      ).toEqual([SystemPermissions.ROLES_MANAGE]);
+    });
+
+    it('passes only the two correctable fields to the service', async () => {
+      memberService.correctProfile.mockResolvedValue({ id: 'member-1' } as any);
+
+      await controller.correctProfile('chapter-1', 'user-1', 'member-1', {
+        display_name: 'John Smith',
+        graduation_year: 2027,
+      });
+
+      expect(memberService.correctProfile).toHaveBeenCalledWith(
+        'member-1',
+        'chapter-1',
+        'user-1',
+        { display_name: 'John Smith', graduation_year: 2027 },
+      );
     });
   });
 
@@ -206,7 +256,10 @@ describe('MemberController', () => {
     it('updates onboarding status for current member', async () => {
       const dto: UpdateOnboardingDto = { has_completed_onboarding: true };
       const updatedMember = { id: 'member-1', ...dto } as any;
-      memberService.updateOnboarding.mockResolvedValue(updatedMember);
+      memberService.updateOnboarding.mockResolvedValue({
+        member: updatedMember,
+        firstFinish: false,
+      });
 
       const result = await controller.updateOnboarding({ id: 'member-1' }, dto);
 
@@ -215,6 +268,28 @@ describe('MemberController', () => {
         true,
       );
       expect(result).toEqual(updatedMember);
+      expect(inviteService.announceJoin).not.toHaveBeenCalled();
+    });
+
+    it('tells the chapter who joined on the first finish (#5627)', async () => {
+      const updatedMember = {
+        id: 'member-1',
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        joined_via_invite_id: 'inv-1',
+        has_completed_onboarding: true,
+      } as any;
+      memberService.updateOnboarding.mockResolvedValue({
+        member: updatedMember,
+        firstFinish: true,
+      });
+
+      await controller.updateOnboarding(
+        { id: 'member-1' },
+        { has_completed_onboarding: true },
+      );
+
+      expect(inviteService.announceJoin).toHaveBeenCalledWith(updatedMember);
     });
   });
 

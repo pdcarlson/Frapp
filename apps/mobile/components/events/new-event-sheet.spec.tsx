@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import { moduleDisabledMessage } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 
@@ -61,9 +61,14 @@ let permissions: string[] = ["*"];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The chapter, for the Notes field's name (#4934).
+  useCurrentChapter: () => ({
+    data: { id: "chapter-1", enabled_modules: {} },
+  }),
   useCreateEvent: () => ({ mutate, mutateAsync, isPending: false }),
   useUpdateEvent: () => ({ mutate: updateMutate, isPending: false }),
   useDeleteEvent: () => ({ mutate: deleteMutate, isPending: false }),
+  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePermissionList: () => permissions,
   useEventTypes: () => ({
     data: [
@@ -103,11 +108,23 @@ vi.mock("@/lib/chapter-branding", () => ({
 const successHaptic = vi.fn();
 vi.mock("@/lib/haptics", () => ({
   successHaptic: () => successHaptic(),
+  // The glass menu taps one as it opens (`openItemMenu`).
+  pressHaptic: vi.fn(),
 }));
 
-import { NewEventSheet, WhenRow } from "./new-event-sheet";
+import { NewEventSheet } from "./new-event-sheet";
+import { WhenRow, WhenTimes } from "./when-times";
+import { EventTypeSheet, PropertyRow } from "./event-form-rows";
+import { EVENT_FORM_ROWS, EVENT_FORM_ROW_LABELS } from "@repo/validation";
+import { emptyEventDraft } from "@/lib/events/create-event";
 import type { EventEditTarget } from "@/lib/events/edit-event";
 import type { EventDetail } from "@/lib/events/select";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 
 /** A Thursday afternoon, local time. */
 const NOW = new Date(2026, 10, 5, 14, 0);
@@ -139,11 +156,43 @@ function byLabel(tree: ReactTestRenderer, prefix: string) {
   if (!first) throw new Error(`nothing is labelled ${prefix}…`);
   return first;
 }
-const createButton = (tree: ReactTestRenderer) =>
-  tree.root.find(
+/** The header's Create (#5561), small and opposite the title. */
+const createButton = (tree: ReactTestRenderer) => byLabel(tree, "Create event");
+
+/** Whether a node labelled `prefix` is drawn. */
+const drawn = (tree: ReactTestRenderer, prefix: string) =>
+  tree.root.findAll(
     (node) =>
-      node.props.label === "Create event" && typeof node.type === "function",
-  );
+      typeof node.props.accessibilityLabel === "string" &&
+      node.props.accessibilityLabel.startsWith(prefix),
+  ).length > 0;
+
+/**
+ * Open Repeat, which unfolds in place (#5561), for its options. Safe to
+ * call when it is already open. When is always open (Paul 2026-11-19).
+ */
+function openRow(tree: ReactTestRenderer, row: "Repeat") {
+  const shown =
+    tree.root.findAll(
+      (each) =>
+        typeof each.props.onPress === "function" &&
+        each.findAll((child) => child.props.children === "Weekly").length > 0,
+    ).length > 0;
+  if (!shown) act(() => byLabel(tree, `${row}: `).props.onPress());
+}
+
+/** Pick a type from the stacked Type sheet, or `null` for No type. */
+function pickType(tree: ReactTestRenderer, name: string | null) {
+  const sheet = tree.root.findByType(EventTypeSheet);
+  const picked =
+    name === null
+      ? null
+      : (sheet.props.types as { name: string }[]).find(
+          (each) => each.name === name,
+        );
+  if (picked === undefined) throw new Error(`no type ${name}`);
+  act(() => sheet.props.onPick(picked));
+}
 
 /** The chip whose text is `label`. */
 function chip(tree: ReactTestRenderer, label: string) {
@@ -166,6 +215,7 @@ function type(tree: ReactTestRenderer, label: string, text: string) {
  * Android dialogs have their own spec below.
  */
 function pick(tree: ReactTestRenderer, prefix: string, picked: Date) {
+  if (prefix === "Ends on") openRow(tree, "Repeat");
   const [picker] = tree.root.findAll(
     (node) =>
       node.type === ("DateTimePicker" as never) &&
@@ -186,6 +236,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  dismissItemMenu();
 });
 
 describe("New event", () => {
@@ -194,13 +245,17 @@ describe("New event", () => {
     const tree = render(onCreated);
     type(tree, "Event name", "Formal");
     type(tree, "Location", "Great Hall");
-    // The options start closed, and say what they hold.
-    expect(screenText(tree)).not.toContain("Points for attending");
-    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 pts · Optional for everyone · Doesn't repeat",
+    // Every row is drawn at rest, saying what it holds (#5561).
+    expect(byLabel(tree, "Points for attending").props.value).toBe("10");
+    expect(byLabel(tree, "Repeat").props.accessibilityLabel).toBe(
+      "Repeat: Doesn't repeat",
     );
-    act(() => byLabel(tree, "More options").props.onPress());
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opens 10 minutes early",
+    );
     type(tree, "Points for attending", "25");
+    // Notes, sent on create as web's form sends them (#4934).
+    type(tree, "Notes", "  Bring dues ");
     // Required for everyone, but alumni only optional: set in the stacked
     // Who's coming sheet (its own spec drives its controls).
     const attendance = tree.root.find(
@@ -215,12 +270,17 @@ describe("New event", () => {
       }),
     );
     expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
-      "Who's coming: Required for everyone, optional for Alumni",
+      "Who's coming: Alumni optional, everyone else required",
     );
-    act(() => chip(tree, "Every week").props.onPress());
-    // Read against the default start, Thursday the 5th at 7 PM.
+    openRow(tree, "Repeat");
+    act(() => chip(tree, "Weekly").props.onPress());
+    // Read against the default start, Thursday the 5th at 7 PM, whose
+    // weekday chip is on (#4488).
     expect(screenText(tree)).toContain(
-      "13 meetings, the last on Jan 28, 2027.",
+      "13 meetings, the last on January 28, 2027.",
+    );
+    expect(byLabel(tree, "Thursday").props.accessibilityState.checked).toBe(
+      true,
     );
 
     // Saturday the 7th at 9:30 PM; the end follows, an hour on.
@@ -232,8 +292,7 @@ describe("New event", () => {
       "10:30",
     );
 
-    // Ends 1:30 AM the next morning.
-    pick(tree, "Ends day", local(8, 0));
+    // Ends 1:30 AM: before the start, so the next morning, no day to pick.
     pick(tree, "Ends time", local(1, 1, 30));
 
     act(() => createButton(tree).props.onPress());
@@ -244,29 +303,199 @@ describe("New event", () => {
       location: "Great Hall",
       start_time: local(7, 21, 30).toISOString(),
       end_time: local(8, 1, 30).toISOString(),
+      notes: "Bring dues",
       point_value: 25,
       is_mandatory: true,
       optional_role_ids: ["role-alumni"],
+      // Weekly on the start's day at the default length is exactly the
+      // legacy token, which shipped phones read; it steps from the start, so
+      // the weekday follows it to Saturday.
       recurrence_rule: "WEEKLY",
     });
     expect(successHaptic).toHaveBeenCalledTimes(1);
     expect(onCreated).toHaveBeenCalledTimes(1);
     expect(byLabel(tree, "Event name").props.value).toBe("");
-    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 pts · Optional for everyone · Doesn't repeat",
+    expect(byLabel(tree, "Points for attending").props.value).toBe("10");
+    expect(byLabel(tree, "Repeat").props.accessibilityLabel).toBe(
+      "Repeat: Doesn't repeat",
     );
     act(() => tree.unmount());
   });
 
-  it("fills the form from a type chip and sends the type (#3730)", () => {
+  it("sets how long in one tap, the start staying put", () => {
     const tree = render();
-    act(() => chip(tree, "Chapter meeting").props.onPress());
+    type(tree, "Event name", "Formal");
+    // The default hour is held.
+    expect(byLabel(tree, "Lasts 1 hr").props.accessibilityState.checked).toBe(
+      true,
+    );
+    act(() => byLabel(tree, "Lasts 2 hrs").props.onPress());
+    expect(byLabel(tree, "Ends time").props.accessibilityLabel).toContain(
+      "9:00",
+    );
+    expect(byLabel(tree, "Lasts 2 hrs").props.accessibilityState.checked).toBe(
+      true,
+    );
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls[0]![0]).toMatchObject({
+      start_time: local(5, 19).toISOString(),
+      end_time: local(5, 21).toISOString(),
+    });
+    act(() => tree.unmount());
+  });
+
+  it("gives the end its own day only when asked", () => {
+    const tree = render();
+    expect(drawn(tree, "Ends day")).toBe(false);
+    act(() => chip(tree, "Ends another day").props.onPress());
+    pick(tree, "Ends day", local(7, 0));
+    expect(byLabel(tree, "Ends day").props.accessibilityLabel).toContain(
+      "November 7",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("sends the agenda typed while creating (Paul 2026-11-19)", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    for (const text of ["Opening", " Budget  "]) {
+      type(tree, "Add an agenda item", text);
+      act(() => byLabel(tree, "Add an agenda item").props.onSubmitEditing());
+    }
+    expect(screenText(tree)).toContain("Budget");
+    act(() => createButton(tree).props.onPress());
+    expect((mutate.mock.calls[0]![0] as { agenda?: unknown }).agenda).toEqual([
+      { id: expect.any(String), text: "Opening", done: false },
+      { id: expect.any(String), text: "Budget", done: false },
+    ]);
+    act(() => tree.unmount());
+  });
+
+  it("sends an agenda line typed but never entered", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    type(tree, "Add an agenda item", "Budget review");
+    act(() => createButton(tree).props.onPress());
+    expect(
+      (mutate.mock.calls[0]![0] as { agenda?: { text: string }[] }).agenda?.map(
+        (item) => item.text,
+      ),
+    ).toEqual(["Budget review"]);
+    act(() => tree.unmount());
+  });
+
+  it("sends no agenda when none was typed", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls[0]![0]).not.toHaveProperty("agenda");
+    act(() => tree.unmount());
+  });
+
+  it("draws its rows in the order web draws them (#5561)", () => {
+    const tree = render();
+    expect(
+      tree.root.findAllByType(PropertyRow).map((row) => row.props.label),
+    ).toEqual(
+      EVENT_FORM_ROWS.map((row) =>
+        row === "notes" ? "Notes" : EVENT_FORM_ROW_LABELS[row],
+      ),
+    );
+    act(() => tree.unmount());
+  });
+
+  it("reads Cancel until something is typed, then Discard", () => {
+    const tree = render();
+    const cancelWord = () =>
+      tree.root
+        .findAll(
+          (node) =>
+            node.type === ("Pressable" as never) &&
+            ["Cancel", "Discard"].includes(drawnText(node)),
+        )
+        .map(drawnText);
+    expect(cancelWord()).toEqual(["Cancel"]);
+    type(tree, "Event name", "Formal");
+    expect(cancelWord()).toEqual(["Discard"]);
+    act(() => tree.unmount());
+  });
+
+  it("says when check-in opens in web's words, and unfolds to change it", () => {
+    const tree = render();
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opens 10 minutes early",
+    );
+    expect(drawn(tree, "Minutes before the start")).toBe(false);
+    act(() => byLabel(tree, "Check-in").props.onPress());
+    type(tree, "Minutes before the start that check-in opens", "0");
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opens at the start",
+    );
+    type(tree, "Minutes before the start that check-in opens", "200");
+    expect(byLabel(tree, "Check-in").props.accessibilityLabel).toBe(
+      "Check-in: Opening time needs a fix",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("makes a twice-a-week series that ends after N meetings (#4488)", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    openRow(tree, "Repeat");
+    act(() => chip(tree, "Weekly").props.onPress());
+    // Thursday is on, from the default start; Monday joins it.
+    act(() => byLabel(tree, "Monday").props.onPress());
+    type(tree, "Ends after how many meetings", "1");
+    expect(screenText(tree)).toContain("A series holds 2 to 120 meetings.");
+    type(tree, "Ends after how many meetings", "20");
+    expect(screenText(tree)).not.toContain("A series holds");
+    act(() => createButton(tree).props.onPress());
+    expect(
+      (mutate.mock.calls[0]![0] as { recurrence_rule?: string })
+        .recurrence_rule,
+    ).toMatch(/^FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TH;COUNT=20;TZID=/);
+    act(() => tree.unmount());
+  });
+
+  it("ends a series on a picked date, and says so before saving (#4488)", () => {
+    const tree = render();
+    type(tree, "Event name", "Chapter");
+    openRow(tree, "Repeat");
+    act(() => chip(tree, "Weekly").props.onPress());
+    act(() => chip(tree, "On date").props.onPress());
+    // Offered the day the 13 meetings would end on.
+    expect(screenText(tree)).toContain(
+      "13 meetings, the last on January 28, 2027.",
+    );
+    pick(tree, "Ends on", local(26, 12));
+    expect(screenText(tree)).toContain("4 meetings, the last on November 26.");
+    act(() => createButton(tree).props.onPress());
+    expect(
+      (mutate.mock.calls[0]![0] as { recurrence_rule?: string })
+        .recurrence_rule,
+    ).toMatch(/^FREQ=WEEKLY;INTERVAL=1;BYDAY=TH;UNTIL=20261126;TZID=/);
+    act(() => tree.unmount());
+  });
+
+  it("fills the form from the Type sheet and sends the type (#3730, #5561)", () => {
+    const tree = render();
+    expect(byLabel(tree, "Type").props.accessibilityLabel).toBe("Type: None");
+    pickType(tree, "Chapter meeting");
+    expect(byLabel(tree, "Type").props.accessibilityLabel).toBe(
+      "Type: Chapter meeting",
+    );
     expect(byLabel(tree, "Event name").props.value).toBe("Chapter meeting");
-    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 pts · Required for everyone · Doesn't repeat",
+    expect(byLabel(tree, "Points for attending").props.value).toBe("10");
+    expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
+      "Who's coming: Required for everyone",
+    );
+    // Picking the held type again keeps it; it doesn't let it go.
+    pickType(tree, "Chapter meeting");
+    expect(byLabel(tree, "Type").props.accessibilityLabel).toBe(
+      "Type: Chapter meeting",
     );
     // Another type replaces the name the first wrote.
-    act(() => chip(tree, "Social").props.onPress());
+    pickType(tree, "Social");
     expect(byLabel(tree, "Event name").props.value).toBe("Social");
 
     act(() => createButton(tree).props.onPress());
@@ -277,6 +506,84 @@ describe("New event", () => {
       is_mandatory: false,
     });
     act(() => tree.unmount());
+  });
+
+  it("makes a type in place from the form's points and attendance (Paul 2026-11-20)", () => {
+    const tree = render();
+    act(() => byLabel(tree, "Points for attending").props.onChangeText("15"));
+    const sheet = () => tree.root.findByType(EventTypeSheet);
+    expect(sheet().props.typeFromForm("Work party")).toEqual({
+      name: "Work party",
+      point_value: 15,
+      is_mandatory: false,
+    });
+    // Everyone required, from a required type: the made type is required.
+    pickType(tree, "Chapter meeting");
+    expect(sheet().props.typeFromForm("Rush")).toEqual({
+      name: "Rush",
+      point_value: 10,
+      is_mandatory: true,
+    });
+    act(() => tree.unmount());
+  });
+
+  it("holds a type made in place without refilling the form from it", () => {
+    const tree = render();
+    act(() =>
+      byLabel(tree, "Points for attending").props.onChangeText("150000"),
+    );
+    act(() =>
+      tree.root.findByType(EventTypeSheet).props.onPick(
+        {
+          id: "type-work",
+          name: "Work party",
+          point_value: 100000,
+          is_mandatory: false,
+        },
+        true,
+      ),
+    );
+    expect(byLabel(tree, "Event name").props.value).toBe("Work party");
+    expect(byLabel(tree, "Points for attending").props.value).toBe("150000");
+    act(() => tree.unmount());
+  });
+
+  // #3709: every member can create an event; points and "required" are for
+  // the officers who hold events:update.
+  it("gives a member who can't edit events no points and no required default", () => {
+    permissions = ["members:view", "events:create"];
+    try {
+      const tree = render();
+      pickType(tree, "Chapter meeting");
+      expect(byLabel(tree, "Event name").props.value).toBe("Chapter meeting");
+      expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
+        "Who's coming: Optional for everyone",
+      );
+      expect(drawn(tree, "Points for attending")).toBe(false);
+      expect(
+        tree.root.findByType(EventTypeSheet).props.typeFromForm,
+      ).toBeUndefined();
+      expect(screenText(tree)).toContain(
+        "Events you make carry no points and require nobody.",
+      );
+      // The Who's coming sheet offers no Required answer (#4483).
+      const attendance = tree.root.find(
+        (node) =>
+          typeof node.props.onChange === "function" &&
+          node.props.value?.everyone !== undefined,
+      );
+      expect(attendance.props.allowRequired).toBe(false);
+
+      act(() => createButton(tree).props.onPress());
+      expect(mutate.mock.calls[0]![0]).toMatchObject({
+        event_type_id: "type-meeting",
+        is_mandatory: false,
+      });
+      expect(mutate.mock.calls[0]![0]).not.toHaveProperty("point_value", 10);
+      act(() => tree.unmount());
+    } finally {
+      permissions = ["*"];
+    }
   });
 
   it("says nothing is wrong until Create, and only Create brings a line back", () => {
@@ -352,12 +659,10 @@ describe("New event", () => {
     act(() => tree.unmount());
   });
 
-  it("opens the options to show an error inside them", () => {
+  it("says what is wrong under the row that holds it", () => {
     const tree = render();
     type(tree, "Event name", "Formal");
-    act(() => byLabel(tree, "More options").props.onPress());
     type(tree, "Points for attending", "1.5");
-    act(() => byLabel(tree, "Fewer options").props.onPress());
     act(() => createButton(tree).props.onPress());
 
     expect(mutate).not.toHaveBeenCalled();
@@ -469,8 +774,10 @@ describe("the When row on Android", () => {
         typeof node.props.onPress === "function",
     );
     // The pill says its day: it used to be blank, the label too.
-    expect(dayPill!.props.accessibilityLabel).toBe("Ends day, Sat, Nov 7");
-    expect(screenText(tree)).toContain("Sat, Nov 7");
+    expect(dayPill!.props.accessibilityLabel).toBe(
+      "Ends day, Saturday, November 7",
+    );
+    expect(screenText(tree)).toContain("Saturday, November 7");
     act(() => dayPill!.props.onPress());
 
     expect(open).toHaveBeenCalledTimes(1);
@@ -506,9 +813,13 @@ describe("Edit event", () => {
     },
     description: null,
     notes: null,
+    agenda: [],
+    attachments: [],
     check_in_zone_name: null,
     event_type_id: null,
+    created_by: null,
     hasCheckInZone: false,
+    checkInNeedsCode: false,
     recurrence_rule: null,
     parent_event_id: null,
   };
@@ -537,19 +848,19 @@ describe("Edit event", () => {
     });
     return tree;
   }
-  const saveButton = (tree: ReactTestRenderer) =>
-    tree.root.find(
-      (node) =>
-        node.props.label === "Save changes" && typeof node.type === "function",
-    );
+  const saveButton = (tree: ReactTestRenderer) => byLabel(tree, "Save changes");
 
   it("opens filled in from the event", () => {
     const tree = renderEdit(single);
     expect(screenText(tree)).toContain("Edit event");
     expect(byLabel(tree, "Event name").props.value).toBe("Chapter");
     expect(byLabel(tree, "Location").props.value).toBe("Sanctuary");
-    expect(byLabel(tree, "More options").props.accessibilityLabel).toBe(
-      "More options: 10 pts · Required for everyone · Doesn't repeat",
+    expect(byLabel(tree, "Points for attending").props.value).toBe("10");
+    expect(byLabel(tree, "Who's coming").props.accessibilityLabel).toBe(
+      "Who's coming: Required for everyone",
+    );
+    expect(byLabel(tree, "Repeat").props.accessibilityLabel).toBe(
+      "Repeat: Doesn't repeat",
     );
   });
 
@@ -583,6 +894,20 @@ describe("Edit event", () => {
     expect(screenText(tree)).not.toContain("That change can't be saved.");
   });
 
+  it("edits the event's notes, named as Event details names them (#4934)", async () => {
+    const tree = renderEdit({
+      ...single,
+      event: { ...single.event, notes: "Old" },
+    });
+    expect(byLabel(tree, "Notes").props.value).toBe("Old");
+    type(tree, "Notes", "  Bring dues ");
+    await act(async () => saveButton(tree).props.onPress());
+    expect(updateMutate).toHaveBeenCalledWith(
+      { id: "evt-1", body: { notes: "Bring dues", scope: "instance" } },
+      expect.anything(),
+    );
+  });
+
   it("saves nothing for an untouched form", async () => {
     const tree = renderEdit(single);
     await act(async () => saveButton(tree).props.onPress());
@@ -590,9 +915,6 @@ describe("Edit event", () => {
   });
 
   it("asks this event or all upcoming for a repeating event", async () => {
-    alert.mockImplementation((_title, _message, buttons) => {
-      buttons?.find((b) => b.text === "All upcoming events")?.onPress?.();
-    });
     const occurrence: EventEditTarget = {
       event: { ...EVENT, parent_event_id: "evt-parent" },
       seriesRule: "WEEKLY",
@@ -605,12 +927,17 @@ describe("Edit event", () => {
     const tree = renderEdit(occurrence);
     type(tree, "Event name", "Chapter meeting");
     await act(async () => saveButton(tree).props.onPress());
-    expect(alert.mock.calls[0]?.[0]).toBe("This is a repeating event");
-    expect(alert.mock.calls[0]?.[2]?.map((b) => b.text)).toEqual([
-      "This event only",
-      "All upcoming events",
-      "Cancel",
+    const menu = currentItemMenu()!;
+    expect(menu.title).toBe("This is a repeating event");
+    expect(
+      menu.actions.map((action) => [action.label, !!action.destructive]),
+    ).toEqual([
+      ["This event only", false],
+      ["All upcoming events", false],
     ]);
+    expect(alert).not.toHaveBeenCalled();
+    expect(updateMutate).not.toHaveBeenCalled();
+    await act(async () => pickItemMenuAction("All upcoming events"));
     expect(updateMutate).toHaveBeenCalledWith(
       {
         id: "evt-parent",
@@ -620,10 +947,7 @@ describe("Edit event", () => {
     );
   });
 
-  it("saves nothing when the officer cancels the question", async () => {
-    alert.mockImplementation((_title, _message, buttons) => {
-      buttons?.find((b) => b.text === "Cancel")?.onPress?.();
-    });
+  it("saves nothing when the officer dismisses the question", async () => {
     const tree = renderEdit({
       ...single,
       event: { ...EVENT, recurrence_rule: "WEEKLY" },
@@ -631,7 +955,12 @@ describe("Edit event", () => {
     });
     type(tree, "Event name", "Chapter meeting");
     await act(async () => saveButton(tree).props.onPress());
+    expect(currentItemMenu()?.title).toBe("This is a repeating event");
+    await act(async () => dismissItemMenu());
+    expect(currentItemMenu()).toBeNull();
     expect(updateMutate).not.toHaveBeenCalled();
+    // Save is still there to try again.
+    expect(saveButton(tree).props.disabled).toBeFalsy();
   });
 
   it("offers Delete only with events:delete, and confirms first", async () => {
@@ -651,6 +980,143 @@ describe("Edit event", () => {
       expect.anything(),
     );
     expect(onDeleted).toHaveBeenCalled();
+  });
+
+  describe("kept past event details (#4872)", () => {
+    const KEPT = "event-edit:evt-1";
+    const open = (target: EventEditTarget = single) =>
+      renderEdit(target, { keptDraft: KEPT });
+    const room = (tree: ReactTestRenderer) =>
+      byLabel(tree, "Location").props.value;
+    const leave = (tree: ReactTestRenderer) => act(() => tree.unmount());
+
+    it("opens the same event's Edit on what was typed", () => {
+      const first = open();
+      type(first, "Location", "Great Hall");
+      leave(first);
+      expect(room(open())).toBe("Great Hall");
+    });
+
+    it("shows someone else's change to a field this officer didn't edit", async () => {
+      const first = open();
+      type(first, "Location", "Great Hall");
+      leave(first);
+
+      // The name changed on web in the meantime; the room is still this
+      // officer's edit.
+      const second = open({
+        ...single,
+        event: { ...EVENT, name: "Chapter (moved)", location: "Library" },
+      });
+      expect(byLabel(second, "Event name").props.value).toBe("Chapter (moved)");
+      expect(room(second)).toBe("Great Hall");
+      await act(async () => saveButton(second).props.onPress());
+      expect(updateMutate).toHaveBeenCalledWith(
+        { id: "evt-1", body: { location: "Great Hall", scope: "instance" } },
+        expect.anything(),
+      );
+    });
+
+    it("brings a moved end back with the start it was moved against", async () => {
+      const first = open();
+      // The end alone, pushed an hour later.
+      const when = first.root.findByType(WhenTimes);
+      act(() => when.props.onEnd(local(9, 21, 15)));
+      leave(first);
+
+      // Moved a day earlier on web meanwhile.
+      const second = open({
+        ...single,
+        event: {
+          ...EVENT,
+          start_time: local(8, 18, 45).toISOString(),
+          end_time: local(8, 20, 15).toISOString(),
+        },
+      });
+      await act(async () => saveButton(second).props.onPress());
+      // Not Sunday's start with Monday's end: the range the officer chose.
+      expect(updateMutate).toHaveBeenCalledWith(
+        {
+          id: "evt-1",
+          body: expect.objectContaining({
+            start_time: local(9, 18, 45).toISOString(),
+            end_time: local(9, 21, 15).toISOString(),
+          }),
+        },
+        expect.anything(),
+      );
+    });
+
+    it("keeps nothing for an Edit opened and left untouched", () => {
+      leave(open());
+      expect(
+        room(open({ ...single, event: { ...EVENT, location: "Library" } })),
+      ).toBe("Library");
+    });
+
+    it("gives the edit up on Discard", () => {
+      const first = open();
+      type(first, "Location", "Great Hall");
+      act(() =>
+        first.root
+          .find(
+            (node) =>
+              node.type === ("Pressable" as never) &&
+              drawnText(node) === "Discard",
+          )
+          .props.onPress(),
+      );
+      leave(first);
+      expect(room(open())).toBe("Sanctuary");
+    });
+
+    it("gives the edit up once it saves, and keeps what is typed after", async () => {
+      const first = open();
+      type(first, "Location", "Great Hall");
+      await act(async () => saveButton(first).props.onPress());
+      expect(updateMutate).toHaveBeenCalledTimes(1);
+      // A visit still open when the save lands: its hold is over.
+      type(first, "Location", "Great Hall 2");
+      leave(first);
+      expect(room(open())).toBe("Great Hall 2");
+
+      updateMutate.mockClear();
+      const again = open();
+      await act(async () => saveButton(again).props.onPress());
+      leave(again);
+      expect(room(open())).toBe("Sanctuary");
+    });
+
+    it("holds the edit out while its save is in flight", async () => {
+      updateMutate.mockImplementationOnce(() => undefined);
+      const first = open();
+      type(first, "Location", "Great Hall");
+      await act(async () => saveButton(first).props.onPress());
+      leave(first);
+      expect(room(open())).toBe("Sanctuary");
+    });
+
+    it("keeps the edit when its save fails", async () => {
+      updateMutate.mockImplementationOnce((_body, options) =>
+        options.onError(FAILED),
+      );
+      const first = open();
+      type(first, "Location", "Great Hall");
+      await act(async () => saveButton(first).props.onPress());
+      leave(first);
+      expect(room(open())).toBe("Great Hall");
+    });
+
+    it("gives the edit up when the event is deleted", async () => {
+      alert.mockImplementation((_title, _message, buttons) => {
+        buttons?.find((b) => b.text === "Delete")?.onPress?.();
+      });
+      const first = open();
+      type(first, "Location", "Great Hall");
+      await act(async () => byLabel(first, "Delete event").props.onPress());
+      leave(first);
+      expect(room(open())).toBe("Sanctuary");
+    });
   });
 });
 
@@ -697,6 +1163,7 @@ describe("New event from a chat's + (#3865)", () => {
       }),
     );
     expect(onCreated).toHaveBeenCalledWith({
+      id: null,
       name: "Formal",
       cardKeptOut: false,
       cardLost: false,
@@ -749,7 +1216,6 @@ describe("New event from a chat's + (#3865)", () => {
     const onCreated = vi.fn();
     const tree = renderFromChat(onCreated);
     type(tree, "Event name", "Formal");
-    act(() => byLabel(tree, "More options").props.onPress());
     const attendance = tree.root.find(
       (node) =>
         typeof node.props.onChange === "function" &&
@@ -770,5 +1236,64 @@ describe("New event from a chat's + (#3865)", () => {
       expect.objectContaining({ cardKeptOut: true }),
     );
     act(() => tree.unmount());
+  });
+});
+
+describe("opened on a template (This time last year, #3930)", () => {
+  const TEMPLATE_START = local(21, 18);
+  function renderTemplate(onCreated = vi.fn()): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewEventSheet
+            now={NOW}
+            onCreated={onCreated}
+            template={{
+              ...emptyEventDraft(),
+              name: "Winter Formal 2026",
+              location: "Hilton ballroom",
+              start: TEMPLATE_START,
+              end: local(21, 21),
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  it("opens filled in, and hands back the id of the event it created", () => {
+    mutate.mockImplementationOnce((_body, options) =>
+      (options.onSuccess as (created: unknown) => void)({ id: "evt-new" }),
+    );
+    const onCreated = vi.fn();
+    const tree = renderTemplate(onCreated);
+    expect(byLabel(tree, "Event name").props.value).toBe("Winter Formal 2026");
+    // Nothing is created by opening it.
+    expect(mutate).not.toHaveBeenCalled();
+
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls.at(-1)![0]).toEqual(
+      expect.objectContaining({
+        name: "Winter Formal 2026",
+        location: "Hilton ballroom",
+        start_time: TEMPLATE_START.toISOString(),
+      }),
+    );
+    expect(onCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "evt-new", name: "Winter Formal 2026" }),
+    );
+    act(() => tree.unmount());
+  });
+});
+
+describe("NewEventSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <NewEventSheet ref={ref} now={NOW} onCreated={vi.fn()} />
+      </FrappThemeProvider>
+    ));
   });
 });

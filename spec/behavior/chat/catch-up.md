@@ -5,6 +5,8 @@ landing (see [`../../ui/web-dashboard/README.md`](../../ui/web-dashboard/README.
 that dashboard carried — *chapter health at a glance* — was promised as an "inline chat artifact"
 but never specified, so it has been homeless since the redesign. This file is that specification.
 
+Not the same thing as **Catch me up**, the summary of a channel's new messages a member asks for ([`../ai.md` § Catch me up](../ai.md#catch-me-up)), whose code is named `chat-catch-up`.
+
 **Status: accepted design, unbuilt.** Nothing here ships until the follow-up issues are promoted.
 The contract below is written so an implementation PR can be reviewed against it.
 
@@ -71,7 +73,8 @@ declared-but-unassigned role has no holders and so cannot suppress a signal.
 The three bolded gates are the non-obvious ones, and each is load-bearing:
 
 - **Tasks.** `task.controller.ts` resolves `isAdmin` from `tasks:manage` and
-  `task.service.ts` returns `findByAssignee(chapterId, userId)` for everyone else — a plain member
+  `TaskService.list` (`task.service.ts`) pins everyone else's read to `assigneeId: userId`, set
+  after every other option so none can widen it — a plain member
   can only ever see their own tasks, never a chapter-wide overdue count.
 - **Service hours.** `service-entry.controller.ts` does the same against `service:approve`, with the
   comment "Non-admins only ever see their own history". The approval *queue* therefore requires
@@ -181,7 +184,7 @@ is never shown "0 invoices overdue" or an "Invoices unavailable" row. They must 
 **operational** signal: a failed read logs a warning naming the signal, a zero logs nothing. The
 observability side is where "quiet week" and "broken query" are told apart, and it is the only place
 they can be. This is the posture the report-retention sweep takes in
-[`../../../docs/ops/deployment/render.md`](../../../docs/ops/deployment/render.md#56-in-process-scheduled-jobs) — a sweep that
+[`../../../docs/ops/deployment/api-process.md`](../../../docs/ops/deployment/api-process.md#in-process-scheduled-jobs) — a sweep that
 silently reaps nothing must not look like a healthy one.
 
 **If no section qualifies, no card is posted.** With rule 4 in place this falls out naturally: a

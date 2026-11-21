@@ -59,6 +59,14 @@ frapp_acl_log() {
 # edit this.) Functions are also not affected by the defect in the first place: they fall back
 # to PostgreSQL's PUBLIC EXECUTE default, so there is nothing here to repair.
 #
+# Only `service_role` is repaired. The client roles `anon` and `authenticated` hold exactly
+# what migration 20261119210325 grants them (SELECT on chat_messages, SELECT and DELETE on
+# chat_message_actions, to authenticated; nothing to anon), on hosted and here alike. That
+# migration also revoked their default privileges and their leftover `Dxtm` bits, so granting
+# them DML here would make the local stack more open than hosted, and would hide a client
+# read that needs a grant until it reached staging. The PGlite tier
+# `scripts/pglite/tiers/client-table-grants.mjs` holds the client grants to that set.
+#
 # Local stack only. Hosted Supabase projects ship correct default grants, which is why this
 # lives in bootstrap tooling and NOT in supabase/migrations/ — as a migration it would be a
 # no-op at best and a privilege change on hosted projects at worst.
@@ -69,12 +77,12 @@ frapp_acl_log() {
 # each `$$` and psql sees `do 12345 begin … end 12345;`. That surfaces only as "ACL repair
 # failed", with nothing hinting the SQL was rewritten before it was sent.
 FRAPP_LOCAL_ACL_SQL='
-grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
-grant usage, select on all sequences in schema public to anon, authenticated, service_role;
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
 alter default privileges for role postgres in schema public
-  grant select, insert, update, delete on tables to anon, authenticated, service_role;
+  grant select, insert, update, delete on tables to service_role;
 alter default privileges for role postgres in schema public
-  grant usage, select on sequences to anon, authenticated, service_role;
+  grant usage, select on sequences to service_role;
 '
 
 # `docker ps`, optionally including stopped containers, never failing the caller.

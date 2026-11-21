@@ -2,12 +2,13 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as ImagePicker from "expo-image-picker";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
-import { moduleDisabledMessage } from "@repo/validation";
+import { TASK_AUDIENCE_COPY, moduleDisabledMessage } from "@repo/validation";
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 
 /**
@@ -63,20 +64,51 @@ const FAILED = {
 
 const TRY_AGAIN = "That didn't save. Your task is still here — try again.";
 
+const mintPhoto = vi.hoisted(() => vi.fn());
+// From's choices (#5473), as `useWhoDirectory` reads them; none by default.
+const whoFollowers = vi.hoisted(
+  () => [] as { entry: string; kind: string; name: string; count: number }[],
+);
 let failure: unknown = REFUSED;
 let createPending = false;
 const mutate = vi.fn(
   (_body: unknown, options: { onError: (error: unknown) => void }) =>
     options.onError(failure),
 );
+const createOpen = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useViewerUserId: () => "user-1",
   useChapterRoster: () => ({ data: [] }),
   useCreateTask: () => ({ mutate, isPending: createPending }),
+  useCreateOpenTask: () => ({ mutate: createOpen, isPending: false }),
   useUpdateTask: () => ({ mutate: vi.fn(), isPending: false }),
+  useRequestTaskPhotoUploadUrl: () => ({ mutateAsync: mintPhoto }),
 }));
+
+// The chapter as the Assign to picker reads it (`use-who-directory.ts`):
+// three active members, and a committee two of them hold.
+vi.mock("@/lib/tasks/use-who-directory", async () => {
+  const { buildWhoDirectory } = await import("@repo/hooks/task-who-picker");
+  const directory = buildWhoDirectory({
+    members: [
+      { user_id: "user-1", display_name: "Paul Carlson", role_ids: [] },
+      { user_id: "user-2", display_name: "Shawn Klein", role_ids: ["r1"] },
+      { user_id: "user-3", display_name: "Sam Lee", role_ids: ["r1"] },
+    ],
+    roles: [{ id: "r1", name: "Recruitment Committee", tier_id: null }],
+    viewerUserId: "user-1",
+  });
+  return {
+    useWhoDirectory: () => ({
+      directory,
+      people: "ready",
+      sets: "ready",
+      followers: whoFollowers,
+    }),
+  };
+});
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
@@ -88,18 +120,26 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewTaskSheet } from "./new-task-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
-function render(): ReactTestRenderer {
+function render({ keptDraft }: { keptDraft?: string } = {}): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} />
+        <NewTaskSheet
+          now={new Date("2026-09-27T12:00:00Z")}
+          keptDraft={keptDraft}
+        />
       </FrappThemeProvider>,
     );
   });
   return tree;
 }
+
+const titleValueOf = (tree: ReactTestRenderer) =>
+  tree.root.find((node) => node.props.accessibilityLabel === "Task title").props
+    .value;
 
 const createButton = (tree: ReactTestRenderer) =>
   tree.root.find(
@@ -179,6 +219,15 @@ describe("New task on a module-off refusal (#2718)", () => {
   });
 });
 
+/** The Assign to picker (`who-picker-sheet.tsx`), by its props. */
+const whoPicker = (tree: ReactTestRenderer) =>
+  tree.root.find(
+    (node) =>
+      node.props.directory !== undefined &&
+      typeof node.props.onChange === "function" &&
+      typeof node.type !== "string",
+  );
+
 /** The create sheet itself: the modal that carries `onDismiss`, not the picker. */
 const sheetModal = (tree: ReactTestRenderer) =>
   tree.root.find(
@@ -231,6 +280,17 @@ describe("New task after a gate refusal", () => {
     },
   );
 
+  it("wraps a long title in place, one line of text that Done submits (#5562)", () => {
+    const tree = render();
+    const title = () =>
+      tree.root.find((node) => node.props.accessibilityLabel === "Task title");
+    expect(title().props.multiline).toBe(true);
+    expect(title().props.submitBehavior).toBe("blurAndSubmit");
+    act(() => title().props.onChangeText("Book the hall\nfor the formal"));
+    expect(titleValueOf(tree)).toBe("Book the hall for the formal");
+    act(() => tree.unmount());
+  });
+
   it("sends one create for two taps in one batch", () => {
     // Both presses run before `isPending` reaches a render, so both see the
     // same render's `canSubmit`; only the in-flight ref stops the second.
@@ -282,18 +342,19 @@ describe("New task draft across visits", () => {
   /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
   const dismiss = vi.fn();
   const ref = React.createRef<never>();
-  const sheetAt = (now: Date) => (
+  const sheetAt = (now: Date, keptDraft?: string) => (
     <FrappThemeProvider>
-      <NewTaskSheet ref={ref} now={now} />
+      <NewTaskSheet ref={ref} now={now} keptDraft={keptDraft} />
     </FrappThemeProvider>
   );
 
   function renderWithRef(
     now = new Date("2026-09-27T12:00:00Z"),
+    keptDraft?: string,
   ): ReactTestRenderer {
     let tree!: ReactTestRenderer;
     act(() => {
-      tree = create(sheetAt(now), {
+      tree = create(sheetAt(now, keptDraft), {
         // The create sheet is the modal with `onDismiss`; the assignee
         // picker's own modal gets a stand-in of its own, so its Done is
         // never counted as the sheet closing.
@@ -334,6 +395,66 @@ describe("New task draft across visits", () => {
 
     expect(titleValue(tree)).toBe("Sweep the porch");
     act(() => tree.unmount());
+  });
+
+  it("keeps the draft past its screen, for the Tasks screen's next visit (#4593)", () => {
+    const first = renderWithRef(undefined, "tasks-create");
+    typeTitle(first);
+    act(() => first.unmount());
+
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("Sweep the porch");
+    act(() => second.unmount());
+  });
+
+  it("keeps nothing past its screen once Cancel gave the draft up (#4593)", () => {
+    const first = renderWithRef(undefined, "tasks-create");
+    typeTitle(first);
+    act(() => pressCancel(first));
+    act(() => first.unmount());
+
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("");
+    act(() => second.unmount());
+  });
+
+  it("keeps nothing past its screen once the task saved, and keeps the next one (#4593)", () => {
+    const saves = () =>
+      mutate.mockImplementationOnce((_body, options) =>
+        (options as unknown as { onSuccess: () => void }).onSuccess(),
+      );
+    saves();
+    const first = renderWithRef(undefined, "tasks-create");
+    submitTask(first);
+    act(() => first.unmount());
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("");
+
+    // The same visit, a second task: the first one's hold is over, so what
+    // is typed next is kept again.
+    saves();
+    submitTask(second);
+    act(() =>
+      second.root
+        .find((node) => node.props.accessibilityLabel === "Task title")
+        .props.onChangeText("Mop the hall"),
+    );
+    act(() => second.unmount());
+    const third = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(third)).toBe("Mop the hall");
+    act(() => third.unmount());
+  });
+
+  it("keeps a draft whose save failed past its screen (#4593)", () => {
+    failure = FAILED;
+    const first = renderWithRef(undefined, "tasks-create");
+    submitTask(first);
+    expect(screenText(first)).toContain(TRY_AGAIN);
+    act(() => first.unmount());
+
+    const second = renderWithRef(undefined, "tasks-create");
+    expect(titleValue(second)).toBe("Sweep the porch");
+    act(() => second.unmount());
   });
 
   it("gives the draft up on Cancel", () => {
@@ -431,16 +552,9 @@ describe("New task draft across visits", () => {
     );
   const sentBody = () =>
     mutate.mock.calls.at(-1)?.[0] as { title: string; due_date: string };
-  /**
-   * Picks a member in the assignee picker. Its list is a string stand-in that
-   * never draws rows (vitest.setup.ts), so the row is built from `renderItem`.
-   */
+  /** Picks a member in the Assign to picker, as its rows do. */
   const pickAssignee = (tree: ReactTestRenderer, userId: string) => {
-    const list = tree.root.find(
-      (node) => node.type === ("BottomSheetFlatList" as never),
-    );
-    const row = list.props.renderItem({ item: { userId, name: null } });
-    act(() => row.props.onPress());
+    act(() => whoPicker(tree).props.onChange({ kind: "person", userId }));
   };
   const isSelected = (tree: ReactTestRenderer, label: string) =>
     chip(tree, label).props.accessibilityState.selected as boolean;
@@ -513,8 +627,8 @@ describe("New task draft across visits", () => {
     act(() => pointsField(tree).props.onChangeText("5"));
     act(() => chip(tree, "Friday").props.onPress());
     pickAssignee(tree, "user-2");
-    expect(assigneeRow(tree).props.accessibilityLabel).not.toBe(
-      "Assignee: You",
+    expect(assigneeRow(tree).props.accessibilityLabel).toBe(
+      "Assignee: Shawn Klein",
     );
     act(() => createButton(tree).props.onPress());
     createPending = true;
@@ -541,7 +655,10 @@ describe("New task draft across visits", () => {
     expect(titleValue(tree)).toBe("");
     expect(pointsField(tree).props.value).toBe("");
     expect(isSelected(tree, "Today")).toBe(true);
-    expect(assigneeRow(tree).props.accessibilityLabel).toBe("Assignee: You");
+    // Back on the viewer, by name.
+    expect(assigneeRow(tree).props.accessibilityLabel).toBe(
+      "Assignee: Paul Carlson",
+    );
     expect(titleField(tree).props.editable).toBe(true);
     // A visit reopened since stays open.
     expect(dismiss).not.toHaveBeenCalled();
@@ -734,6 +851,721 @@ describe("New task from a chat's + (#3865)", () => {
     expect(titleValue(tree)).toBe("Sweep the porch");
     expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.task);
     expect(onPosted).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+});
+
+describe("Accepting a suggested task through the form (#4313)", () => {
+  const accept = vi.fn();
+  function renderSuggestion(assigneeId: string | null = null) {
+    const who = assigneeId
+      ? ({ kind: "person", userId: assigneeId } as const)
+      : null;
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            suggestion={{
+              title: "Book the hall",
+              who,
+              dueDay: "2026-10-02",
+              dueAt: null,
+              subtasks: ["Call the venue"],
+              accept,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+  const acceptButton = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.props.label === "Create task" && typeof node.type === "function",
+    );
+
+  beforeEach(() => {
+    accept.mockReset();
+    accept.mockResolvedValue(undefined);
+  });
+
+  it("opens on the suggestion, not a new task's kept draft (#4593)", () => {
+    // A new task's draft kept from the Tasks screen's last visit.
+    const draft = render({ keptDraft: "tasks-create" });
+    act(() =>
+      draft.root
+        .find((node) => node.props.accessibilityLabel === "Task title")
+        .props.onChangeText("Sweep the porch"),
+    );
+    act(() => draft.unmount());
+    expect(titleValueOf(render({ keptDraft: "tasks-create" }))).toBe(
+      "Sweep the porch",
+    );
+
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            keptDraft="tasks-create"
+            suggestion={{
+              title: "Book the hall",
+              who: null,
+              dueDay: "2026-10-02",
+              dueAt: null,
+              subtasks: [],
+              accept,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    expect(title.props.value).toBe("Book the hall");
+    act(() => tree.unmount());
+  });
+
+  it("starts from what the minutes said, under its own title and button", () => {
+    const tree = renderSuggestion("user-2");
+    expect(screenText(tree)).toContain("Change before creating");
+    expect(screenText(tree)).not.toContain("New task");
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    expect(title.props.value).toBe("Book the hall");
+    act(() => tree.unmount());
+  });
+
+  it("accepts through the suggestion, never the board's create", async () => {
+    const tree = renderSuggestion("user-2");
+    await act(async () => acceptButton(tree).props.onPress());
+    expect(mutate).not.toHaveBeenCalled();
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(accept.mock.calls[0]![0]).toMatchObject({
+      title: "Book the hall",
+      who: { kind: "person", userId: "user-2" },
+      due_date: "2026-10-02",
+      subtasks: ["Call the venue"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("doesn't hand a task nobody was named for to whoever opened the form", async () => {
+    const tree = renderSuggestion(null);
+    if (!acceptButton(tree).props.disabled) {
+      await act(async () => acceptButton(tree).props.onPress());
+    }
+    for (const [body] of accept.mock.calls) {
+      expect((body as { who?: { userId?: string } }).who?.userId).not.toBe(
+        "user-1",
+      );
+    }
+    act(() => tree.unmount());
+  });
+
+  it("says why a suggestion can't be accepted any more, and withdraws Accept", async () => {
+    accept.mockRejectedValue({ code: "ai.suggestion.decided" });
+    const tree = renderSuggestion("user-2");
+    await act(async () => acceptButton(tree).props.onPress());
+    expect(acceptButton(tree).props.disabled).toBe(true);
+    expect(screenText(tree)).toContain(
+      "Another officer already decided this one.",
+    );
+    expect(screenText(tree)).not.toContain(TRY_AGAIN);
+    act(() => tree.unmount());
+  });
+
+  it("leaves photos and the proof control off a suggestion's form", () => {
+    const tree = renderSuggestion("user-2");
+    expect(screenText(tree)).not.toContain("Proof");
+    act(() => tree.unmount());
+  });
+});
+
+describe("New task photos and proof (#4635)", () => {
+  it("sends the proof kind the officer picked", () => {
+    failure = FAILED;
+    const tree = render();
+    const photo = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "radio" &&
+        node.props.accessibilityLabel === "Photo" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => photo.props.onPress());
+    expect(screenText(tree)).toContain(
+      "Marking it done needs a photo of the finished job.",
+    );
+    submitTask(tree);
+    expect(mutate.mock.calls[0]![0]).toMatchObject({ proof_kind: "photo" });
+    act(() => tree.unmount());
+  });
+
+  it("uploads the picked photos on Create, then sends their paths", async () => {
+    failure = FAILED;
+    vi.mocked(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).mockResolvedValueOnce({ granted: true, canAskAgain: true } as never);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///mess.png",
+          fileName: "mess.png",
+          mimeType: "image/png",
+          width: 10,
+          height: 10,
+          fileSize: 100,
+        },
+      ],
+    } as never);
+    mintPhoto.mockResolvedValue({
+      upload_url: "https://signed",
+      storage_path: "chapters/c/tasks/p1/mess.png",
+    });
+    const tree = render();
+    await act(async () => {
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Add photos" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress();
+    });
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    act(() => title.props.onChangeText("Sweep the porch"));
+    await act(async () => createButton(tree).props.onPress());
+    expect(mintPhoto).toHaveBeenCalledTimes(1);
+    expect(mutate.mock.calls[0]![0]).toMatchObject({
+      reference_photo_paths: ["chapters/c/tasks/p1/mess.png"],
+    });
+    // A retry after the failed save doesn't upload the photo again.
+    await act(async () => createButton(tree).props.onPress());
+    expect(mintPhoto).toHaveBeenCalledTimes(1);
+    expect(mutate).toHaveBeenCalledTimes(2);
+    act(() => tree.unmount());
+  });
+
+  it("uploads the photos again after a 400, which a held path can't win", async () => {
+    // A create that landed with its answer lost holds the paths: the retry
+    // is refused "already attached", so the next one uploads anew.
+    failure = {
+      statusCode: 400,
+      error: "Bad Request",
+      message:
+        "reference_photo_paths is already attached to a task; upload the photo again",
+    };
+    vi.mocked(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).mockResolvedValueOnce({ granted: true, canAskAgain: true } as never);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///mess.png",
+          fileName: "mess.png",
+          mimeType: "image/png",
+          width: 10,
+          height: 10,
+          fileSize: 100,
+        },
+      ],
+    } as never);
+    mintPhoto.mockReset();
+    mintPhoto
+      .mockResolvedValueOnce({
+        upload_url: "https://signed",
+        storage_path: "chapters/c/tasks/p1/mess.png",
+      })
+      .mockResolvedValueOnce({
+        upload_url: "https://signed",
+        storage_path: "chapters/c/tasks/p2/mess.png",
+      });
+    const tree = render();
+    await act(async () => {
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Add photos" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress();
+    });
+    const title = tree.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    act(() => title.props.onChangeText("Sweep the porch"));
+    await act(async () => createButton(tree).props.onPress());
+    await act(async () => createButton(tree).props.onPress());
+    expect(mintPhoto).toHaveBeenCalledTimes(2);
+    expect(mutate.mock.calls.at(-1)![0]).toMatchObject({
+      reference_photo_paths: ["chapters/c/tasks/p2/mess.png"],
+    });
+    act(() => tree.unmount());
+  });
+});
+
+describe("NewTaskSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <NewTaskSheet ref={ref} now={new Date("2026-09-27T12:00:00Z")} />
+      </FrappThemeProvider>
+    ));
+  });
+});
+
+describe("NewTaskSheet for more than one person (#4295 step 3; 2026-11-18)", () => {
+  function renderOffering(): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} offerGroups />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  const assigneeLabel = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.type === ("Pressable" as never) &&
+        /^Assignee: /.test(String(node.props.accessibilityLabel)),
+    ).props.accessibilityLabel as string;
+
+  beforeEach(() => {
+    createOpen.mockReset();
+  });
+
+  it("offers everyone, sets the photos aside, and sends audience in place of a member", () => {
+    const tree = renderOffering();
+    expect(whoPicker(tree).props.single).toBe(false);
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "each",
+        target: { kind: "chapter" },
+      }),
+    );
+
+    expect(assigneeLabel(tree)).toBe("Assignee: Everyone");
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.noPhotos);
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.everyoneHint(3));
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as { name?: string }).name === "TaskPhotoPicker",
+      ),
+    ).toHaveLength(0);
+
+    submitTask(tree);
+    const body = mutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body.audience).toBe("everyone");
+    expect("assignee_id" in body).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("sends a copy each to a role's holders", () => {
+    const tree = renderOffering();
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "each",
+        target: { kind: "role", id: "r1" },
+      }),
+    );
+    expect(assigneeLabel(tree)).toBe(
+      "Assignee: Everyone in Recruitment Committee",
+    );
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.eachHint(2));
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
+      audience: "everyone",
+      audience_role_id: "r1",
+    });
+    act(() => tree.unmount());
+  });
+
+  it("puts one task up for grabs among several people, through its own create", () => {
+    const tree = renderOffering();
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "someone",
+        target: { kind: "people", userIds: ["user-2", "user-3"] },
+      }),
+    );
+    expect(assigneeLabel(tree)).toBe("Assignee: One of Shawn and Sam");
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.someoneHint(2));
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as { name?: string }).name === "TaskPhotoPicker",
+      ),
+    ).toHaveLength(0);
+    submitTask(tree);
+    expect(mutate).not.toHaveBeenCalled();
+    expect(createOpen).toHaveBeenCalledTimes(1);
+    expect(createOpen.mock.calls[0]![0]).toEqual({
+      title: "Sweep the porch",
+      due_date: expect.any(String),
+      user_ids: ["user-2", "user-3"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("says a task up for grabs was posted there", () => {
+    const onCreated = vi.fn();
+    createOpen.mockImplementation((_body, options) => options.onSuccess());
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            onCreated={onCreated}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "someone",
+        target: { kind: "chapter" },
+      }),
+    );
+    submitTask(tree);
+    expect(onCreated).toHaveBeenCalledWith(
+      TASK_AUDIENCE_COPY.anyone,
+      false,
+      true,
+    );
+    act(() => tree.unmount());
+  });
+
+  it("offers one person only where the host didn't ask for more", () => {
+    const tree = render();
+    expect(whoPicker(tree).props.single).toBe(true);
+    act(() => tree.unmount());
+  });
+});
+
+describe("New task's From (#5473)", () => {
+  const EXEC = "tier:7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+  beforeEach(() => {
+    whoFollowers.splice(0, whoFollowers.length, {
+      entry: EXEC,
+      kind: "tier",
+      name: "Exec board",
+      count: 4,
+    });
+  });
+  afterEach(() => {
+    whoFollowers.splice(0, whoFollowers.length);
+  });
+
+  function renderOffering(): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} offerGroups />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  const fromSheet = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.props.title === "From" && typeof node.props.onSelect === "function",
+    );
+
+  it("starts on Just you and sends no follower", () => {
+    failure = FAILED;
+    const tree = renderOffering();
+    expect(screenText(tree)).toContain("Just you");
+    submitTask(tree);
+    expect(mutate.mock.calls[0]![0]).not.toHaveProperty("followed_by");
+    act(() => tree.unmount());
+  });
+
+  it("sends the tier picked, and says what it means", () => {
+    failure = FAILED;
+    const tree = renderOffering();
+    expect(
+      fromSheet(tree).props.options.map(
+        (option: { label: string }) => option.label,
+      ),
+    ).toEqual(["Just you", "Exec board · 4"]);
+    act(() => fromSheet(tree).props.onSelect(EXEC));
+    expect(screenText(tree)).toContain(
+      "Everyone in Exec board can see this task and how it's going. Officers still confirm it.",
+    );
+    submitTask(tree);
+    expect(mutate.mock.calls[0]![0]).toMatchObject({ followed_by: EXEC });
+    act(() => tree.unmount());
+  });
+
+  function renderDuplicate(followedBy: string): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            prefill={{
+              title: "Sweep the porch",
+              description: null,
+              who: { kind: "person", userId: "user-2" },
+              pointsInput: "",
+              proofKind: "none",
+              subtasks: [],
+              due: { kind: "date", date: "2026-09-30" },
+              dueTime: null,
+              followedBy,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  it("duplicates a task's From when it is one of the officer's own", () => {
+    failure = FAILED;
+    const tree = renderDuplicate(EXEC);
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls.at(-1)![0]).toMatchObject({ followed_by: EXEC });
+    act(() => tree.unmount());
+  });
+
+  it("opens a Duplicate on Just you when the officer isn't in its group", () => {
+    failure = FAILED;
+    const tree = renderDuplicate("group:0d9e8f7a-6b5c-4d3e-9f21-0a1b2c3d4e5f");
+    expect(screenText(tree)).toContain("Just you");
+    expect(screenText(tree)).not.toContain("a deleted group");
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("followed_by");
+    act(() => tree.unmount());
+  });
+
+  it("says a repeating task can't be from a group, and sends none", () => {
+    failure = FAILED;
+    const tree = renderOffering();
+    act(() => fromSheet(tree).props.onSelect(EXEC));
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            node.props.accessibilityRole === "button",
+        )
+        .props.onPress(),
+    );
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            typeof node.props.onSelect === "function",
+        )
+        .props.onSelect("WEEKLY"),
+    );
+    expect(screenText(tree)).toContain(
+      "A repeating task can't be from a group yet.",
+    );
+    expect(tree.root.findAll((node) => node.props.title === "From")).toHaveLength(0);
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("followed_by");
+    act(() => tree.unmount());
+  });
+
+  it("offers no From to a suggestion, which can't carry one", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            suggestion={{
+              title: "Book the venue",
+              who: null,
+              dueDay: null,
+              dueAt: null,
+              subtasks: [],
+              accept: vi.fn(),
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(screenText(tree)).not.toContain("Just you");
+    // Nor a tier in its picker: its payload has no tier field yet.
+    expect(
+      tree.root.find(
+        (node) =>
+          typeof node.props.onChange === "function" &&
+          node.props.tiers !== undefined,
+      ).props.tiers,
+    ).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+describe("Duplicate, from a row's long press (#5492)", () => {
+  function renderDuplicate(): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet
+            now={new Date("2026-09-27T12:00:00Z")}
+            offerGroups
+            keptDraft="tasks-create"
+            prefill={{
+              title: "Sweep the porch",
+              description: "Behind the bins too.",
+              who: { kind: "person", userId: "user-2" },
+              pointsInput: "5",
+              proofKind: "photo",
+              subtasks: ["Sweep", "Mop"],
+              due: { kind: "date", date: "2026-09-30" },
+              dueTime: null,
+              followedBy: null,
+            }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  it("opens as New task on the original, and creates a new task with its description", () => {
+    failure = FAILED;
+    const tree = renderDuplicate();
+    expect(titleValueOf(tree)).toBe("Sweep the porch");
+    act(() => createButton(tree).props.onPress());
+    expect(mutate.mock.calls[0]![0]).toMatchObject({
+      title: "Sweep the porch",
+      description: "Behind the bins too.",
+      assignee_id: "user-2",
+      due_date: "2026-09-30",
+      point_reward: 5,
+      proof_kind: "photo",
+      subtasks: ["Sweep", "Mop"],
+    });
+    act(() => tree.unmount());
+  });
+
+  it("neither opens on nor keeps the screen's New task draft", () => {
+    failure = FAILED;
+    const kept = render({ keptDraft: "tasks-create" });
+    const title = kept.root.find(
+      (node) => node.props.accessibilityLabel === "Task title",
+    );
+    act(() => title.props.onChangeText("Half a draft"));
+    act(() => kept.unmount());
+    const tree = renderDuplicate();
+    expect(titleValueOf(tree)).toBe("Sweep the porch");
+    act(() => tree.unmount());
+    const again = render({ keptDraft: "tasks-create" });
+    expect(titleValueOf(again)).toBe("Half a draft");
+    act(() => again.unmount());
+  });
+});
+
+describe("New task's Repeat (#5119)", () => {
+  it("makes a weekly task that never ends from the Repeat row", () => {
+    const tree = render();
+    const row = () =>
+      tree.root.find(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith("Repeat") &&
+          node.props.accessibilityRole === "button",
+      );
+    // Quiet until opened: no rule goes with a task that doesn't repeat.
+    expect(row().props.accessibilityLabel).toBe("Repeat");
+    act(() => row().props.onPress());
+    const presets = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Repeat" &&
+        typeof node.props.onSelect === "function",
+    );
+    act(() => presets.props.onSelect("WEEKLY"));
+    // Ends offers Never for a task, and starts there.
+    const ends = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Ends" &&
+        typeof node.props.onSelect === "function",
+    );
+    expect(ends.props.selected).toBe("never");
+    expect(
+      ends.props.chips.map((chip: { label: string }) => chip.label),
+    ).toEqual(["Never", "After", "On date"]);
+    submitTask(tree);
+    const body = mutate.mock.calls.at(-1)![0] as { recurrence_rule?: string };
+    expect(body.recurrence_rule).toMatch(
+      /^FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;TZID=/,
+    );
+    expect(body.recurrence_rule).not.toMatch(/COUNT|UNTIL/);
+    act(() => tree.unmount());
+  });
+
+  it("sends no rule once a group is picked, and says why", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} offerGroups />
+        </FrappThemeProvider>,
+      );
+    });
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            node.props.accessibilityRole === "button",
+        )
+        .props.onPress(),
+    );
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Repeat" &&
+            typeof node.props.onSelect === "function",
+        )
+        .props.onSelect("WEEKLY"),
+    );
+    act(() =>
+      whoPicker(tree).props.onChange({
+        kind: "each",
+        target: { kind: "chapter" },
+      }),
+    );
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.noRepeat);
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("recurrence_rule");
+    act(() => tree.unmount());
+  });
+
+  it("sends no rule while it doesn't repeat", () => {
+    const tree = render();
+    submitTask(tree);
+    expect(mutate.mock.calls.at(-1)![0]).not.toHaveProperty("recurrence_rule");
     act(() => tree.unmount());
   });
 });

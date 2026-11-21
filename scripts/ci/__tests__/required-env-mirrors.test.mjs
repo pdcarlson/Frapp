@@ -12,15 +12,12 @@ import { test } from "node:test";
  *
  * Adding a name to the array without updating a mirror used to stay green in
  * CI: `api-tests` and `api-docker-build` go red (those two are exercised), but
- * `docker-compose.yml` is run by no workflow, and `render.yaml` is explicitly
- * not applied to the live services. The next `docker compose up` or service
- * recreation then exits on `Missing required environment variables`.
+ * `docker-compose.yml` is run by no workflow. The next `docker compose up`
+ * then exits on `Missing required environment variables`.
  *
- * `render.yaml` is included even though blueprint edits do not reach the
- * already-created services (`render.yaml:3-8`). The failure this check exists
- * for is a *recreation*, not a dashboard sync: live Render env is asserted by
- * `production-guardrails.mjs`, not this roster. Excluding the blueprint would
- * leave the exact silent-wrong case the issue named.
+ * The deployed API's env (Cloud Run, #5228) comes from Secret Manager, which
+ * Infisical's syncs fill: there is no file in the repo to compare, so it is
+ * not in this roster.
  *
  * Docs prose (`docs/guides/docker.md`) is out of scope — a parser over
  * English checklists is a second failure mode. Parsed by hand rather than
@@ -37,7 +34,6 @@ const ENV_VALIDATION = join(
 );
 const CI_YML = join(REPO_ROOT, ".github/workflows/ci.yml");
 const COMPOSE = join(REPO_ROOT, "docker-compose.yml");
-const RENDER = join(REPO_ROOT, "render.yaml");
 const SETUP_E2E = join(REPO_ROOT, "apps/api/test/setup-e2e.ts");
 const CONTRACT_DRIFT = join(REPO_ROOT, "scripts/check-api-contract-drift.mjs");
 
@@ -103,16 +99,6 @@ export function parseComposeApiEnvironment(yaml) {
   return names;
 }
 
-export function parseRenderServiceEnvVars(yaml) {
-  const chunks = yaml.split(/\n  - type: /).slice(1);
-  assert.ok(chunks.length > 0, "render.yaml has no `- type:` services");
-  return chunks.map((chunk) => {
-    const name = chunk.match(/\n    name: (\S+)/)?.[1];
-    const keys = [...chunk.matchAll(/- key: ([A-Z][A-Z0-9_]*)/g)].map((m) => m[1]);
-    return { name, keys };
-  });
-}
-
 export function parseSetupE2eDefaults(source) {
   const names = [...source.matchAll(/process\.env\.([A-Z][A-Z0-9_]*)\s*\|\|=/g)].map(
     (m) => m[1],
@@ -147,7 +133,6 @@ function assertCovers(required, found, label) {
 }
 
 function mirrors() {
-  const render = parseRenderServiceEnvVars(read(RENDER));
   return [
     {
       label: ".github/workflows/ci.yml api-docker-build `-e` flags",
@@ -157,10 +142,6 @@ function mirrors() {
       label: "docker-compose.yml api.environment",
       found: parseComposeApiEnvironment(read(COMPOSE)),
     },
-    ...render.map((service) => ({
-      label: `render.yaml ${service.name} envVars`,
-      found: service.keys,
-    })),
     {
       label: "apps/api/test/setup-e2e.ts",
       found: parseSetupE2eDefaults(read(SETUP_E2E)),
@@ -183,12 +164,6 @@ test("REQUIRED_ENV_VARS parses as a non-empty roster from env.validation.ts", ()
   );
 });
 
-test("render.yaml is in the roster — recreation, not live dashboard sync", () => {
-  const services = parseRenderServiceEnvVars(read(RENDER));
-  const names = services.map((s) => s.name).sort();
-  assert.deepEqual(names, ["frapp-api-prod", "frapp-api-staging"]);
-});
-
 test("every machine-readable REQUIRED_ENV_VARS mirror covers the array", () => {
   const required = parseRequiredEnvVars(read(ENV_VALIDATION));
   for (const { label, found } of mirrors()) {
@@ -206,8 +181,9 @@ test("a new required name without a mirror update is named per stale mirror — 
     const missing = missingFrom(required, found);
     if (missing.length > 0) reports.push(`${label} is missing ${missing.join(", ")}`);
   }
-  assert.ok(
-    reports.length >= 5,
+  assert.equal(
+    reports.length,
+    mirrors().length,
     `expected every mirror to lack the canary, got ${reports.length}: ${reports.join("; ")}`,
   );
   for (const report of reports) {

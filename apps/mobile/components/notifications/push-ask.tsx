@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import { Path } from "react-native-svg";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatGlyph, EventsGlyph, TasksGlyph } from "@/components/tab-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import type { PushAskAction } from "@/lib/notifications/use-push-primer";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * Onboarding's notifications step, and the chat home's one reminder: the
@@ -135,28 +137,20 @@ export function BellGlyph({
   color: string;
   size?: number;
 }) {
+  const { body, detail } = paint({ color });
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Frame size={size} hidden={false}>
       <Path
         d="M12 3.5a5.5 5.5 0 0 0-5.5 5.5c0 3.2-.7 4.9-1.4 5.9-.4.5 0 1.3.7 1.3h12.4c.7 0 1.1-.8.7-1.3-.7-1-1.4-2.7-1.4-5.9A5.5 5.5 0 0 0 12 3.5Z"
-        stroke={color}
-        strokeWidth={1.6}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill={tint(color, 0.16)}
+        {...body}
       />
-      <Path
-        d="M10 19.2a2.2 2.2 0 0 0 4 0"
-        stroke={color}
-        strokeWidth={1.6}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
+      <Path d="M10 19.2a2.2 2.2 0 0 0 4 0" {...detail} />
+    </Frame>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
+  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
     body: {
       gap: tokens.spacing.lg,
@@ -170,7 +164,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.card,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: surfaces.card,
       paddingVertical: tokens.spacing.xs,
     },
     row: {

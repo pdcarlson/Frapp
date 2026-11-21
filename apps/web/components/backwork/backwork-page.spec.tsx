@@ -88,6 +88,8 @@ const RESOURCE = {
   created_at: "2026-08-01T00:00:00Z",
 };
 
+const mockDrafts = vi.hoisted(() => ({ value: [] as unknown[] }));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
@@ -95,6 +97,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useFetchBackworkResource: () => mockFetchResource,
   useFetchBackworkDownloadUrls: () => mockFetchDownloadUrls,
   useDeleteBackworkResource: () => ({ mutateAsync: mockDeleteResource }),
+  useBackworkDrafts: () => ({ data: mockDrafts.value }),
   useMyPermissions: () => ({
     data: { permissions: mockPermissions.value },
   }),
@@ -431,6 +434,61 @@ describe("BackworkPage subscription gating", () => {
     // Focus lands on the explanation rather than <body>: the trigger it would
     // otherwise return to went disabled in the same commit.
     await waitFor(() => expect(screen.getByRole("status")).toHaveFocus());
+  });
+
+  it("opens Upload docked in place of the page beside chat, and hands focus back to Upload (#4593)", async () => {
+    chapter.active();
+    const { container } = render(
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <BackworkPage />
+        </div>
+      </div>,
+    );
+    const page = within(
+      container.querySelector("[data-tool-page]") as HTMLElement,
+    );
+    const trigger = page.getByRole("button", { name: /^upload$/i });
+    // A pointer press that leaves the button unfocused, as Safari's does.
+    fireEvent.pointerDown(trigger);
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const region = screen.getByRole("region", { name: "Upload backwork" });
+    expect(region.parentElement).toHaveAttribute("data-tool-column");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Back to backwork" }),
+    );
+    expect(
+      screen.queryByRole("region", { name: "Upload backwork" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("sends focus to the notice, not Upload, when a lapse closes the docked form", async () => {
+    chapter.active();
+    const tree = () => (
+      <div data-tool-column="">
+        <div data-tool-page="">
+          <BackworkPage />
+        </div>
+      </div>
+    );
+    const { rerender } = render(tree());
+    await userEvent.click(uploadTrigger());
+    expect(
+      screen.getByRole("region", { name: "Upload backwork" }),
+    ).toBeInTheDocument();
+
+    chapter.pastDue();
+    rerender(tree());
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("region", { name: "Upload backwork" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("status")).toHaveFocus();
   });
 
   it("leaves Upload enabled with no file and answers the press inline", async () => {
@@ -940,6 +998,25 @@ describe("BackworkPage upload: course name (#3848)", () => {
     expect(within(dialog).getByText("Calculus I")).toHaveClass("font-semibold");
     expect(within(dialog).getByText(/MATH 1010 ·/)).toBeInTheDocument();
     expect(within(dialog).queryByLabelText(/course name/i)).toBeNull();
+  });
+
+  // #3918: the API files "math" under "MATH", so the sheet must find the
+  // course the same way, and label it with the stored spelling.
+  it("finds a named course whatever case its department code is typed in", async () => {
+    taxonomyData.courses = [
+      {
+        id: "c1",
+        department_id: "dept-math",
+        course_number: "1010",
+        course_key: "1010",
+        name: "Calculus I",
+        nicknames: [],
+      },
+    ];
+    const dialog = await typeCourse(" math", "1010");
+
+    expect(within(dialog).getByText("Calculus I")).toBeInTheDocument();
+    expect(within(dialog).getByText(/MATH 1010 ·/)).toBeInTheDocument();
   });
 
   it("asks for a new course's name and confirms the upload with it", async () => {
@@ -2010,5 +2087,121 @@ describe("BackworkPage zip download", () => {
         expect.objectContaining({ title: "Zipped 1 of 2 files" }),
       ),
     );
+  });
+});
+
+/**
+ * Leaving the upload panel keeps what was typed (#4593): no "are you sure",
+ * and the panel opens on it next time. Cancel gives it up.
+ */
+describe("BackworkPage keeps the upload draft (#4593)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedResourcesQuery();
+    chapter.active();
+  });
+
+  const docked = () => (
+    <div data-tool-column="">
+      <div data-tool-page="">
+        <BackworkPage />
+      </div>
+    </div>
+  );
+
+  it("opens on what was typed after going back, and says so", async () => {
+    const user = userEvent.setup();
+    render(docked());
+    await user.click(uploadTrigger());
+    expect(screen.queryByText("Draft restored")).toBeNull();
+    await user.type(screen.getByLabelText("Title"), "Midterm 2");
+    await user.click(screen.getByRole("button", { name: "Back to backwork" }));
+    await user.click(uploadTrigger());
+
+    expect(screen.getByLabelText("Title")).toHaveValue("Midterm 2");
+    expect(screen.getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("reopens the panel on its draft when the page was left with it open", async () => {
+    const user = userEvent.setup();
+    const first = render(docked());
+    await user.click(uploadTrigger());
+    await user.type(screen.getByLabelText("Title"), "Midterm 2");
+    first.unmount();
+
+    render(docked());
+    const region = await screen.findByRole("region", {
+      name: "Upload backwork",
+    });
+    expect(within(region).getByLabelText("Title")).toHaveValue("Midterm 2");
+    expect(within(region).getByText("Draft restored")).toBeInTheDocument();
+  });
+
+  it("keeps nothing on Cancel, or for a panel left untouched", async () => {
+    const user = userEvent.setup();
+    render(docked());
+    await user.click(uploadTrigger());
+    await user.click(screen.getByRole("button", { name: "Back to backwork" }));
+    await user.click(uploadTrigger());
+    expect(screen.queryByText("Draft restored")).toBeNull();
+
+    await user.type(screen.getByLabelText("Title"), "Midterm 2");
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+    await user.click(uploadTrigger());
+    expect(screen.getByLabelText("Title")).toHaveValue("");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+
+  it("starts over on Discard", async () => {
+    const user = userEvent.setup();
+    render(docked());
+    await user.click(uploadTrigger());
+    await user.type(screen.getByLabelText("Title"), "Midterm 2");
+    await user.click(screen.getByRole("button", { name: "Back to backwork" }));
+    await user.click(uploadTrigger());
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(screen.getByLabelText("Title")).toHaveValue("");
+    expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+});
+
+describe("BackworkPage drafts note (#5208)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedResourcesQuery();
+    chapter.active();
+    mockPermissions.value = ["backwork:upload", "backwork:admin"];
+  });
+  afterEach(() => {
+    mockDrafts.value = [];
+    mockPermissions.value = ["backwork:upload", "backwork:admin"];
+  });
+
+  const waitingDraft = {
+    id: "d1",
+    storage_path: "chapters/c/backwork/d1/file.pdf",
+    is_redacted: true,
+    created_at: "2026-11-16T00:00:00Z",
+    draft_fields: {},
+  };
+
+  it("points an uploader with drafts at the review table", () => {
+    mockDrafts.value = [waitingDraft];
+    render(<BackworkPage />);
+    expect(screen.getByText(/1 of your uploads is a draft/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Review and publish" })).toHaveAttribute(
+      "href",
+      "/backwork/upload",
+    );
+  });
+
+  it("says nothing to a member who can't upload", () => {
+    mockDrafts.value = [waitingDraft];
+    mockPermissions.value = [];
+    render(<BackworkPage />);
+    expect(screen.queryByRole("link", { name: "Review and publish" })).not.toBeInTheDocument();
   });
 });

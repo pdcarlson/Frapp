@@ -1,6 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { FOCUS_RING } from "@/components/ui/focus";
+import { cn } from "@/lib/utils";
 import { ChatSearchPanel } from "./chat-search-popover";
 
 const useSearch = vi.fn();
@@ -207,6 +209,29 @@ describe("ChatSearchPanel", () => {
       message: expect.objectContaining({ id: "m-1" }),
       channelId: "chan-1",
     });
+  });
+
+  it("draws a hit with the row classes it shares with Pins (#1566)", async () => {
+    useSearch.mockReturnValue(
+      messagesResult([message("m-1", "chan-1", "dues link")]),
+    );
+    await typeQuery("dues");
+
+    // Written out as the popover spelled them before it shared
+    // `messageRowButtonClass` and `MessageRowBody`, so drift turns this red.
+    const body = await screen.findByText("dues link");
+    expect(body).toHaveClass(
+      "mt-1 line-clamp-3 block whitespace-pre-wrap text-base text-muted-foreground",
+      { exact: true },
+    );
+    expect(body.closest("button")).toHaveAttribute(
+      "class",
+      cn(
+        "block w-full px-3 py-3 text-left text-caption transition-colors",
+        "hover:bg-card-hover hover:text-foreground",
+        FOCUS_RING,
+      ),
+    );
   });
 
   it("labels a hit that lives in another channel", async () => {

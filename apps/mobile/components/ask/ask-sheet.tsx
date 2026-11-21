@@ -1,445 +1,738 @@
-import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
 import {
   BottomSheetModal,
-  BottomSheetScrollView,
   BottomSheetTextInput,
+  type BottomSheetScrollViewMethods,
 } from "@gorhom/bottom-sheet";
-import Svg, { Path } from "react-native-svg";
+import {
+  useAsk,
+  useAskStatus,
+  useAskStarter,
+  useAskSuggestions,
+  useCleanDictation,
+  useViewerDisplayName,
+  useViewerUserId,
+  type AskOptions,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import {
+  ASK_COPY,
+  ASK_QUESTION_MAX_LENGTH,
+  askSavedLine,
+  formatAiAnswerDate,
+  type AskSuggestion,
+} from "@repo/validation";
+import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
+import { AskSendGlyph } from "@/components/ask/ask-bar";
+import {
+  DictationDone,
+  DictationHeard,
+  DictationListening,
+  DictationMic,
+  DictationNotice,
+  DictationOriginal,
+  DictationTidying,
+} from "@/components/dictation/dictation-controls";
+import { AskOpening } from "@/components/ask/ask-opening";
+import { AskTurn } from "@/components/ask/ask-turn";
+import {
+  SOURCE_OPEN_FAILED,
+  useAskTurns,
+} from "@/components/ask/use-ask-turns";
+import { PencilGlyph } from "@/components/control-glyphs";
+import { FrappCrest } from "@/components/frapp-crest";
+import { ICON_BUTTON_HIT_SLOP, IconButton } from "@/components/icon-button";
 import {
   SheetGrabber,
   SheetScrim,
   useSheetBackgroundStyle,
   SheetBackToClose,
+  SheetCloseButton,
   useSheetClose,
+  useTallSheetProps,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
-import { AnswerCard } from "@/components/ask/answer-card";
-import {
-  answerQuestion,
-  SUGGESTED_QUESTIONS,
-  type AskAnswer,
-  type AskSource,
-} from "@/lib/ask/corpus";
-import { isAskAvailable } from "@/lib/ask/flag";
-import { fieldTypeRole, fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { useActActions, useMayAct } from "@/lib/ai/availability";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import { useFieldDictation } from "@/components/dictation/use-field-dictation";
+import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
+import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
 
 /**
- * s17 — the ✦ Ask sheet (`canvas-screens.dc.html`, `id="s17"`).
+ * Ask Frapp on the phone (`spec/ui/mobile/screens.md` s17;
+ * `spec/behavior/ai.md` § One conversation; #450, #451, #718): one
+ * conversation with Frapp, over wherever the member is. They type in one
+ * field; Frapp answers from the chapter's own documents, minutes and
+ * records, each claim marked with the source it came from, or shows a card
+ * for something they asked to have done. It reads the same stream web's
+ * panel does (`useAsk`), in the same words (`ASK_COPY`).
  *
- * A sheet rather than a route: `spec/ui/mobile/patterns.md` § Bottom sheets
- * lists "the s17 Ask presentation" among the flows that are sheets hosted by
- * their parent screen, and `navigation.md` § Global entries outside the tab
- * bar makes Ask a global entry that "MUST NOT become a fifth tab". Chat home (s04) and Events (s06) both host it.
+ * A member asks walking to class, so the whole thing is one sheet, opened
+ * from the Ask Frapp bar above the tab bar (`ask-bar.tsx`, #4702). ChatGPT's,
+ * Claude's and Perplexity's phone apps put the field at the bottom above the
+ * keyboard and the thread above it; so does this.
  *
- * **Signet gold, never the chapter accent.** Nothing in this file or in
- * `answer-card.tsx` reaches `useChapterBranding()` — `components.md:232` scopes
- * this whole surface to the fixed `gold` token group, because "the answer
- * surface speaks in Signet's voice, not the chapter's". It is the one sheet in
- * the app that does not retint.
+ * **Full height** (#4702; it was 78%). A thread of two or three answers with
+ * their sources did not fit in the shorter sheet, and the bar it opens from
+ * is drawn as this sheet's own field, so a tap should land in a conversation,
+ * not in a drawer over the tab. It is the app's tall sheet
+ * (`useTallSheetProps`): it stops just under the status bar, the grabber
+ * drags it away, and because no scrim is left to tap the header carries a
+ * close X (`components.md` § Surface size).
  *
- * ## Why fixed snap points rather than dynamic sizing
+ * **One conversation, one field** (2026-11-13, owner). There were two sides
+ * here, Ask and Do, under a switch, each showing one exchange at a time, and
+ * a line saying every question was answered on its own. Those apps take a
+ * question and a request in the same field and keep the thread on screen so
+ * a follow-up can lean on what came before. So the sheet is a thread: each
+ * turn stays, the turns before a question are sent with it, and a member who
+ * may have Frapp act (`useMayAct`: Ask itself and `ai:act`) gets a card to
+ * confirm when what they typed asks for something to be done. Everyone else gets answers only, from
+ * the same field. The header's New conversation button clears the thread.
  *
- * Every other sheet here uses `enableDynamicSizing`, and this one must not. The
- * body grows without bound as answers land — echo card, answer card, wrapping
- * source chips — and dynamic sizing has no cap, so a long answer would size the
- * sheet past the drawn 78% and then re-lay-out when the next one is shorter.
- * The drawing caps at 78% (`patterns.md`: "tall sheets (s17, s20) cap at
- * roughly 78% of the viewport as drawn"), so that is the detent.
+ * The thread is this sitting's: it survives a close and reopen, and is gone
+ * when the app restarts. A question asked here and still being answered when
+ * the sheet closes is dropped; the turns before it stay. One asked from a
+ * channel with `@Frapp` (#4713) is a turn of this same thread, and goes on
+ * being answered: its answer is drawn in the channel, which closing the sheet
+ * does not take away. What a turn does when the member acts on it is
+ * `useAskTurns`, shared with the channel's row.
  *
- * With fixed detents the body has to scroll, and `BottomSheetScrollView` is a
- * **direct child** of the sheet for the reason `new-task-sheet.tsx` spells out
- * at its second modal: nested inside a `BottomSheetView`, the view and the
- * scrollable write competing heights to the same animated value. The composer
- * is the scrollable's sibling rather than its last row, so it stays pinned
- * above the keyboard as drawn instead of scrolling away under a long answer.
+ * **The field only asks** (#5139; Paul, 2026-11-16). From #4904 until then
+ * it searched too, listing channels, members, messages and events above the
+ * field while the member typed (Paul's pick of 2026-11-13). Search is its own
+ * screen now, pushed from Chat home (`components/search/search-screen.tsx`),
+ * which every member has and which can hand its words to this sheet
+ * (`initialDraft`). The field and the bar read "Ask Frapp anything" again.
  *
- * ## A build without Ask has no sheet
+ * **It opens on the member's own account** (#4700, owner 2026-11-13: "not
+ * just be like some presets"). Before the first turn the sheet offers up to
+ * three questions and one request the server built from what this member's
+ * account holds now: their next event, their open tasks, minutes they can
+ * read, their points. The same list, in the same words, as web's panel.
+ * There is no fixed list; with nothing to ask about, the crest and the
+ * greeting stand alone. They are read once the sheet is open and fade in as
+ * arrow rows at the bottom, above the field, where nothing sits below them to
+ * move. A tapped question is sent as a suggestion, never as words the member
+ * typed (`useAsk`'s `suggested`).
  *
- * `isAskAvailable()` is false by default (`lib/ask/flag.ts`), and when it is
- * this renders nothing. The hosts mount it unconditionally and gate only the
- * ✦ pill in their header, and `app/(app)/ask.tsx` redirects. It used to open
- * anyway and say "Ask isn't switched on for this build yet"; that was reversed
- * on 2026-09-22 (#2259), and `spec/ui/mobile/navigation.md` § Global entries
- * has why. The gate lives here rather than at each host because this is the
- * one component that reads `lib/ask/corpus.ts`: whatever a future host does,
- * the synthetic answers stay unreachable in a build without the flag.
+ * **It opens on the crest, not on instructions** (#4904; Paul, 2026-11-17).
+ * Before the first turn: the crest in the chapter's colour with a glow, the
+ * day and a greeting, and on the member's first open on this phone the
+ * "What can you do?" exchange (`ask-opening.tsx`, `lib/ask/starter-seen.ts`).
+ * Until then every open began with "Ask about your chapter" and a paragraph
+ * on where answers come from.
+ *
+ * **Consent is asked at the first question**, not when the sheet opens
+ * (`useAiConsentGate`; `ai.md` § Consent). The question shows in the thread
+ * first, so the consent sheet opens with the words it is about already
+ * asked. Since #5426 a first question sits just above the field, where the
+ * consent sheet rises, so it may sit behind that sheet. The server checks
+ * again.
+ *
+ * **The saved line.** While the beta diagnostics window is on for this
+ * chapter, a line above the field says questions and answers are saved and
+ * until when, and only then does a question carry `saved_notice_shown`: the
+ * server keeps nothing from a client that did not show it. It sits in the
+ * composer, which is anchored to the sheet's bottom edge, so its arrival
+ * never moves the field. A short thread, which sits on the field (#5426,
+ * below), moves up by the line's height, as a chat's last message moves
+ * with its composer. Until #5426 it moved nothing.
+ *
+ * **A source opens the real thing.** A document opens in the in-app browser
+ * over the sheet, so the thread is still there when it closes. Anything else
+ * is a screen: the sheet closes and the screen opens, and the thread is back
+ * when the sheet is reopened.
+ *
+ * **What is the member's is the chapter's colour** (Paul, 2026-11-13: default
+ * 2 on #4698 for the crest, then on the first captures "if Ask Frapp is blue,
+ * then so should the button also be blue"): the crest in the header, as on
+ * the bar that opened the sheet, the send button, the member's own bubble
+ * (`ask-turn.tsx`) and Confirm (`ask-proposal.tsx`). Web's send and Confirm
+ * were already the accent. What is Frapp's keeps Ask's fixed gold
+ * (`components.md` §11): the source markers and the number on a source chip.
+ *
+ * **It is drawn on the page's own background, not a sheet's.** At full height
+ * this is a screen, and Paul did not like a whole screen of the sheet grey
+ * (2026-11-13, on the first captures; his reference is Bevel's assistant,
+ * which talks on the app's own dark background). So the fill is
+ * `surface.background`, and what sits on it takes the page's ladder
+ * (`lib/surfaces.ts`): `surface1` for a suggestion, the field and a card.
+ *
+ * ## Why one fixed detent rather than dynamic sizing
+ *
+ * The thread grows as an answer streams in, and dynamic sizing would resize
+ * the sheet with every line. So there is one detent, full height; the thread
+ * scrolls, and the header and composer are the scrollable's siblings so one
+ * stays at the top and the other pinned above the keyboard.
+ * `BottomSheetScrollView` is a direct child of the sheet for the reason
+ * `new-task-sheet.tsx` gives.
+ *
+ * ## Why the thread sits on the field, and follows the keyboard (#5426)
+ *
+ * A thread shorter than the room above the field is drawn at the bottom of
+ * that room, on the field, as Messages and ChatGPT's app draw a new
+ * conversation: what was just sent appears where the thumb sent it. Until
+ * #5426 it was drawn at the top, and the first turn replaced an opening that
+ * filled the room and was often scrolled, because the keyboard had shrunk
+ * the room under it. On iOS a scroll view keeps its offset when its content
+ * shrinks (React Native's `updateState` sets the new content size and leaves
+ * the offset alone), so the turn sat above the window and the sheet looked
+ * empty until the keyboard moved (Paul, 2026-11-17). Scrolling to the end
+ * did not rescue it: the scroll is asked for from JavaScript when the new
+ * layout is committed, and reaches the native view on the main queue, where
+ * it can run before the shrunk content is mounted and so measures the old
+ * content. Now the opening and the thread each get their own scroller, so the
+ * first turn arrives in a new one at offset zero, and the content always
+ * fills the room. While the member is following, every scroll to the end is
+ * asked for again on the next frame, after the new content is mounted, so a
+ * streamed line or a card that folds to one line is measured as it now is.
+ *
+ * Dragging the thread puts the keyboard away (#5429): the field is not the
+ * keyboard's own accessory view, so it can't follow an interactive drag of
+ * the keyboard. The sheet hears only that the keyboard will show or hide, and
+ * under "interactive" iOS moves the keyboard with the finger first. The sheet
+ * still held the field at the old keyboard top, over an empty band.
+ *
+ * The keyboard changes the room, not the content, so `onContentSizeChange`
+ * does not see it. The scroller's own layout does: while the member is
+ * reading the newest words, a change in the room scrolls to the end again,
+ * so those words stay above the field as the keyboard opens and closes.
+ *
+ * Whether a member has Ask at all is the host's question (`useAiSurfaces`):
+ * with the server's AI off, nothing mounts this.
  */
 
-/**
- * The drawn cap. A string percentage rather than a computed pixel height, so it
- * tracks the device rather than a phone the drawing was made on.
- */
-const ASK_SNAP_POINTS = ["78%"];
+/** Within this of the bottom, the member is reading the newest words. */
+const FOLLOW_SLACK = 80;
 
-/**
- * How long the in-flight state is held.
- *
- * `answerQuestion` is a synchronous lookup, so without this the skeleton would
- * never paint and the state `spec/ui/design-system/README.md` §4 requires — and
- * that `components.md` §11 carries a TODO-DESIGN for — would exist in the code
- * and never on screen. Real retrieval takes longer than this; the number is a
- * placeholder for a network round trip, not a simulation of one.
- */
-const ANSWER_DELAY_MS = 450;
+export const AskSheet = forwardRef<
+  BottomSheetModal,
+  {
+    /**
+     * The sheet closed. `leftForSource` is true when it closed because the
+     * member opened a source's screen, which is now on top: a host must not
+     * navigate over it.
+     */
+    onClosed?: (leftForSource: boolean) => void;
+    /**
+     * A question to open with, in the box for the member to send or change
+     * (a nudge card's "Ask about this", #4781). Never sent on its own. Read
+     * once, when the sheet mounts: a host gives each question its own `key`.
+     */
+    initialDraft?: string;
+  }
+>(function AskSheet({ onClosed, initialDraft }, ref) {
+  const closeSheet = useSheetClose(ref);
+  const { tokens } = useFrappTheme();
+  const { accent, accentPrimary, accentOnPrimary } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const sheetBackground = useSheetBackgroundStyle();
+  // The sheet's shape with the page's fill: see "drawn on the page's own
+  // background" above.
+  const backgroundStyle = useMemo(
+    () => [
+      sheetBackground,
+      { backgroundColor: tokens.color.surface.background },
+    ],
+    [sheetBackground, tokens],
+  );
+  const tallSheet = useTallSheetProps();
 
-export const AskSheet = forwardRef<BottomSheetModal>(
-  function AskSheet(_props, ref) {
-    const closeSheet = useSheetClose(ref);
-    const { tokens } = useFrappTheme();
-    const styles = createStyles(tokens);
-    const backgroundStyle = useSheetBackgroundStyle();
+  const {
+    exchanges,
+    working,
+    ask,
+    retry,
+    setProposal,
+    resolveProposal,
+    resolveCard,
+    stop,
+    reset,
+  } = useAsk();
+  const [shownOpen, setShownOpen] = useState(false);
+  const status = useAskStatus({ enabled: shownOpen });
+  const { ensureConsent, consentSheet } = useAiConsentGate();
 
-    const [draft, setDraft] = useState("");
-    /** The question being answered — `null` before the first ask. */
-    const [question, setQuestion] = useState<string | null>(null);
-    /** `null` while in flight, so `AnswerCard` draws its skeleton. */
-    const [answer, setAnswer] = useState<AskAnswer | null>(null);
-    const [notice, setNotice] = useState<string | null>(null);
-    const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // What this member can ask to have done (#718), or nothing.
+  const actions = useActActions({ enabled: shownOpen });
+  const canAct = actions.length > 0;
+  const mayAct = useMayAct();
+  const { suggestions } = useAskSuggestions({ enabled: shownOpen });
+  const displayName = useViewerDisplayName();
+  const viewerId = useViewerUserId();
+  const opening = useAskStarter({
+    userId: viewerId,
+    open: shownOpen,
+    empty: exchanges.length === 0,
+    canAct,
+    store: ASK_STARTER_STORE,
+  });
 
-    const clearTimer = useCallback(() => {
-      if (timer.current === null) return;
-      clearTimeout(timer.current);
-      timer.current = null;
-    }, []);
+  const [draft, setDraft] = useState(initialDraft ?? "");
+  // Dictation (#5276): the room, the joining and the Original chip are the
+  // chat composer's too (`useFieldDictation`).
+  const cleanDictation = useCleanDictation();
+  const field = useFieldDictation({
+    value: draft,
+    setValue: setDraft,
+    max: ASK_QUESTION_MAX_LENGTH,
+    clean: cleanDictation,
+  });
+  const { dictation, original } = field;
+  const listening = dictation.phase === "listening";
+  const tidying = dictation.phase === "cleaning";
+  const leftForSource = useRef(false);
+  const scroller = useRef<BottomSheetScrollViewMethods>(null);
+  // Whether the member is reading the newest words: only then does the
+  // thread follow an answer as it grows.
+  const following = useRef(true);
+  // Only the member's own drag can stop the thread following. The scroll a
+  // new turn starts reports offsets short of the end while it animates, and
+  // read as the member's they would leave the answer below the fold.
+  const dragged = useRef(false);
 
-    // The sheet outlives any one exchange, and a pending answer that lands after
-    // the member has closed and reopened would overwrite their new question.
-    useEffect(() => clearTimer, [clearTimer]);
+  const savedUntil = status.data?.saved_until ?? null;
+  const lastId = exchanges.at(-1)?.id;
 
-    const reset = useCallback(() => {
-      clearTimer();
+  // Keeps the newest words in view while the member is reading them: now,
+  // and again on the next frame, once the layout that asked is mounted
+  // (#5426, above).
+  const follow = useCallback(() => {
+    if (!following.current) return;
+    scroller.current?.scrollToEnd?.({ animated: false });
+    requestAnimationFrame(() => {
+      if (following.current) {
+        scroller.current?.scrollToEnd?.({ animated: false });
+      }
+    });
+  }, []);
+
+  // A new turn shows the newest words.
+  useEffect(() => {
+    following.current = true;
+    dragged.current = false;
+    scroller.current?.scrollToEnd?.({ animated: true });
+  }, [lastId]);
+
+  // A question asked here and still being answered is dropped with the
+  // sheet; the turns before it are there when it reopens. One asked from a
+  // channel goes on: its answer is drawn there.
+  const workingRef = useRef(working);
+  const askedHere = exchanges.some(
+    (exchange) => exchange.phase === "working" && !exchange.origin,
+  );
+  const askedHereRef = useRef(askedHere);
+  useEffect(() => {
+    workingRef.current = working;
+    askedHereRef.current = askedHere;
+  }, [working, askedHere]);
+  const cancelDictation = dictation.cancel;
+  const dismissDictation = dictation.dismiss;
+  const clearOriginal = field.clearOriginal;
+  const onDismiss = useCallback(() => {
+    setShownOpen(false);
+    cancelDictation();
+    if (askedHereRef.current) stop();
+    const left = leftForSource.current;
+    leftForSource.current = false;
+    onClosed?.(left);
+  }, [onClosed, stop, cancelDictation]);
+
+  const options = useCallback(
+    (): AskOptions => ({
+      savedNoticeShown: savedUntil !== null,
+      // Asked for on the permission alone. The list of actions only words
+      // the opening: a request typed before it arrives, or after it failed
+      // to load, must still come back as a card.
+      actions: mayAct,
+      gate: ensureConsent,
+    }),
+    [mayAct, ensureConsent, savedUntil],
+  );
+
+  // The screen is about to be on top: the host must not navigate over it.
+  const leave = useCallback(() => {
+    leftForSource.current = true;
+    closeSheet();
+  }, [closeSheet]);
+  const turns = useAskTurns({
+    conversation: { working, retry, setProposal, resolveProposal, resolveCard },
+    options,
+    leave,
+  });
+  const clearNotice = turns.clearNotice;
+
+  const submit = useCallback(
+    (text: string) => {
+      if (!text.trim() || workingRef.current) return;
       setDraft("");
-      setQuestion(null);
-      setAnswer(null);
-      setNotice(null);
-    }, [clearTimer]);
+      clearOriginal();
+      dismissDictation();
+      clearNotice();
+      void ask(text, options());
+    },
+    [ask, options, clearNotice, dismissDictation, clearOriginal],
+  );
 
-    const ask = useCallback(
-      (text: string) => {
-        const trimmed = text.trim();
-        if (trimmed.length === 0) return;
+  const pick = useCallback(
+    (suggestion: AskSuggestion) => {
+      if (workingRef.current) return;
+      clearNotice();
+      // A question can name a record someone else wrote, so it is sent as a
+      // suggestion. The one request holds none and is sent like typed words.
+      void ask(suggestion.text, {
+        ...options(),
+        suggested: !suggestion.request,
+      });
+    },
+    [ask, options, clearNotice],
+  );
 
-        clearTimer();
-        setQuestion(trimmed);
-        setAnswer(null);
-        setNotice(null);
-        setDraft("");
-        timer.current = setTimeout(() => {
-          timer.current = null;
-          setAnswer(answerQuestion(trimmed));
-        }, ANSWER_DELAY_MS);
-      },
-      [clearTimer],
-    );
+  const canSend = draft.trim().length > 0 && !working && !tidying;
 
-    /**
-     * A tapped citation.
-     *
-     * §11 makes each chip a control that opens its source in-app, and the chips
-     * are built as controls. What they cannot do yet is navigate: the corpus is
-     * mocked and its sources carry a label, not a document id, so there is
-     * nothing to resolve. Saying so is the honest middle — the alternative is a
-     * chip that swallows the tap, which is the dead end
-     * `spec/ui/design-system/README.md` §5 rule 2 bans.
-     *
-     * TODO-DESIGN: wire each chip to its source (Documents for a `document`,
-     * the thread for a `channel`) once citations arrive with real ids.
-     */
-    const openSource = useCallback((source: AskSource) => {
-      setNotice(
-        `${source.label} is a sample citation — there's no real document behind it to open yet.`,
-      );
-    }, []);
-
-    const trimmedDraft = draft.trim();
-    const canSend = trimmedDraft.length > 0;
-    /**
-     * Wired to the control rather than placed beside it: a member using a screen
-     * reader lands on a dimmed button and needs the reason *there*, not in a
-     * paragraph they may never reach.
-     */
-    const sendHint =
-      trimmedDraft.length === 0
-        ? "Type a question first."
-        : "Send your question to Ask.";
-
-    // After every hook, so the hook order is the same whichever way the flag
-    // reads. The flag is fixed for a build, so this never flips mid-session.
-    if (!isAskAvailable()) return null;
-
-    return (
+  return (
+    <>
       <BottomSheetModal
         ref={ref}
         stackBehavior={SHEET_STACK_BEHAVIOR}
-        // **Required, not redundant.** `enableDynamicSizing` defaults to `true`
-        // in gorhom v5, and when it is on the library computes a content-height
-        // detent, inserts it into the provided snap points and opens at index 0
-        // — the shortest. On first open this sheet's content is a header and two
-        // chips, so it would open ~180pt tall while the composer, sized against
-        // the 78% detent, laid out below the screen edge: a member could see the
-        // header and not reach the input. The whole fixed-detent argument in the
-        // docblock above is delivered by this one prop.
-        enableDynamicSizing={false}
-        snapPoints={ASK_SNAP_POINTS}
+        // Full height, with dynamic sizing off: left on (gorhom v5's
+        // default) the sheet opens at its content height, a header and three
+        // rows, and the composer lays out below the screen edge.
+        {...tallSheet}
         keyboardBehavior="interactive"
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
-        onDismiss={reset}
+        onAnimate={(_from, to) => {
+          if (to >= 0) setShownOpen(true);
+        }}
+        onDismiss={onDismiss}
       >
         <SheetBackToClose onClose={closeSheet} />
+        <View style={styles.headerRow}>
+          {/* Before the first turn the opening's big crest is the mark, and
+              the bar that opened the sheet already said "Ask Frapp"; the
+              name comes back here with the conversation (#4904). */}
+          {exchanges.length > 0 ? (
+            <View style={styles.headerName}>
+              <FrappCrest height={20} color={accent} />
+              <Text accessibilityRole="header" style={styles.headerTitle}>
+                {ASK_COPY.name}
+              </Text>
+            </View>
+          ) : (
+            <View />
+          )}
+          <View style={styles.headerActions}>
+            {exchanges.length > 0 ? (
+              <IconButton
+                label={ASK_COPY.new_conversation}
+                onPress={() => {
+                  reset();
+                  turns.forget();
+                  clearNotice();
+                }}
+              >
+                <PencilGlyph color={tokens.color.text.mutedForeground} />
+              </IconButton>
+            ) : null}
+            {/* At full height no scrim is left to tap: every tall sheet's
+                own close control (`sheet-scaffold.tsx`). */}
+            <SheetCloseButton
+              accessibilityLabel={ASK_COPY.close}
+              onPress={closeSheet}
+            />
+          </View>
+        </View>
         <BottomSheetScrollView
+          // A new scroller when the first turn replaces the opening, and
+          // back: the old one's offset belongs to content that is gone
+          // (#5426, above).
+          key={exchanges.length > 0 ? "thread" : "opening"}
+          ref={scroller}
           onAccessibilityEscape={closeSheet}
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          // A drag on the thread puts the keyboard away at once (#5429).
+          // The library's default, "interactive", lets iOS move the
+          // keyboard under the finger without telling the sheet, which
+          // keeps the field where the keyboard's top was, over an empty
+          // band. ChatGPT's and Claude's apps put it away on the drag too.
+          keyboardDismissMode="on-drag"
+          // The keyboard opening or closing changes the room, not the
+          // content: the newest words stay above the field (#5426).
+          onLayout={follow}
+          onScrollBeginDrag={() => {
+            dragged.current = true;
+          }}
+          onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+            if (!dragged.current) return;
+            const { contentOffset, contentSize, layoutMeasurement } =
+              event.nativeEvent;
+            following.current =
+              contentSize.height - contentOffset.y - layoutMeasurement.height <
+              FOLLOW_SLACK;
+          }}
+          // The newest turn growing keeps its last line in view, unless the
+          // member scrolled up to read something else.
+          onContentSizeChange={follow}
         >
-          {/* Not `SheetHeader`: s17 draws no Cancel control — the grabber and the
-            scrim are the dismissal — and its title is gold rather than
-            foreground, with a trailing caption where Cancel would sit. */}
-          <View style={styles.headerRow}>
-            <Text style={styles.headerGlyph}>✦</Text>
-            <Text style={styles.headerTitle}>Ask Frapp</Text>
-            <Text style={styles.headerCaption} numberOfLines={2}>
-              answers from your chapter&apos;s records
-            </Text>
-          </View>
-
-          {question !== null ? (
-            <View style={styles.echo}>
-              <Text style={styles.echoText}>{question}</Text>
-            </View>
-          ) : null}
-
-          {question !== null ? (
-            <AnswerCard answer={answer} onOpenSource={openSource} />
-          ) : null}
-
-          {notice !== null ? (
-            <Text style={styles.sourceNotice}>{notice}</Text>
-          ) : null}
-
-          <View style={styles.suggestionRow}>
-            {SUGGESTED_QUESTIONS.map((suggestion) => (
-              <Pressable
-                key={suggestion}
-                accessibilityRole="button"
-                accessibilityLabel={suggestion}
-                accessibilityHint="Ask this question."
-                // 32pt drawn against the 44pt minimum — the #939 ruling
-                // `ask-pill.tsx` and `sheet-scaffold.tsx` already apply.
-                //
-                // Asymmetric on purpose: the floor is a *vertical* shortfall
-                // (32 + 6 + 6 = 44), and 6pt horizontally would push each
-                // chip 12pt into an 8pt gap, so adjacent chips' touch regions
-                // would overlap and RN would resolve the seam to whichever
-                // view sits later in the hierarchy. A member aiming between
-                // two suggestions would ask the question they did not tap —
-                // and `ask()` clears the draft immediately, so there is no
-                // undo. 4pt a side is exactly half the gap: no overlap.
-                hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-                onPress={() => ask(suggestion)}
-                style={({ pressed }) => [
-                  styles.suggestion,
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                <Text style={styles.suggestionText}>{suggestion}</Text>
-              </Pressable>
-            ))}
-          </View>
+          {exchanges.length > 0 ? (
+            exchanges.map((exchange) => (
+              <View key={exchange.id} style={styles.turn}>
+                <AskTurn {...turns.propsFor(exchange)} />
+                {turns.sourceFailed(exchange.id) ? (
+                  <Text accessibilityLiveRegion="polite" style={styles.caption}>
+                    {SOURCE_OPEN_FAILED}
+                  </Text>
+                ) : null}
+              </View>
+            ))
+          ) : (
+            <AskOpening
+              displayName={displayName}
+              mode={opening.mode}
+              onStarterShown={opening.starterShown}
+              canAct={canAct}
+              suggestions={suggestions}
+              onPick={pick}
+            />
+          )}
         </BottomSheetScrollView>
 
-        <View style={styles.composerRow}>
-          {/* `BottomSheetTextInput`, never a plain `TextInput`: `patterns.md`
-            makes it mandatory inside a sheet, because a plain input breaks the
-            sheet's keyboard coordination. */}
-          <BottomSheetTextInput
-            value={draft}
-            onChangeText={setDraft}
-            onSubmitEditing={() => ask(draft)}
-            placeholder="Ask anything…"
-            placeholderTextColor={tokens.color.text.muted}
-            accessibilityLabel="Ask a question"
-            accessibilityHint="Ask about your chapter's bylaws, minutes and announcements."
-            returnKeyType="send"
-            style={styles.composerField}
-          />
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Send question"
-            accessibilityHint={sendHint}
-            accessibilityState={{ disabled: !canSend }}
-            disabled={!canSend}
-            // 40pt drawn against the 44pt minimum: 2pt a side closes the gap.
-            hitSlop={2}
-            onPress={() => ask(draft)}
-            style={({ pressed }) => [
-              styles.send,
-              !canSend ? styles.sendDisabled : null,
-              pressed && canSend ? styles.pressed : null,
-            ]}
-          >
-            <SendGlyph color={tokens.color.gold.onHouse} />
-          </Pressable>
+        <View style={styles.composer}>
+          {savedUntil !== null ? (
+            <Text style={styles.caption}>
+              {askSavedLine(formatAiAnswerDate(savedUntil))}
+            </Text>
+          ) : null}
+          {listening ? <DictationHeard live={dictation.live} /> : null}
+          {dictation.notice !== null && dictation.phase === "idle" ? (
+            <DictationNotice
+              failure={dictation.notice}
+              onDismiss={dictation.dismiss}
+            />
+          ) : null}
+          {original !== null && dictation.phase === "idle" ? (
+            <DictationOriginal
+              onPress={field.restoreOriginal}
+            />
+          ) : null}
+          <View style={styles.composerRow}>
+            <View
+              style={[
+                styles.field,
+                listening
+                  ? { borderColor: accent, backgroundColor: tint(accent) }
+                  : null,
+              ]}
+            >
+              {listening ? (
+                <DictationListening
+                  live={dictation.live}
+                  onCancel={dictation.cancel}
+                  accent={accent}
+                />
+              ) : tidying ? (
+                <DictationTidying live={dictation.live} />
+              ) : (
+                <>
+                  {/* `BottomSheetTextInput`, never a plain `TextInput`
+                      (`patterns.md` § Bottom sheets). Multiline, so a
+                      dictated paragraph shows whole, up to five lines. */}
+                  <BottomSheetTextInput
+                    value={draft}
+                    onChangeText={setDraft}
+                    onSubmitEditing={() => submit(draft)}
+                    multiline
+                    submitBehavior="submit"
+                    maxLength={ASK_QUESTION_MAX_LENGTH}
+                    placeholder={ASK_COPY.placeholder}
+                    placeholderTextColor={tokens.color.text.muted}
+                    accessibilityLabel={ASK_COPY.placeholder}
+                    returnKeyType="send"
+                    style={styles.composerField}
+                  />
+                  {dictation.available ? (
+                    <DictationMic
+                      onPress={field.start}
+                    />
+                  ) : null}
+                </>
+              )}
+            </View>
+            {listening ? (
+              <DictationDone
+                onPress={dictation.finish}
+                fill={accentPrimary}
+                color={accentOnPrimary}
+              />
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={ASK_COPY.send}
+                accessibilityState={{ disabled: !canSend }}
+                disabled={!canSend}
+                // 40pt drawn against the 44pt minimum.
+                hitSlop={2}
+                onPress={() => submit(draft)}
+                style={({ pressed }) => [
+                  styles.send,
+                  { backgroundColor: accentPrimary },
+                  !canSend ? styles.sendDisabled : null,
+                  pressed && canSend ? styles.pressed : null,
+                ]}
+              >
+                <AskSendGlyph color={accentOnPrimary} />
+              </Pressable>
+            )}
+          </View>
         </View>
       </BottomSheetModal>
-    );
-  },
-);
-
-/**
- * The send arrow, transcribed from `canvas-screens.dc.html` s17 — the visual
- * truth that wins over prose per #937. Colour arrives as a prop for the reason
- * `components/tab-glyphs.tsx` gives.
- */
-function SendGlyph({ color, size = 17 }: { color: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 17 17">
-      <Path
-        d="M2.5 8.5h9M8 3.5l6 5-6 5"
-        stroke={color}
-        strokeWidth={1.9}
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
+      {consentSheet}
+      {turns.reportSheet}
+    </>
   );
-}
+});
+
+/** The composer's line height: chat's, so a dictated paragraph reads the same. */
+const FIELD_LINE_HEIGHT = 20;
+const FIELD_MAX_LINES = 5;
+const FIELD_BORDER = 1;
 
 function createStyles(tokens: SignetTokens) {
+  // What is left of the 44pt field once one line and the border are drawn,
+  // split above and below.
+  const fieldPaddingY =
+    (tokens.touch.button - FIELD_LINE_HEIGHT - 2 * FIELD_BORDER) / 2;
   return StyleSheet.create({
     scroll: {
-      // Takes the space the composer does not, so the composer stays pinned to
-      // the sheet's bottom edge at every content length.
+      // Takes the space the header and the composer do
+      // not, so the composer stays pinned to the sheet's bottom edge at
+      // every thread length.
       flex: 1,
     },
     scrollContent: {
-      // TODO-DESIGN: Canvas draws the sheet body at padding-x 20 (and
-      // `components.md` §9 says 18); `spacing.lg` is 16 and is the nearest step
-      // on the locked scale, matching `new-task-sheet.tsx`.
       paddingHorizontal: tokens.spacing.lg,
+      paddingTop: tokens.spacing.sm,
       paddingBottom: tokens.spacing.md,
-      // TODO-DESIGN: Canvas spaces these blocks 16 / 12 / 14 apart; one `md`
-      // gap stands in, because a per-child margin off the locked scale would be
-      // three near-identical magic numbers.
-      gap: tokens.spacing.md,
+      gap: tokens.spacing.xl,
+      // At least the room above the field, with a short thread at its
+      // bottom, on the field (#5426). The opening fills it: its crest in the
+      // middle and its rows at the bottom, in thumb reach (`ask-opening.tsx`).
+      flexGrow: 1,
+      justifyContent: "flex-end",
     },
     headerRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: tokens.spacing.sm,
-    },
-    headerGlyph: {
-      // The ✦ is a **text glyph**, explicitly exempt from the duotone icon
-      // recipe (`components.md:235`), so it is not an SVG like the others here.
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.gold.askText,
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
+      // The close X sits on the thread's right edge.
+      paddingHorizontal: tokens.spacing.lg,
+      // The buttons' height, so the title never moves when the first turn
+      // brings New conversation in beside the close.
+      minHeight: 36,
     },
     headerTitle: {
-      // Drawn 16/700. `body` is the only 16px role and carries weight 400, so
-      // the weight is lifted through the per-weight family — `fontWeight`
-      // alongside an expo-font-registered family resolves the wrong typeface on
-      // Android (`lib/theme.tsx`). Size and weight both land exactly.
+      // 16/700: `body` is the only 16px role, and the weight rides the
+      // per-weight family (`lib/theme.tsx`).
       ...typeRole(tokens.typography.role.body),
       fontFamily: fontFamilyFor(700),
-      color: tokens.color.gold.askText,
-    },
-    headerCaption: {
-      // Right-aligned where `SheetHeader` would put Cancel. s17 has no Cancel.
-      flex: 1,
-      textAlign: "right",
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-    },
-    echo: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.lg,
-      // TODO-DESIGN: Canvas draws 14 vertical; `spacing.md` is 12 and is the
-      // nearest step on the locked scale.
-      paddingVertical: tokens.spacing.md,
-    },
-    echoText: {
-      ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
     },
-    sourceNotice: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.mutedForeground,
-    },
-    suggestionRow: {
+    headerName: {
       flexDirection: "row",
-      flexWrap: "wrap",
-      // TODO-DESIGN: Canvas draws the chip gap at 7; `spacing.sm` is 8.
+      alignItems: "center",
       gap: tokens.spacing.sm,
     },
-    suggestion: {
-      justifyContent: "center",
-      // Drawn geometry, as `ask-pill.tsx` (36) already carries it; the 44pt
-      // floor is met by `hitSlop`, not by the box.
-      height: 32,
-      paddingHorizontal: tokens.spacing.md,
-      borderRadius: tokens.radius.chipLarge,
-      borderWidth: 1,
-      // Canvas draws `rgba(255,255,255,.1)`; the structural hairline token is
-      // `.08` and `components.md` §2 makes the token canonical, so the token
-      // wins over the drawing's pre-lock value.
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      // Each icon button's slop reaches 12pt past its box, so the two touch
+      // areas never overlap (`sheet-scaffold.tsx` § headerActions).
+      gap: ICON_BUTTON_HIT_SLOP * 2,
     },
-    suggestionText: {
-      // TODO-DESIGN: Canvas draws these at 13px; `caption` is 12.5 and is the
-      // nearest role. Neutral, never gold — the suggestions are chrome that
-      // opens the door, and only the answer surface speaks in Signet's gold
-      // (`components.md` §11).
+    turn: {
+      gap: tokens.spacing.sm,
+    },
+    caption: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
+    },
+    composer: {
+      paddingHorizontal: tokens.spacing.lg,
+      paddingTop: tokens.spacing.md,
+      paddingBottom: tokens.spacing["2xl"],
+      gap: tokens.spacing.sm,
     },
     composerRow: {
       flexDirection: "row",
-      alignItems: "center",
+      // A field grown to several lines keeps send at its foot, by the thumb.
+      alignItems: "flex-end",
       gap: tokens.spacing.sm,
-      paddingHorizontal: tokens.spacing.lg,
-      paddingTop: tokens.spacing.md,
-      // TODO-DESIGN: Canvas draws 34 at the bottom edge; `spacing.2xl` is 32
-      // and is the nearest step on the locked scale.
-      paddingBottom: tokens.spacing["2xl"],
+    },
+    field: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "flex-end",
+      minHeight: tokens.touch.button,
+      // A capsule at one line, the shape of the bar that opened the sheet; a
+      // rounded box as dictated lines grow it.
+      borderRadius: tokens.touch.button / 2,
+      borderWidth: FIELD_BORDER,
+      borderColor: tokens.color.border.control,
+      backgroundColor: tokens.color.surface.surface1,
+      // Centres the 32pt mic on a one-line field's midline.
+      paddingRight: (tokens.touch.button - 2 * FIELD_BORDER - 32) / 2,
+      paddingBottom: (tokens.touch.button - 2 * FIELD_BORDER - 32) / 2,
     },
     composerField: {
       flex: 1,
-      // The touch Field step (foundations.md §9), which `touch.button` carries.
-      height: tokens.touch.button,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      // TODO-DESIGN: Canvas draws padding-x 14 and the placeholder at 15.5px;
-      // `spacing.md` (12) and the 16px `body` role are the nearest steps.
-      paddingHorizontal: tokens.spacing.md,
-      ...fieldTypeRole(tokens.typography.role.body),
+      // One line at the field's 44pt, five before it scrolls.
+      maxHeight: FIELD_LINE_HEIGHT * FIELD_MAX_LINES + 2 * fieldPaddingY,
+      // Top and bottom set apart, not `paddingVertical`: iOS gives a multiline
+      // input a default top inset that only an explicit `paddingTop` replaces
+      // (`chat-composer.tsx`, the same field shape). The negative margin
+      // undoes the row's bottom padding, which is the mic's.
+      paddingTop: fieldPaddingY,
+      paddingBottom: fieldPaddingY,
+      marginBottom: -(tokens.touch.button - 2 * FIELD_BORDER - 32) / 2,
+      paddingLeft: tokens.spacing.lg,
+      paddingRight: tokens.spacing.sm,
+      ...typeRole({
+        ...tokens.typography.role.body,
+        lineHeight: FIELD_LINE_HEIGHT,
+      }),
+      includeFontPadding: false,
+      textAlignVertical: "center",
       color: tokens.color.text.foreground,
     },
     send: {
-      // Drawn 40×40, below the 44pt floor — met by `hitSlop` above rather than
-      // by growing the box, keeping the drawing honest and the target legal.
       width: 40,
       height: 40,
-      // TODO-DESIGN: Canvas draws radius 11; `navItem` is 10 and is the nearest
-      // role in the locked radius map (foundations.md § Radius) — the same
-      // deviation `app/(app)/(tabs)/tasks.tsx` carries for its header action.
-      borderRadius: tokens.radius.navItem,
+      borderRadius: 20,
       alignItems: "center",
       justifyContent: "center",
-      // House gold, fixed. Never the chapter accent on this surface.
-      backgroundColor: tokens.color.gold.house,
+      // The fill is the chapter's solid accent, set where it is drawn.
     },
     sendDisabled: {
       opacity: 0.5,

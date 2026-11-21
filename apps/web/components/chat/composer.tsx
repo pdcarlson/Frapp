@@ -3,7 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -12,14 +11,11 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from "react";
+import { EyeOff } from "lucide-react";
 import dynamic from "next/dynamic";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { EditorContent, useEditor } from "@tiptap/react";
-import type { JSONContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import Mention from "@tiptap/extension-mention";
-import { Extension } from "@tiptap/core";
 import { Button } from "@/components/ui/button";
 import { FOCUS_RING_WITHIN } from "@/components/ui/focus";
 import {
@@ -27,21 +23,32 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { AttachGlyph, ReactionGlyph, SendArrowGlyph } from "./chat-glyphs";
 import {
-  AttachGlyph,
-  ReactionGlyph,
-  SendArrowGlyph,
-} from "./chat-glyphs";
+  CHAT_FILE_LIMIT,
+  COMPOSER_BOX_CLASS,
+  COMPOSER_INPUT_CLASS,
+  COMPOSER_LABEL,
+  COMPOSER_WELL_CLASS,
+  composerCanPost,
+  notifyDispatchOutcome,
+  takeDroppedFiles,
+  type CommandFormOutcome,
+} from "./composer-shell";
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { cn } from "@/lib/utils";
 import { compactControlClassName } from "@/components/shared/table-controls";
-import { MENTION_CHIP } from "./chip";
 import {
-  useChapterRoster,
-  useMentionRoles,
-  useRequestChatUploadUrl,
-  useUploadSignedUrl,
-} from "@repo/hooks";
+  buildEditDoc,
+  chatMentionExtension,
+  chatText,
+  composerMentionPicks,
+  chatTextKit,
+  createKeymap,
+  pasteAsLines,
+  useMentionSourceRefs,
+} from "./chat-editor";
+import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { describeChatPhoto } from "@/lib/chat/photo-preview";
@@ -58,17 +65,23 @@ import {
   COLD_LOAD_MARKS,
   markColdLoad,
   markComposerFocusable,
-  noteComposerShellFocusable,
 } from "@/lib/chat/cold-load-marks";
 import {
+  ASK_COPY,
   MAX_UPLOAD_LABEL,
   acceptAttribute,
+  askMentionQuestion,
   inspectUploadFile,
   isBetaOffModule,
+  readChannelAsk,
   readPreviewUpload,
   readSignedUpload,
+  type AskAccess,
+  type MentionPick,
 } from "@repo/validation";
-import { EmojiPicker } from "./emoji-picker";
+import { EmojiPicker, preloadEmojiPicker } from "./emoji-picker";
+import { GifPickerButton } from "./gif-picker";
+import type { GifResult } from "@repo/hooks";
 import { ComposerPlusCard } from "./composer-plus-card";
 import {
   PLUS_MENU_COMMANDS,
@@ -77,11 +90,7 @@ import {
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import { QuotedMessage } from "./reply-quote";
-import {
-  createMentionSuggestion,
-  type MentionRoleEntry,
-  type MentionRosterEntry,
-} from "./mention-suggestion";
+import { SCHEDULE_COPY, ScheduleSendButton } from "./schedule-send";
 import {
   getSlashCommand,
   paletteCommandArgs,
@@ -90,262 +99,9 @@ import {
 } from "@repo/chat-core/integrations";
 import { MODULE_CATALOG } from "@repo/org-archetypes";
 
-/**
- * The composer's geometry, in one place, so the shell and the real composer
- * cannot drift apart.
- *
- * `1s` budgets **zero CLS above the composer**, and the composer is the bottom
- * of a bottom-aligned column: chat opens at the end of the timeline, so a
- * composer that changes height on arrival pushes every row above it. These four
- * strings are the whole contract — the outer box, the framed well, the editable
- * surface's height envelope, and the toolbar row — and both `ComposerShell` and
- * `Composer` are built from them rather than from hand-copied class lists.
- *
- * They are constants rather than a shared wrapper component because the real
- * composer's well also carries a focus ring and holds a reply strip and
- * attachment chips above its editor. A wrapper that absorbed all of that would
- * be the composer; a wrapper that absorbed only the outer `<div>` would leave
- * the well — the part whose padding actually sets the height — free to drift.
- */
-export const COMPOSER_BOX_CLASS = "border-t border-border p-3";
-export const COMPOSER_WELL_CLASS =
-  "rounded-md border border-input bg-surface-1 p-2 transition-colors";
-export const COMPOSER_INPUT_CLASS =
-  "min-h-[40px] max-h-40 overflow-y-auto text-base leading-[25px] focus:outline-none";
-/**
- * The toolbar row's reserved height, for the shell that has no controls to put
- * on it.
- *
- * `pointer-coarse:h-11` is not decoration and is not what `ComposerSkeleton`
- * reserved: `compactControlClassName` is `h-8 pointer-coarse:h-11` and the Send
- * button carries the same pair, so on a touch device the real row is 44px and
- * the old skeleton reserved 32px — a 12px shift directly above the composer on
- * exactly the devices least able to absorb it. `Composer` does not use this
- * constant; its row's height is intrinsic. See the comment at that row.
- */
-export const COMPOSER_TOOLBAR_CLASS = "mt-2 h-8 pointer-coarse:h-11";
-
-/** The accessible name the shell and the real editor share — see `ComposerShell`. */
-const COMPOSER_LABEL = "Message composer";
-
-/**
- * Grow a `<textarea>` to its content, the way the editor that replaces it does.
- *
- * Not cosmetic, and not optional. `COMPOSER_INPUT_CLASS` gives both surfaces the
- * same *envelope* — `min-h-[40px] max-h-40` — but a textarea does not grow
- * inside it on its own, while ProseMirror's contenteditable does. Left alone,
- * the shell stays one line tall while the member types five, and then
- * `<Composer>` mounts, renders those five lines at their real height, and
- * pushes the whole bottom-aligned timeline up — the exact shift `1s` budgets at
- * zero and this component exists to remove. `max-h-40` still caps it in CSS, so
- * past ten lines both surfaces scroll instead.
- */
-function fitToContent(node: HTMLTextAreaElement): void {
-  node.style.height = "auto";
-  node.style.height = `${node.scrollHeight}px`;
-}
-
-/**
- * The composer, before there is a channel to send to: a real `<textarea>` that
- * takes focus and takes text, and hands both to `Composer` when the channel
- * resolves.
- *
- * ## Why this exists at all
- *
- * `1s` puts **"composer shell"** in the 0ms SSR set beside the nav and the
- * channel column — "static markup in the RSC payload; no client query gates
- * it" — and budgets **composer focusable <= 400ms**. `chat-shell.tsx` gates
- * `<Composer>` on `activeChannel`, which is derived from the channel list, so
- * before #2176 nothing in the thread column could take focus until
- * `GET /v1/channels` resolved, so the budget was gated on a network round trip.
- *
- * The first-chunk read cache
- * ([`lib/chat/first-chunk-cache.ts`](../../lib/chat/first-chunk-cache.ts))
- * has since made that round trip skippable on a warm load — but it does not
- * retire this component, and the two are independent on purpose. A cold cache,
- * a first-ever visit, a wiped profile or a blocked IndexedDB all still wait on
- * the network, and the measured split says so: `composer-focusable` is the same
- * ~186ms with the cache warm or cold, because the shell never waited on the
- * channel list in the first place
- * (`spec/ui/resilience/performance-budgets.md` § Cached channel readable).
- *
- * ## Why a `<textarea>` and not an early Tiptap editor
- *
- * Because this one is focusable *before hydration*. It is ordinary markup in
- * the SSR payload, so the browser can focus it and accept keystrokes from first
- * paint — with `/chat` carrying ~830 KB of its own eager JS, that is a long way
- * ahead of the first client commit. Tiptap cannot do this: `useEditor` runs
- * `immediatelyRender: false`, so no contenteditable exists until the editor is
- * constructed on the client, and constructing one here would mean paying for
- * ProseMirror twice and then throwing the first one away.
- *
- * ## Why it is uncontrolled
- *
- * No `value` prop, deliberately. Text typed before hydration lives only in the
- * DOM node, and an uncontrolled `<textarea>` is the one shape React will not
- * reconcile against a prop it thinks is authoritative. The parent still learns
- * every keystroke through `onTextChange`, which is what survives this
- * component's own unmount — see `chat-shell.tsx`, which holds the text, not
- * this component.
- *
- * ## Why it does not submit
- *
- * There is no channel yet, so there is nothing a send could be addressed to.
- * Enter is swallowed rather than allowed through: letting it insert a newline
- * would silently convert "the member pressed send" into a stray leading blank
- * line that arrives in the editor a moment later. Shift+Enter still breaks a
- * line, which is what it does in the real composer.
- *
- * This replaces the inert `aria-hidden` `ComposerSkeleton` that #2145 added to
- * hold the box open. That component's objection to a focusable placeholder —
- * "a focusable-looking control that cannot take a message is worse than an
- * obvious placeholder" — is answered rather than overruled: this one takes the
- * message.
- */
-export function ComposerShell({
-  onTextChange,
-  onFocusChange,
-}: {
-  /** Every keystroke, so the text outlives this component's unmount. */
-  onTextChange?: (text: string) => void;
-  /** Focus entering or leaving, so the upgrade knows whether to carry focus. */
-  onFocusChange?: (focused: boolean) => void;
-}) {
-  const input = useRef<HTMLTextAreaElement | null>(null);
-  /**
-   * Whether the member has pressed Enter with nothing to send to yet.
-   *
-   * `connection-state.md` does not allow a control to swallow an activation
-   * silently — "a control that silently ignores a click is the dead control",
-   * and the reason has to be *on the control* rather than a sentence somewhere
-   * near it. The `aria-describedby` below carries it for a screen reader from
-   * the first render; this makes it visible once the member has actually asked
-   * for something this composer cannot do yet.
-   */
-  const [pressedEnter, setPressedEnter] = useState(false);
-  const hintId = useId();
-
-  useEffect(() => {
-    /*
-      Recorded on mount rather than emitted on mount, and `cold-load-marks.ts`
-      owns why: the timestamp is the honest answer to "composer focusable", but
-      whether this load ever had a composer at all is not known until `can_post`
-      arrives with the channel. The mark is emitted later, back-dated to here.
-    */
-    noteComposerShellFocusable();
-
-    /*
-      Adopt whatever happened before React was here.
-
-      This is the half that makes "focusable at first paint" worth anything.
-      The textarea is in the SSR payload, so a member can focus it and type into
-      it while the chat chunk is still parsing — but `onChange` and `onFocus`
-      are React's, and React is not attached yet, so those keystrokes and that
-      focus exist only in the DOM. Nothing downstream would ever hear about
-      them, and the text would be dropped by the upgrade it was typed to
-      survive.
-
-      Reading the node once on mount is what bridges it. It is also why this
-      component is uncontrolled: React had to leave the value alone for there to
-      be anything here to read.
-    */
-    const node = input.current;
-    if (!node) return;
-    if (node.value) {
-      onTextChange?.(node.value);
-      /*
-        Pre-hydration text can be several lines, and a textarea cannot grow
-        without JS — so it has been scrolling inside a 40px box since the member
-        typed it, and one reflow when the bundle lands is unavoidable. Doing it
-        here takes that reflow at hydration rather than deferring it to the
-        Tiptap upgrade, where it would land on top of the swap. Not a
-        `useLayoutEffect`: this component renders on the server, where React
-        warns about one, and the reflow happens either way.
-      */
-      fitToContent(node);
-    }
-    if (document.activeElement === node) onFocusChange?.(true);
-    // Mount only, deliberately: this is about the gap before hydration, and
-    // re-running it on a changed callback would re-report stale keystrokes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <div className={COMPOSER_BOX_CLASS}>
-      <div className={cn(COMPOSER_WELL_CLASS, FOCUS_RING_WITHIN)}>
-        <textarea
-          ref={input}
-          // `rows={1}` plus the shared min-height, not a rows-based height:
-          // `min-h-[40px]` is what the real editor uses, and matching it is the
-          // whole CLS argument above.
-          rows={1}
-          aria-label={COMPOSER_LABEL}
-          placeholder="Write a message"
-          // Not `composerPlaceholder(...)`: that needs a channel name, and the
-          // channel is exactly what has not arrived. The text changes once on
-          // upgrade, inside a box whose size does not.
-          className={cn(
-            COMPOSER_INPUT_CLASS,
-            "block w-full resize-none border-0 bg-transparent p-0 placeholder:text-muted-foreground",
-          )}
-          aria-describedby={hintId}
-          onChange={(event) => {
-            fitToContent(event.currentTarget);
-            onTextChange?.(event.target.value);
-          }}
-          onFocus={() => onFocusChange?.(true)}
-          onBlur={() => onFocusChange?.(false)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return;
-            /*
-              Never during IME composition. There, Enter commits the candidate
-              the member is composing — swallowing it makes Japanese, Chinese
-              and Korean input impossible to complete. `createSubmitKeymap`
-              below avoids this by being a ProseMirror extension with real
-              composition state; a DOM `keydown` is the "flaky" path its comment
-              warns about, so it has to ask.
-            */
-            if (event.nativeEvent.isComposing) return;
-            /*
-              Shift+Enter is swallowed too, which the real composer does not do.
-              A newline here would not survive the handoff intact:
-              `buildDocFromPlainText` splits the draft into one paragraph per
-              line and Tiptap's `getText` rejoins blocks with its default
-              `"\n\n"`, so every line break the shell contributes comes back
-              doubled — and doubles again on each save/restore cycle. That
-              asymmetry is older than this component and belongs to the draft
-              path generally; what is new is the shell being able to feed it, so
-              the shell stays single-line rather than widening the fix.
-            */
-            event.preventDefault();
-            setPressedEnter(true);
-          }}
-        />
-        {/*
-          The real toolbar's controls all need a channel (attach, slash
-          palette, send), so none of them can be here — a row of dead buttons is
-          the dead-end control the release gate forbids. The row is reserved
-          anyway, for the geometry, which leaves exactly the space this answer
-          needs: showing it costs no layout shift because the height was already
-          being held.
-        */}
-        <div className={cn(COMPOSER_TOOLBAR_CLASS, "flex items-center")}>
-          <p
-            id={hintId}
-            className={cn(
-              "truncate text-caption text-muted-foreground",
-              // Present from the first render either way, so `aria-describedby`
-              // always resolves and a screen reader hears why the composer
-              // cannot send before trying it.
-              !pressedEnter && "sr-only",
-            )}
-          >
-            Still opening your channels. You can keep typing.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
+/** The composer holds only the `/` that opens the slash palette (#3781). */
+function isBareSlash(trimmedText: string): boolean {
+  return trimmedText === "/";
 }
 
 /**
@@ -467,7 +223,49 @@ interface ComposerBaseProps {
   onSend: (
     body: string,
     attachments: OutboxAttachment[],
+    /**
+     * The members the `@` list put in the body (#3835), so a picked name
+     * reaches that member or nobody, never another member by name.
+     */
+    mentionPicks: MentionPick[],
   ) => void | Promise<void>;
+  /**
+   * Schedule what the composer holds to post later (#4956): the text, the
+   * staged files (#4971), and the staged reply, which the parent reads as it
+   * does for `onSend`. Resolves once it is scheduled; the composer then
+   * clears, and the parent clears its reply. A file still uploading, a slash
+   * command, or a question for Frapp is refused, keeping everything.
+   * Omitted, there is no schedule control.
+   */
+  onSchedule?: (
+    body: string,
+    attachments: OutboxAttachment[],
+    mentionPicks: MentionPick[],
+    at: Date,
+  ) => Promise<void>;
+  /**
+   * Asking Frapp from this composer (#4713), for a member with Ask: Frapp is
+   * offered in the `@` list, and a message that names `@Frapp` is asked, not
+   * sent. `send` takes the question, with the handle taken out. Nothing is
+   * posted, and the answer is drawn in the channel for the member alone
+   * (`ask-in-channel.tsx`). Null or absent for everyone else, whose `@Frapp`
+   * is ordinary text.
+   */
+  ask?: { busy: boolean; send: (question: string) => void } | null;
+  /**
+   * Whether it is not yet known that this member has Ask (the reads are in
+   * flight, or failed). A message that names `@Frapp` is then held, not
+   * posted: it may be a question meant for Frapp alone (`readChannelAsk`).
+   */
+  askUnknown?: boolean;
+  /**
+   * Send a GIF picked from the GIF button's picker as its own message
+   * (#4631). Omitted (GIFs not set up on this server, or a surface that
+   * doesn't take them), the button isn't drawn.
+   */
+  onSendGif?: (gif: GifResult) => void;
+  /** The GIF provider's name, which the picker's field shows ("Search KLIPY"). */
+  gifProvider?: string;
   /**
    * Invoked when the user picks a slash command from the palette. Returns a
    * dispatch result so the composer can toast on failure, or on a partial
@@ -495,7 +293,7 @@ interface ComposerBaseProps {
    * The command forms the **+** menu offers (#3865), each with whether the
    * member's role may use it; a row opens its form through
    * `onOpenCommandForm` with no details, as a bare command does. Omitted, the
-   * menu holds Attach a file alone.
+   * menu holds Attach a file (and GIF, with `onSendGif`) alone.
    */
   commandForms?: readonly PlusMenuForm[];
   /**
@@ -523,6 +321,13 @@ interface ComposerBaseProps {
    * typed alias still dispatches as `rush`.
    */
   recruitmentVocab?: string;
+  /**
+   * Whether this member may post in the announcements channel, from that
+   * channel's `can_post`. `false` hides `/announce` in the palette and
+   * refuses it typed out in full; the server refuses the send too (#3414).
+   * Absent reads as allowed, and the server decides.
+   */
+  canAnnounce?: boolean;
   /**
    * Status of the read behind `isModuleEnabled`. `"loading"`, `"offline"`
    * and `"error"` surface explicit states inside the slash palette instead of
@@ -574,54 +379,7 @@ interface ComposerBaseProps {
  * `replyToId` threaded back out through `onSend` would be a second copy of the
  * same fact, free to disagree with the strip the member can see.
  */
-type ComposerProps = ComposerBaseProps & ComposerReplyProps;
-
-/**
- * Submit on Enter; let Shift+Enter fall through to StarterKit's default
- * hard-break. Bound as a Tiptap extension so we get full ProseMirror context
- * (composition state, etc.) instead of a flaky DOM keydown. The extension
- * reads a ref that holds the latest submit handler, so the keymap always calls
- * the current one without re-binding the extension.
- */
-function createSubmitKeymap(sendRef: { current: () => void }) {
-  return Extension.create({
-    name: "submit-on-enter",
-    addKeyboardShortcuts() {
-      return {
-        Enter: () => {
-          sendRef.current();
-          return true;
-        },
-      };
-    },
-  });
-}
-
-/**
- * Build a Tiptap doc JSON from plain text so chars like `<`, `&`, and
- * newlines round-trip safely (Tiptap's `setContent(string)` would parse the
- * value as HTML and lose escapes / mangle reserved chars). Each line becomes
- * a paragraph; consecutive newlines yield empty paragraphs.
- */
-function buildDocFromPlainText(text: string): JSONContent {
-  // An empty draft is one empty paragraph, not an empty doc: the Placeholder
-  // extension paints "Message #name" on the first empty paragraph, so a doc
-  // with no paragraph drew a blank box (principles.md P6.5).
-  if (text.length === 0)
-    return { type: "doc", content: [{ type: "paragraph" }] };
-  const lines = text.split("\n");
-  return {
-    type: "doc",
-    content: lines.map((line) =>
-      line.length === 0
-        ? { type: "paragraph" }
-        : {
-            type: "paragraph",
-            content: [{ type: "text", text: line }],
-          },
-    ),
-  };
-}
+export type ComposerProps = ComposerBaseProps & ComposerReplyProps;
 
 /** `#` only for an actual channel — a DM's name is a person's. */
 export function composerPlaceholder(channelName: string, isDirect?: boolean) {
@@ -735,94 +493,6 @@ export async function runDispatch(
  * implemented command POSTs straight to its controller and is refused offline.
  */
 const QUEUED_COMMANDS: ReadonlySet<string> = new Set(["poll", "announce"]);
-
-/** What `onOpenCommandForm` did with a command; `null` hands it to dispatch. */
-export type CommandFormOutcome = "opened" | "refused" | null;
-
-/**
- * Toast the outcome of a slash dispatch. Shared by the two call sites (typed
- * `/command` submit and palette pick) so they cannot drift — they previously
- * held byte-identical failure branches.
- *
- * Three outcomes, not two. A `warning` on an `ok` result means the command's
- * write COMMITTED but something around it did not (a heavy command whose chat
- * card failed to post — #544). That gets a plain, non-destructive toast: styling
- * it as a failure would invite a retry, and the retry an officer actually
- * performs is re-typing the command, which mints a FRESH `client_message_id` —
- * so the server's idempotency index (#1719) does not dedupe it and a second
- * ledger row lands.
- */
-export function notifyDispatchOutcome(
-  toast: ReturnType<typeof useToast>["toast"],
-  /**
-   * What the notice is about: the typed command (`/task`), or the form's
-   * thing (`Task`) for a write from the + card, which typed no command
-   * (#3913).
-   */
-  subject: string,
-  result: DispatchResult,
-): void {
-  if (!result.ok) {
-    toast({
-      title: `${subject} failed`,
-      description: result.error ?? "Couldn't run that command.",
-      variant: "destructive",
-    });
-    return;
-  }
-  if (result.resolved) {
-    toast({
-      title: `${subject} recorded`,
-      description: result.resolved,
-      // Sticky for the same reason as the branches below: the retry removed the
-      // placeholder, and the outage that lost the original response is likely to
-      // have dropped the card's Realtime echo too — so for a moment this notice
-      // can be the only visible evidence of a real ledger write. Five seconds
-      // later the officer would see an empty channel and re-type.
-      duration: Infinity,
-    });
-    return;
-  }
-  // An UNKNOWN outcome is neither of the two above, and titling it as either is
-  // a real hazard rather than a wording nit (#1733). "failed" invites the
-  // re-typed command that double-grants; "partly succeeded" asserts a write
-  // that may never have happened, which on a `/points deduct` reads as "the
-  // fine landed" and silently loses it.
-  if (result.unconfirmed) {
-    toast({
-      title: `${subject} not confirmed`,
-      description: result.warning ?? "Couldn't confirm that command.",
-      // Sticky, like the committed-write warning below and for the same reason:
-      // an outcome nobody can reconstruct must not disappear on a 5s timer.
-      //
-      // Sticky is NOT durable. `use-toast`'s reducer is
-      // `[action.toast, ...state.toasts].slice(0, TOAST_LIMIT)` with a limit
-      // of 1, so the NEXT toast — any toast — evicts this one outright, with
-      // no dismissal and no animation. `duration: Infinity` survives time,
-      // not other toasts. The durable trace here is the `unconfirmed` row
-      // (Retry under the original key), not a `recorded` row — that status
-      // is the `card_posted: false` path (#1789), where the write is known.
-      duration: Infinity,
-    });
-    return;
-  }
-  if (result.warning) {
-    toast({
-      title: `${subject} partly succeeded`,
-      description: result.warning,
-      // Sticky (Radix skips the close timer on `Infinity`) because the
-      // committed write's durable trace is the timeline `recorded` row
-      // (#1789); this toast is the secondary notice and is still evictable
-      // by the next toast (`TOAST_LIMIT = 1`). At the default 5s an officer
-      // who looked away would only have the row — keep the toast long enough
-      // to be seen once.
-      duration: Infinity,
-    });
-  }
-}
-
-/** Files one message can carry; the mobile composer's limit too. */
-export const CHAT_FILE_LIMIT = 10;
 
 type UploadingFile = {
   key: string;
@@ -1010,6 +680,11 @@ export function Composer({
   draft,
   onChangeDraft,
   onSend,
+  onSchedule,
+  ask = null,
+  askUnknown = false,
+  onSendGif,
+  gifProvider,
   onSlashDispatch,
   onOpenCommandForm,
   commandForms,
@@ -1018,6 +693,7 @@ export function Composer({
   onTyping,
   isModuleEnabled,
   recruitmentVocab,
+  canAnnounce,
   slashCommandsStatus = "ready",
   onRetrySlashCommands,
   isOffline,
@@ -1030,27 +706,27 @@ export function Composer({
   const { toast } = useToast();
   const requestUploadUrl = useRequestChatUploadUrl();
   const uploadSignedUrl = useUploadSignedUrl();
-  const chapterRoster = useChapterRoster();
   const fileInput = useRef<HTMLInputElement | null>(null);
-  /**
-   * Live roster for `@`-mention autocomplete, read through a ref rather than
-   * closed over directly. `useEditor`'s extensions array is only evaluated
-   * once (this composer passes no deps array), so a plain closure would see
-   * whichever roster page had loaded — usually none — at first render and
-   * never again. The `suggestion.items()` callback inside
-   * `createMentionSuggestion` reads `rosterRef.current` on every keystroke
-   * instead, so it always sees the latest fetched roster.
-   */
-  const rosterRef = useRef<MentionRosterEntry[]>([]);
+  // The `@` list's roster and roles (`useMentionSourceRefs`, shared with the
+  // inline editor a message turns into on Edit).
+  const { rosterRef, rolesRef, spacedNames } = useMentionSourceRefs();
+  // Whether the `@` list offers Frapp, read on each keystroke: the editor's
+  // extensions are built once, before it is known whether this member has Ask.
+  const askRef = useRef(false);
+  // Whether a draft naming `@Frapp` may be a question (Ask, or not yet
+  // known): what the typing ping below goes by.
+  const mayAskRef = useRef(false);
+  const spacedNamesRef = useRef(spacedNames);
+  const askAccess: AskAccess = ask ? "yes" : askUnknown ? "unknown" : "no";
   useEffect(() => {
-    rosterRef.current = chapterRoster.data ?? [];
-  }, [chapterRoster.data]);
-  // The roles this member may `@`, read through a ref for the same reason.
-  const mentionRoles = useMentionRoles();
-  const rolesRef = useRef<MentionRoleEntry[]>([]);
-  useEffect(() => {
-    rolesRef.current = mentionRoles.data ?? [];
-  }, [mentionRoles.data]);
+    askRef.current = ask !== null;
+    mayAskRef.current = askAccess !== "no";
+    spacedNamesRef.current = spacedNames;
+  }, [ask, askAccess, spacedNames]);
+  // Whether Send will ask Frapp instead of posting, so the composer can say
+  // so before it happens.
+  const asksFrapp =
+    ask !== null && askMentionQuestion(draft, spacedNames) !== null;
   /**
    * Files uploaded and waiting to be claimed by the next send.
    *
@@ -1098,7 +774,7 @@ export function Composer({
   // Hoisted above `useEditor` so `onCreate` can honour it — the early return
   // that reads it next is ~400 lines down, but Tiptap builds the editor from
   // here regardless of whether anything ever renders it. See `onCreate`.
-  const resolvedCanPost = isAuditLog ? false : (canPost ?? !isReadOnly);
+  const resolvedCanPost = composerCanPost({ isAuditLog, canPost, isReadOnly });
   const sendRef = useRef<() => void>(() => {});
   /*
     The attach path, for the editor's paste handler (#2246). `editorProps` is
@@ -1125,32 +801,30 @@ export function Composer({
   const uploadsStartedRef = useRef(0);
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        // Hard break stays on Shift+Enter via StarterKit defaults.
-      }),
+      // Hard break stays on Shift+Enter via StarterKit defaults.
+      chatTextKit(),
       Placeholder.configure({
         placeholder: composerPlaceholder(channelName, isDirect),
       }),
-      Mention.configure({
-        // The same chip the timeline paints (`chip.ts`), not a second recipe.
-        // It used to be an accent tint here, which meant a handle changed
-        // colour the instant you pressed Enter — and worse, the accent tint was
-        // exactly the paint the old self bubble's fill was derived from, so the
-        // authored mention and the sent one could not both read.
-        HTMLAttributes: { class: MENTION_CHIP },
-        // Same shape as the submit keymap below: `createMentionSuggestion`
-        // only reads `rosterRef.current` later, inside `items()` callbacks
-        // invoked from keystroke events — never synchronously during render.
-        // eslint-disable-next-line react-hooks/refs -- suggestion.items() reads the ref from a keystroke callback, not render
-        suggestion: createMentionSuggestion(rosterRef, rolesRef),
-      }),
-      // Tiptap registers this shortcut while constructing the editor. The
-      // closure reads `sendRef.current` only on Enter, not during render.
+      // The same chip the timeline paints (`chip.ts`), not a second recipe.
+      // It used to be an accent tint here, which meant a handle changed
+      // colour the instant you pressed Enter. `createMentionSuggestion`
+      // only reads the refs later, inside `items()` callbacks invoked from
+      // keystroke events, never synchronously during render.
+      // eslint-disable-next-line react-hooks/refs -- read in items(), on a keystroke
+      chatMentionExtension(rosterRef, rolesRef, { askRef }),
+      // Submit on Enter; Shift+Enter falls through to StarterKit's hard
+      // break. Tiptap registers this shortcut while constructing the editor;
+      // the handler reads `sendRef.current` only on Enter, not during render.
       // eslint-disable-next-line react-hooks/refs -- Enter keymap; latest submit lives in a ref
-      createSubmitKeymap(sendRef),
+      createKeymap("submit-on-enter", {
+        current: { Enter: () => sendRef.current() },
+      }),
     ],
-    content: buildDocFromPlainText(draft),
+    content: buildEditDoc(draft),
     editorProps: {
+      clipboardTextParser: (text, _context, _plain, view) =>
+        pasteAsLines(text, view),
       attributes: {
         // `prose prose-sm` used to lead this list and did nothing at all —
         // `@tailwindcss/typography` is not installed in this app or in the
@@ -1174,9 +848,18 @@ export function Composer({
       },
     },
     onUpdate({ editor }) {
-      const text = editor.getText();
+      const text = chatText(editor);
       onChangeDraft(text);
-      onTyping();
+      // Held for the channel, so a remount from the text draft keeps them.
+      composerMentionPicks(channelId, editor);
+      // An empty box is nobody typing: the clear after a send, or the last
+      // character erased. Announcing it showed "is typing…" to everyone else
+      // for four seconds under the message that had just landed. Nor is a
+      // question for Frapp, which nobody else will see arrive (#4713).
+      const forFrapp =
+        mayAskRef.current &&
+        askMentionQuestion(text, spacedNamesRef.current) !== null;
+      if (text.trim().length > 0 && !forFrapp) onTyping();
       const parsed = parseSlashInput(text);
       const opensPalette =
         parsed.isSlash &&
@@ -1260,9 +943,9 @@ export function Composer({
   // Keep the editor in sync if the draft is restored from Dexie after mount.
   useEffect(() => {
     if (!editor) return;
-    const current = editor.getText();
+    const current = chatText(editor);
     if (current === draft) return;
-    editor.commands.setContent(buildDocFromPlainText(draft), {
+    editor.commands.setContent(buildEditDoc(draft), {
       emitUpdate: false,
     });
   }, [draft, editor]);
@@ -1355,6 +1038,15 @@ export function Composer({
         isModuleEnabled,
       );
       if (moduleRefusal) return moduleRefusal;
+      // The palette hides `/announce` from a member who can't post in the
+      // announcements channel; this is the same gate for the typed path.
+      if (command.name === "announce" && canAnnounce === false) {
+        return {
+          title: "You can't post announcements",
+          description:
+            "Only the people your chapter lets post in the announcements channel can send one. Your text is still here.",
+        };
+      }
       // A slash command posts a card, which has nowhere to hang a file.
       if (pending.length > 0) {
         return {
@@ -1373,12 +1065,21 @@ export function Composer({
       }
       return null;
     },
-    [isOffline, pending.length, replyTo, slashCommandsStatus, isModuleEnabled],
+    [
+      isOffline,
+      pending.length,
+      replyTo,
+      slashCommandsStatus,
+      isModuleEnabled,
+      canAnnounce,
+    ],
   );
 
   // The + card (#3983): open or closed, and the form it shows (`null` is
   // the menu). Reset by the composer's per-channel key, so a channel switch
   // closes it; the drafts it shows live with the host, per channel.
+  // The GIF picker's popover, held here so the + card's GIF row can open it.
+  const [gifOpen, setGifOpen] = useState(false);
   const [plusCard, setPlusCard] = useState<{
     open: boolean;
     view: PlusMenuCommand | null;
@@ -1398,7 +1099,14 @@ export function Composer({
   );
   const submit = useCallback(() => {
     if (!editor) return;
-    const text = editor.getText().trim();
+    const typed = chatText(editor).trim();
+    // A lone `/` is the palette's trigger, never a message body (#3781). The
+    // palette takes it back when the member closes it, but one can still
+    // reach here without the palette open (a draft restored as `/`), so it
+    // is dropped: with a file staged the file goes alone, and with nothing
+    // else Enter does nothing, as the muted Send button says. Only the bare
+    // slash: `/ shrug` has no command either, and is text.
+    const text = isBareSlash(typed) ? "" : typed;
     // An attachment-only message is a real message. Returning early on empty
     // text would have been correct while the filename WAS the text; now that a
     // file travels beside the body it would silently swallow the send.
@@ -1436,6 +1144,29 @@ export function Composer({
         return;
       }
     }
+    // A message that names `@Frapp` is a question for Frapp, from a member
+    // with Ask (#4713). It is never posted: only the asker sees it and its
+    // answer. Each refusal keeps the member's text, and says what to change.
+    // While it is not yet known whether they have Ask, it is held the same
+    // way: posting it could put the question in front of the channel.
+    const reading = readChannelAsk({
+      text,
+      names: spacedNames,
+      access: askAccess,
+      attachments: pending.length,
+      busy: ask?.busy ?? false,
+    });
+    if (reading.kind === "refused") {
+      toast({ title: reading.reason });
+      return;
+    }
+    if (reading.kind === "ask" && ask) {
+      editor.commands.clearContent(true);
+      // A staged reply was context for a message that is not being sent.
+      if (replyTo) onCancelReply?.();
+      ask.send(reading.question);
+      return;
+    }
     /*
       Cleared optimistically, and put back whole if the send is refused (#1728).
 
@@ -1471,7 +1202,8 @@ export function Composer({
     const sentPending = pending;
     const sentReplyId = replyTo?.id ?? null;
     const sentUploads = uploadsStartedRef.current;
-    const sent = (async () => onSend(text, sentPending))();
+    const sentPicks = composerMentionPicks(channelId, editor);
+    const sent = (async () => onSend(text, sentPending, sentPicks))();
     editor.commands.clearContent(true);
     setPending([]);
     void sent.catch((error: unknown) => {
@@ -1498,7 +1230,7 @@ export function Composer({
       // the draft is reported by hand instead, which also keeps the
       // draft-sync effect above from treating it as a stale restore.
       editor.commands.setContent(sentDoc, { emitUpdate: false });
-      onChangeDraft(editor.getText());
+      onChangeDraft(chatText(editor));
       setPending(sentPending);
       if (sentReplyId) onRestoreReply?.(sentReplyId);
       toast({
@@ -1509,7 +1241,11 @@ export function Composer({
       });
     });
   }, [
+    ask,
+    askAccess,
+    channelId,
     editor,
+    onCancelReply,
     onChangeDraft,
     onRestoreReply,
     onSend,
@@ -1520,12 +1256,110 @@ export function Composer({
     replyTo,
     showPlusForm,
     slashRefusal,
+    spacedNames,
     toast,
     uploading.length,
   ]);
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
+  /**
+   * Schedules what is typed (#4956). Rejects, keeping the text, when it can't
+   * be scheduled; the custom-time dialog stays open on a rejection.
+   */
+  const schedulingRef = useRef(false);
+  const schedule = useCallback(
+    async (at: Date) => {
+      if (!editor || !onSchedule) return;
+      // A second schedule while the first is out is refused, not dropped:
+      // resolving would close the custom-time dialog as if it had worked.
+      if (schedulingRef.current) {
+        toast({ title: SCHEDULE_COPY.busy });
+        throw new Error(SCHEDULE_COPY.busy);
+      }
+      const typed = chatText(editor).trim();
+      const parsed = parseSlashInput(typed);
+      const command =
+        parsed.isSlash && parsed.command
+          ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
+          : null;
+      const text = isBareSlash(typed) ? "" : typed;
+      const refusal = isOffline
+        ? SCHEDULE_COPY.offline
+        : uploading.length > 0
+          ? "Wait for your files to finish uploading."
+          : command?.implemented
+            ? "Commands can't be scheduled. Send them now."
+            : // A question for Frapp is never posted (#4713); while it isn't
+              // known whether this member has Ask, it is held the same way.
+              askAccess !== "no" &&
+                askMentionQuestion(text, spacedNames) !== null
+              ? SCHEDULE_COPY.askFrapp
+              : text.length === 0 && pending.length === 0
+                ? SCHEDULE_COPY.empty
+                : null;
+      if (refusal) {
+        toast({ title: refusal });
+        throw new Error(refusal);
+      }
+      const picks = composerMentionPicks(channelId, editor);
+      // Cleared before the request, as a send is, so a second click finds
+      // nothing to schedule and typing during the request isn't wiped by it.
+      // Put back if it fails and the composer is still empty.
+      // The files go back with the text, and only into a composer the
+      // member hasn't staged anything new in since, as a refused send's do.
+      const sentDoc = editor.getJSON();
+      const sentPending = pending;
+      const sentUploads = uploadsStartedRef.current;
+      schedulingRef.current = true;
+      editor.commands.clearContent(true);
+      onChangeDraft("");
+      setPending([]);
+      try {
+        await onSchedule(text, sentPending, picks, at);
+      } catch (error) {
+        // A file started since would land beside the restored ones, over
+        // the cap the composer counted against an empty tray.
+        // All or nothing, as a refused send: otherwise the message is gone,
+        // and the toast says so.
+        const staged = stagedRef.current;
+        const untouched =
+          !editor.isDestroyed &&
+          editor.isEmpty &&
+          (staged.pending.length === 0 || staged.pending === sentPending) &&
+          uploadsStartedRef.current === sentUploads;
+        if (untouched) {
+          editor.commands.setContent(sentDoc, { emitUpdate: false });
+          onChangeDraft(chatText(editor));
+          setPending(sentPending);
+        }
+        toast({
+          title: SCHEDULE_COPY.failed,
+          description: untouched
+            ? errorCopy(error)
+            : SCHEDULE_COPY.notPutBack(errorCopy(error), "composer"),
+          variant: "destructive",
+        });
+        throw error;
+      } finally {
+        schedulingRef.current = false;
+      }
+      toast({ title: SCHEDULE_COPY.scheduled(at) });
+    },
+    [
+      askAccess,
+      channelId,
+      editor,
+      isOffline,
+      onChangeDraft,
+      onSchedule,
+      pending,
+      recruitmentVocab,
+      spacedNames,
+      toast,
+      uploading.length,
+    ],
+  );
   useLayoutEffect(() => {
     stagedRef.current = { pending, replyId: replyTo?.id ?? null };
   }, [pending, replyTo]);
@@ -1657,7 +1491,12 @@ export function Composer({
   const openPlusMenuForm = useCallback(
     (name: PlusMenuCommand) => {
       const command = getSlashCommand(name);
-      if (!command) return;
+      // A sign-up sheet (#3926) has no slash command and nothing to check
+      // first: its form just opens.
+      if (!command) {
+        showPlusForm(name);
+        return;
+      }
       if (onOpenCommandForm?.(command, "") === "opened") showPlusForm(name);
     },
     [onOpenCommandForm, showPlusForm],
@@ -1717,10 +1556,15 @@ export function Composer({
   useLayoutEffect(() => {
     if (!dropAttachRef || !resolvedCanPost) return;
     dropAttachRef.current = attachFiles;
+    // Files dropped on this channel while this code was loading (#5050),
+    // held outside React: attached as from any other callback, not in the
+    // effect's own pass.
+    const dropped = takeDroppedFiles(channelId);
+    if (dropped.length > 0) queueMicrotask(() => attachFiles(dropped));
     return () => {
       if (dropAttachRef.current === attachFiles) dropAttachRef.current = null;
     };
-  }, [attachFiles, dropAttachRef, resolvedCanPost]);
+  }, [attachFiles, channelId, dropAttachRef, resolvedCanPost]);
   const handleAttach = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files ?? []);
@@ -1843,7 +1687,7 @@ export function Composer({
         toast({ ...refusal, variant: "destructive" });
         return;
       }
-      const text = editor?.getText() ?? "";
+      const text = editor ? chatText(editor) : "";
       const parsed = parseSlashInput(text);
       const typed = parsed.command
         ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
@@ -1908,18 +1752,20 @@ export function Composer({
   // above, which needs it too.)
   if (!resolvedCanPost) {
     return (
-      <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
-        {isAuditLog ? (
-          <>{AUDIT_LOG_COMPOSER_NOTE}</>
-        ) : isReadOnly ? (
-          <>This channel is read-only for your role.</>
-        ) : (
-          <>
-            Alumni can read this channel but not post. Alumni may post in{" "}
-            <code className="font-mono">#alumni</code> and direct messages.
-          </>
-        )}
-      </p>
+      <div className="flex items-center gap-3 border-t border-border px-4 py-3">
+        <p className="min-w-0 flex-1 text-caption text-muted-foreground">
+          {isAuditLog ? (
+            <>{AUDIT_LOG_COMPOSER_NOTE}</>
+          ) : isReadOnly ? (
+            <>This channel is read-only for your role.</>
+          ) : (
+            <>
+              Alumni can read this channel but not post. Alumni may post in{" "}
+              <code className="font-mono">#alumni</code> and direct messages.
+            </>
+          )}
+        </p>
+      </div>
     );
   }
 
@@ -2023,7 +1869,7 @@ export function Composer({
           overflow every touch target on it. The constant reserves what this row
           *comes out as*; it does not set it.
         */}
-        <div className="mt-2 flex items-center justify-between gap-2">
+        <div className="@container mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
             {/*
               One + for a file and every command's form (#3865, layout A),
@@ -2042,6 +1888,13 @@ export function Composer({
               }
               view={plusCard.view}
               onAttach={() => fileInput.current?.click()}
+              // After the card has closed, so the picker's popover doesn't
+              // open under the card's own dismissal.
+              onGif={
+                onSendGif
+                  ? () => setTimeout(() => setGifOpen(true), 0)
+                  : undefined
+              }
               onPick={openPlusMenuForm}
               onBack={plusCardControls.back}
               form={
@@ -2068,6 +1921,8 @@ export function Composer({
                   size="icon"
                   className={compactControlClassName}
                   aria-label="Open emoji picker"
+                  onPointerEnter={preloadEmojiPicker}
+                  onFocus={preloadEmojiPicker}
                 >
                   <ReactionGlyph className="h-5 w-5" />
                 </Button>
@@ -2076,8 +1931,45 @@ export function Composer({
                 <EmojiPicker onPick={insertEmoji} />
               </PopoverContent>
             </Popover>
+            {onSendGif ? (
+              <GifPickerButton
+                provider={gifProvider ?? ""}
+                onPick={onSendGif}
+                open={gifOpen}
+                onOpenChange={setGifOpen}
+              />
+            ) : null}
             <ComposerHelp />
           </div>
+          {/*
+            What Send will do while the draft names `@Frapp` (#4713), said
+            before it does it. On the row's own line between the controls and
+            Send, so it arrives and leaves without moving anything. Where the
+            row is too narrow for the sentence (a phone's width, or a chat
+            column squeezed by a thread beside it) it is the private mark and
+            two words, the mark the answer itself will carry; a sentence cut
+            to "Only you will…" told the member nothing. The row measures
+            itself (`@container`), since the window's width says little about
+            the composer's. A screen reader always gets the sentence.
+          */}
+          {asksFrapp ? (
+            <p
+              role="status"
+              data-ask-hint=""
+              className="flex min-w-0 flex-1 items-center justify-end gap-1 text-caption text-muted-foreground"
+            >
+              <EyeOff
+                className="h-3 w-3 shrink-0 @xl:hidden"
+                aria-hidden="true"
+              />
+              <span className="truncate @xl:hidden" aria-hidden="true">
+                {ASK_COPY.only_you_short}
+              </span>
+              <span className="sr-only @xl:not-sr-only @xl:truncate">
+                {ASK_COPY.only_you_hint}
+              </span>
+            </p>
+          ) : null}
           {/*
             A round arrow, the mobile composer's send (principles.md P6.5):
             one glyph for one action on both apps. 32px to a mouse and 44px to
@@ -2086,23 +1978,41 @@ export function Composer({
             something to send, muted when there isn't, so the button says
             whether Enter will do anything.
           */}
-          <Button
-            type="button"
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
-            onClick={submit}
-            aria-label="Send message"
-            title="Send (Enter)"
-            /* An attached file is enough to send: an empty editor with a staged
-               attachment is a real message, and `submit` accepts it. */
-            disabled={
-              !editor ||
-              uploading.length > 0 ||
-              (editor.isEmpty && pending.length === 0)
-            }
-          >
-            <SendArrowGlyph className="h-4 w-4" />
-          </Button>
+          {/* Send and its schedule chevron stay together at the row's end,
+              as Slack draws its split send button (#4956). */}
+          <div className="flex shrink-0 items-center">
+            <Button
+              type="button"
+              size="icon"
+              className="h-8 w-8 shrink-0 rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
+              onClick={submit}
+              aria-label="Send message"
+              title="Send (Enter)"
+              /* An attached file is enough to send: an empty editor with a staged
+               attachment is a real message, and `submit` accepts it. A lone
+               `/` is not, so it reads as empty (#3781). */
+              disabled={
+                !editor ||
+                uploading.length > 0 ||
+                ((editor.isEmpty || isBareSlash(chatText(editor).trim())) &&
+                  pending.length === 0)
+              }
+            >
+              <SendArrowGlyph className="h-4 w-4" />
+            </Button>
+            {onSchedule ? (
+              <ScheduleSendButton
+                // As Send's: a staged file alone is a message to schedule.
+                disabled={
+                  !editor ||
+                  uploading.length > 0 ||
+                  ((editor.isEmpty || isBareSlash(chatText(editor).trim())) &&
+                    pending.length === 0)
+                }
+                onSchedule={schedule}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
       {paletteMounted ? (
@@ -2112,16 +2022,22 @@ export function Composer({
           onQueryChange={(query) => setPalette((prev) => ({ ...prev, query }))}
           isModuleEnabled={isModuleEnabled}
           recruitmentVocab={recruitmentVocab}
+          canAnnounce={canAnnounce}
           status={slashCommandsStatus}
           onRetry={onRetrySlashCommands}
           onSelect={onPaletteSelect}
-          onOpenChange={(open) =>
+          onOpenChange={(open) => {
             setPalette((prev) => ({
               ...prev,
               open,
               query: open ? prev.query : "",
-            }))
-          }
+            }));
+            // Backing out of the palette takes back the `/` that opened it
+            // (#3781). Anything more in the box is the member's, and stays.
+            if (!open && editor && isBareSlash(chatText(editor).trim())) {
+              editor.commands.clearContent(true);
+            }
+          }}
         />
       ) : null}
     </div>

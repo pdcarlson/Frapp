@@ -15,7 +15,7 @@ import {
   useStudySessions,
 } from "@repo/hooks";
 import Link from "next/link";
-import { can } from "@repo/validation";
+import { can, studyZoneRulesLine } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -44,6 +44,7 @@ import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
+import { toastFailure } from "@/lib/failure-toast";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import {
@@ -185,6 +186,15 @@ export function StudyPage() {
 
   const geofences = useMemo(
     () => asArray<Geofence>(geofencesQuery.data).filter((g) => g.is_active),
+    [geofencesQuery.data],
+  );
+  // Every zone by id, retired ones too: a session's row is titled with the
+  // zone it was in, as the phone's row is, even after the zone is turned off.
+  const zoneNames = useMemo(
+    () =>
+      new Map(
+        asArray<Geofence>(geofencesQuery.data).map((g) => [g.id, g.name]),
+      ),
     [geofencesQuery.data],
   );
   const sessions = useMemo(
@@ -437,6 +447,11 @@ export function StudyPage() {
     return () => window.removeEventListener("pagehide", handleUnload);
   }, [activeSession, stopSession]);
 
+  const startRef = useRef(handleStart);
+  useEffect(() => {
+    startRef.current = handleStart;
+  });
+
   async function handleStart() {
     const zoneId = selectedGeofenceId || geofences[0]?.id || "";
     if (!zoneId) {
@@ -471,13 +486,13 @@ export function StudyPage() {
           "Heartbeats fire every five minutes. Keep this tab open. Closing it ends the session.",
       });
     } catch (error) {
-      toast({
+      toastFailure({
         title: "Couldn't start study session",
-        description: getErrorMessage(
-          error,
-          "Allow location access and try again.",
-        ),
-        variant: "destructive",
+        error,
+        fallback: "Allow location access and try again.",
+        // The latest render's Start, so a zone picked since the failure is
+        // the one Try again starts.
+        retry: () => startRef.current(),
       });
     }
   }
@@ -611,7 +626,7 @@ export function StudyPage() {
             </h2>
             <p className="text-caption text-muted-foreground">
               {activeGeofence
-                ? `${activeGeofence.points_per_interval} pt every ${activeGeofence.minutes_per_point} min (min ${activeGeofence.min_session_minutes} min).`
+                ? studyZoneRulesLine(activeGeofence)
                 : "Live session in progress."}
             </p>
           </div>
@@ -705,7 +720,10 @@ export function StudyPage() {
             <InlineNote>
               No study zones yet.{" "}
               {canManageZones ? (
-                <Link href="/geofences" className={inlineNoteActionClassName}>
+                <Link
+                  href="/settings?tab=geofences"
+                  className={inlineNoteActionClassName}
+                >
                   Add a study zone
                 </Link>
               ) : (
@@ -792,9 +810,14 @@ export function StudyPage() {
                   key={session.id}
                   className="flex min-h-11 flex-col gap-1 py-2 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-3"
                 >
+                  {/*
+                    Where, then when, then how long, as the phone's row reads
+                    (2026-11-19): the zone is what a member remembers a
+                    session by.
+                  */}
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold tabular-nums">
-                      {formatMinutesRounded(session.total_foreground_minutes)}
+                    <p className="truncate text-sm font-semibold">
+                      {zoneNames.get(session.geofence_id) ?? "Study session"}
                     </p>
                     {when ? (
                       <p className="text-caption text-muted-foreground">
@@ -803,6 +826,9 @@ export function StudyPage() {
                     ) : null}
                   </div>
                   <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold tabular-nums">
+                      {formatMinutesRounded(session.total_foreground_minutes)}
+                    </span>
                     <Badge variant={studySessionStatusKind(session.status)}>
                       {studySessionStatusLabel(session.status)}
                     </Badge>

@@ -1,53 +1,57 @@
 "use client";
 
+import { pausedRead } from "@/components/shared/async-states";
+import Link from "next/link";
 import { Check } from "lucide-react";
 import { EventsGlyph, LocationGlyph } from "../chat-glyphs";
 import {
   countCheckedIn,
+  eventCardRequiresViewer,
+  selectOwnAttendance,
   useAttendance,
+  useCurrentChapter,
+  useEvent,
+  useEventCardExcuse,
+  useMyAttendance,
   useMyPermissions,
   useNow,
+  useRequiredOfViewer,
 } from "@repo/hooks";
 import { EYEBROW, MESSAGE_CARD } from "../chip";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { readEventPayload } from "@repo/chat-core/cards";
-import { can, checkInWindowBounds } from "@repo/validation";
-import { parseInstant } from "@repo/formatting";
+import {
+  can,
+  CHECK_IN_MODULE_OFF_LINE,
+  checkInOpenAt,
+  isModuleEnabled,
+} from "@repo/validation";
+import {
+  formatEventWindow,
+  formatPointsChip,
+  parseInstant,
+} from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { QUIET_LINK } from "@/components/ui/quiet-link";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useSelfCheckIn } from "@/lib/hooks/use-self-check-in";
+import { eventDeepLink } from "@/lib/events/event-links";
+import {
+  checkInZoneState,
+  myCheckInView,
+  ZONE_CHECK_IN_LINE,
+} from "@/components/events/my-check-in";
 
 interface EventCardProps {
   message: ChatMessage;
   /** False while the optimistic chat row is not yet server-acked. */
   isConfirmed: boolean;
-}
-
-
-function formatRange(startIso: string, endIso: string): string {
-  const start = parseInstant(startIso);
-  if (!start) return startIso;
-  const date = start.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-  const startTime = start.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  const end = parseInstant(endIso);
-  if (!end) return `${date}, ${startTime}`;
-  const endTime = end.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${date}, ${startTime}–${endTime}`;
 }
 
 /**
@@ -61,6 +65,21 @@ function formatRange(startIso: string, endIso: string): string {
  * fires the existing check-in endpoint (the server enforces the window, role
  * gate, and one-per-member uniqueness; the gating here is UX-only). The
  * request and its toasts are `useSelfCheckIn`'s, shared with the event sheet.
+ *
+ * While check-in is open the card reads the viewer's own row and the event,
+ * as the phone's card does (#4136): Check in reads "Checking in…" while it
+ * runs, then a disabled "Checked in" (or the officer's mark), and an event
+ * that checks location says to check in from the app, and one whose check-in
+ * needs an officer's code says to scan it, the event sheet's words
+ * (`myCheckInView`, shared with the sheet). With Events turned off for
+ * the chapter it offers neither control and says why.
+ *
+ * Can't make it (#4660): a member the event requires, by the card's own role
+ * fields (`useEventCardExcuse`), gets a quiet underlined Can't make it? that opens the
+ * event's sheet with the excuse line open (`/events?event=<id>&excuse=1`), as
+ * a calendar invite in Gmail or Slack carries its RSVP on the message. Once
+ * they've sent one, the card says where it stands instead. Nobody else sees
+ * either, and only those cards read anything for it.
  */
 export function EventCard({ message, isConfirmed }: EventCardProps) {
   const payload = readEventPayload(message);
@@ -86,6 +105,25 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   const eventId = payload?.event_id ?? "";
   const { data: attendance } = useAttendance(canViewAttendance ? eventId : "");
   const now = useNow();
+  // One rule for the Mandatory badge and the excuse offer (#4132).
+  const requiredOf = useRequiredOfViewer();
+  const excuse = useEventCardExcuse(payload, new Date(now), requiredOf);
+  const chapterQuery = useCurrentChapter();
+  const eventsOff =
+    chapterQuery.data !== undefined &&
+    !isModuleEnabled(chapterQuery.data?.enabled_modules, "events");
+  // Only while check-in is open, the one moment they matter, so a channel of
+  // past event cards reads nothing for them.
+  const start = parseInstant(payload?.start_time);
+  const end = parseInstant(payload?.end_time);
+  const windowOpen =
+    !!payload &&
+    !!start &&
+    !!end &&
+    checkInOpenAt(start, end, payload.check_in_opens_minutes, now);
+  const liveId = windowOpen && !eventsOff ? eventId : "";
+  const mine = useMyAttendance(liveId);
+  const eventQuery = useEvent(liveId);
 
   if (!payload) {
     return (
@@ -96,18 +134,44 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   }
 
   const checkedIn = countCheckedIn(attendance);
-  const start = parseInstant(payload.start_time);
-  const end = parseInstant(payload.end_time);
-  // The server's window (`spec/behavior/events.md` § Check-In): the event's
-  // lead before the start to the grace after the end.
-  const bounds =
-    start && end
-      ? checkInWindowBounds(start, end, payload.check_in_opens_minutes)
+  const checkInFields = eventQuery.data;
+  // The server's window (`spec/behavior/events.md` § Check-In), above: the
+  // event's lead before the start to the grace after the end. Inside it, the
+  // sheet's rule for what the viewer's own check-in says.
+  const own = windowOpen
+    ? myCheckInView({
+        own: selectOwnAttendance(mine.data),
+        justCheckedIn: checkIn.checkedInEventId === payload.event_id,
+        ownLoading: mine.isPending && !pausedRead(mine),
+        start: payload.start_time,
+        end: payload.end_time,
+        opensMinutes: payload.check_in_opens_minutes,
+        // Until the event reads, a zone (or a live officer's screen, which
+        // needs the code) is unknown; offering Check in then is a sure
+        // refusal, so the card waits. A failed read
+        // stops waiting, and the server's answer explains itself.
+        zone: checkInZoneState(
+          checkInFields?.check_in_zone,
+          checkInFields?.check_in_needs_code,
+        ),
+        now: new Date(now),
+      })
+    : null;
+  const zoneUnknown =
+    windowOpen && eventQuery.data === undefined && !eventQuery.isError;
+  const offerCheckIn =
+    !eventsOff && own?.kind === "open" && own.zone === "none" && !zoneUnknown;
+  const zoneLine =
+    !eventsOff && own?.kind === "open" && own.zone !== "none"
+      ? ZONE_CHECK_IN_LINE[own.zone]
       : null;
-  const windowOpen =
-    !!bounds &&
-    now >= bounds.opensAt.getTime() &&
-    now <= bounds.closesAt.getTime();
+  const checkedInDone = !eventsOff && own?.kind === "checked-in";
+  const markedLine = !eventsOff && own?.kind === "marked" ? own.label : null;
+  // An approved excuse writes the EXCUSED row, so "Marked excused" already
+  // says it; the excuse's own note would repeat it (the phone's rule).
+  const markedExcused =
+    markedLine !== null && selectOwnAttendance(mine.data)?.status === "EXCUSED";
+  const offerExcuse = !eventsOff && excuse.kind === "offer";
   const actionsDisabled = !isConfirmed || checkIn.isPending;
 
   return (
@@ -121,15 +185,21 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
         >
           <EventsGlyph className="h-4 w-4" /> Event
         </div>
-        {payload.is_mandatory ? (
-          // A status, so the danger badge, never the accent (components.md §5),
-          // as the Events list and detail sheet draw it.
-          <Badge variant="destructive">Mandatory</Badge>
+        {eventCardRequiresViewer(payload, requiredOf) ? (
+          // Required of this viewer, in the hairline kind, as the Events list
+          // and the phone draw it (#3822, #4132).
+          <Badge variant="outline">Mandatory</Badge>
         ) : null}
       </div>
       <p className="mt-2 text-base font-bold">{payload.name}</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground">
-        <span>{formatRange(payload.start_time, payload.end_time)}</span>
+        <span>
+          {formatEventWindow(
+            payload.start_time,
+            payload.end_time,
+            new Date(now),
+          ) ?? payload.start_time}
+        </span>
         {payload.location ? (
           <>
             <span aria-hidden="true">·</span>
@@ -140,7 +210,9 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           </>
         ) : null}
         {payload.point_value ? (
-          <Badge variant="outline">+{payload.point_value} pts</Badge>
+          <Badge variant="outline">
+            {formatPointsChip(payload.point_value)}
+          </Badge>
         ) : null}
       </div>
       {canViewAttendance && checkedIn !== null ? (
@@ -148,27 +220,69 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           {checkedIn} checked in
         </p>
       ) : null}
-      {windowOpen ? (
+      {offerCheckIn || checkedInDone || offerExcuse ? (
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            {...gate.controlProps(actionsDisabled)}
-            onClick={() => void checkIn.run(payload.event_id, payload.point_value)}
-          >
-            <Check className="h-4 w-4" />
-            Check in
-          </Button>
+          {offerCheckIn ? (
+            <Button
+              size="sm"
+              {...gate.controlProps(actionsDisabled)}
+              onClick={() =>
+                void checkIn.run(payload.event_id, payload.point_value)
+              }
+            >
+              <Check className="h-4 w-4" aria-hidden="true" />
+              {checkIn.isPending ? "Checking in…" : "Check in"}
+            </Button>
+          ) : null}
+          {checkedInDone ? (
+            // Done, not gone: the place the member just pressed keeps saying
+            // so, as the phone's card does.
+            <Button size="sm" variant="secondary" disabled>
+              <Check className="h-4 w-4" aria-hidden="true" />
+              Checked in
+            </Button>
+          ) : null}
+          {offerExcuse ? (
+            // A quiet underlined line, not a second button: declining reads
+            // quieter than checking in (#4933).
+            <Link
+              href={eventDeepLink(payload.event_id, { excuse: true })}
+              className={cn(QUIET_LINK, "self-center")}
+            >
+              Can&apos;t make it?
+            </Link>
+          ) : null}
           {/*
             Scoped to the open check-in window, like the button it explains — a
             timeline of past events would otherwise repeat one chapter-wide
             sentence under every event card.
           */}
-          <SubscriptionNotice
-            gate={gate}
-            feature="event check-in"
-            className="mb-0 w-full"
-          />
+          {offerCheckIn ? (
+            <SubscriptionNotice
+              gate={gate}
+              feature="event check-in"
+              className="mb-0 w-full"
+            />
+          ) : null}
         </div>
+      ) : null}
+      {(markedLine ?? zoneLine) ? (
+        <p className="mt-2 text-caption text-muted-foreground">
+          {markedLine ?? zoneLine}
+        </p>
+      ) : null}
+      {/* Only while check-in is open, as on the phone: the line is about
+          check-in, and a channel of upcoming cards would repeat it under
+          each one. */}
+      {eventsOff && windowOpen ? (
+        <p className="mt-2 text-caption text-muted-foreground">
+          {CHECK_IN_MODULE_OFF_LINE}
+        </p>
+      ) : null}
+      {excuse.kind === "sent" && !markedExcused ? (
+        <p className="mt-2 text-caption text-muted-foreground">
+          {excuse.title}
+        </p>
       ) : null}
     </Card>
   );

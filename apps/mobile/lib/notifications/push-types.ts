@@ -23,6 +23,13 @@
  * the raw APNs/FCM one.
  */
 
+/** `setNotificationCategoryAsync`'s action input, narrowed to what we set. */
+export interface PushCategoryAction {
+  identifier: string;
+  buttonTitle: string;
+  options: { opensAppToForeground: boolean; isDestructive?: boolean };
+}
+
 /** `PermissionResponse` from `expo-modules-core`, narrowed to what we read. */
 export interface PushPermissionStatus {
   granted: boolean;
@@ -40,7 +47,7 @@ export interface PushPermissionStatus {
  * costs nothing and stops a `data.target.screen` that would compile and be
  * `undefined` at runtime.
  */
-export interface PushNotificationContent {
+interface PushNotificationContent {
   title: string | null;
   body: string | null;
   data: unknown;
@@ -70,7 +77,7 @@ export interface PushSubscription {
  * is the whole thing this file exists to avoid. `AndroidImportance.DEFAULT` is
  * `5` and `HIGH` is `6`; `push.ts` names them at the call site.
  */
-export interface PushChannelInput {
+interface PushChannelInput {
   name: string;
   importance: number;
   sound?: string | null;
@@ -83,11 +90,11 @@ export interface PushChannelInput {
  * numeric `AndroidImportance` value as on `PushChannelInput`; a channel the
  * member switched off in the OS settings reads as `NONE`, which is `2`.
  */
-export interface PushChannel {
+interface PushChannel {
   importance: number;
 }
 
-export interface PushScheduleRequest {
+interface PushScheduleRequest {
   content: {
     title: string;
     body?: string;
@@ -135,6 +142,14 @@ export interface NotificationsModule {
   /** What is still in the tray, local and remote alike. */
   getPresentedNotificationsAsync(): Promise<PresentedNotification[]>;
   setNotificationHandler(handler: unknown): void;
+  /**
+   * Registers a category's action buttons (#4686). Local, needs no
+   * `projectId`; the push names the category in its `categoryId`.
+   */
+  setNotificationCategoryAsync(
+    identifier: string,
+    actions: PushCategoryAction[],
+  ): Promise<unknown>;
   /** Local, like the badge itself — never requires the EAS `projectId`. */
   setBadgeCountAsync(count: number): Promise<boolean>;
 }

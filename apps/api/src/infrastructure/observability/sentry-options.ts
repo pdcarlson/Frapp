@@ -27,6 +27,17 @@ export const SENTRY_HTTP_INTEGRATION_OPTIONS = {
   ignoreRequestBody: () => true,
 };
 
+/** Hosts whose request paths carry a credential. */
+const SECRET_PATH_HOSTS: ReadonlySet<string> = new Set(['api.klipy.com']);
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Fetch spans: do not copy request/response headers onto span attributes.
  * `Authorization` and cookies are the realistic leak; an empty list is
@@ -37,7 +48,39 @@ export const SENTRY_NODE_FETCH_INTEGRATION_OPTIONS = {
     requestHeaders: [] as string[],
     responseHeaders: [] as string[],
   },
+  /**
+   * No span and no breadcrumb for a call to a provider that puts its key in
+   * the URL path, where the scrubber can't tell it from an ordinary path
+   * segment. KLIPY's key is one (`/api/v1/<key>/gifs/...`, #4631).
+   */
+  ignoreOutgoingRequests: (url: string) => SECRET_PATH_HOSTS.has(hostOf(url)),
 };
+
+/**
+ * The AI SDK integrations this API leaves out altogether (#3280, ADR-28
+ * decision 12). With tracing on, SDK v11's default set includes
+ * `Anthropic_AI` and `Google_GenAI`, which wrap the provider clients the AI
+ * gateway loads (`@anthropic-ai/sdk`, `@google/genai`).
+ *
+ * Switching their recording off is not enough. `recordInputs: false` and
+ * `recordOutputs: false` keep prompts and answers off the `gen_ai.*` spans,
+ * but the Anthropic wrapper also sends a failed stream's raw provider error
+ * straight to `captureException` (`auto.ai.anthropic.stream_error`), and a
+ * provider's 400 can quote the request back. The gateway's adapter drops
+ * that message on purpose (`LanguageModelError`); the integration would
+ * report it anyway. So neither is installed: the gateway emits its own span
+ * (`ai.gateway.call`) with counts and no text.
+ *
+ * Two layers stay under this for an AI integration that is not removed here
+ * (OpenAI, LangChain and the rest are in the default set too, though their
+ * SDKs are not installed) or that the SDK renames: `sentryDataCollection`
+ * sets `genAI` inputs and outputs off, and the transaction scrubber drops
+ * every span attribute outside its allowlist, which has no `gen_ai.*` key.
+ */
+export const SENTRY_REMOVED_INTEGRATION_NAMES = [
+  'Anthropic_AI',
+  'Google_GenAI',
+] as const;
 
 /**
  * The default integrations {@link withSafeSentryIntegrations} replaces, by
@@ -50,7 +93,8 @@ export const SENTRY_REPLACED_INTEGRATION_NAMES = ['Http', 'NodeFetch'] as const;
 
 /**
  * Keep Sentry's default integration set (HTTP, fetch, Nest, Express, and the
- * rest) and replace only the two that would otherwise attach PII-shaped bags.
+ * rest), replace the two that would otherwise attach PII-shaped bags, and
+ * leave out the two AI SDK ones ({@link SENTRY_REMOVED_INTEGRATION_NAMES}).
  *
  * Do not add `@opentelemetry/sdk-node` (ADR-22). Sentry's own
  * instrumentation produces the API's spans without any OpenTelemetry tracer
@@ -59,18 +103,21 @@ export const SENTRY_REPLACED_INTEGRATION_NAMES = ['Http', 'NodeFetch'] as const;
 export function withSafeSentryIntegrations(
   defaults: SentryIntegration[],
 ): SentryIntegration[] {
-  return defaults.map((integration) => {
-    switch (integration.name) {
-      case 'Http':
-        return Sentry.httpIntegration(SENTRY_HTTP_INTEGRATION_OPTIONS);
-      case 'NodeFetch':
-        return Sentry.nativeNodeFetchIntegration(
-          SENTRY_NODE_FETCH_INTEGRATION_OPTIONS,
-        );
-      default:
-        return integration;
-    }
-  });
+  const removed: readonly string[] = SENTRY_REMOVED_INTEGRATION_NAMES;
+  return defaults
+    .filter((integration) => !removed.includes(integration.name))
+    .map((integration) => {
+      switch (integration.name) {
+        case 'Http':
+          return Sentry.httpIntegration(SENTRY_HTTP_INTEGRATION_OPTIONS);
+        case 'NodeFetch':
+          return Sentry.nativeNodeFetchIntegration(
+            SENTRY_NODE_FETCH_INTEGRATION_OPTIONS,
+          );
+        default:
+          return integration;
+      }
+    });
 }
 
 /**

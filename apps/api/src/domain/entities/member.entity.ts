@@ -26,6 +26,13 @@ export interface Member {
    * bond number), set by officers. Null when the chapter keeps none.
    */
   order_number: number | null;
+  /**
+   * The invite this membership was redeemed from (#5627), kept so the
+   * "<name> joined" notices can wait until the member has given their name.
+   * Null for a founder, a member added another way, and memberships from
+   * before the column.
+   */
+  joined_via_invite_id: string | null;
   created_at: string;
   updated_at: string;
 }

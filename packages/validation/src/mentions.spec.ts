@@ -8,12 +8,20 @@ import {
   mentionChipFilter,
   mentionLabelFor,
   mentionPickLabel,
+  mentionPicksIn,
+  readMentionPicks,
+  withMentionPick,
+  MAX_MENTION_PICKS,
   sendMentionReading,
   spacedMentionNames,
   mentionPickerEntries,
+  mentionPickerRows,
   mentionSuggestions,
   resolveMentions,
+  askMentionQuestion,
+  ASK_MENTION_NAME,
   type MentionCandidate,
+  type MentionPick,
   type MentionRole,
 } from "./mentions";
 
@@ -331,6 +339,46 @@ describe("resolveMentions with roles", () => {
     expect(resolveMentions("@Member hi", roster, roles)).toEqual([]);
   });
 
+  describe("@here", () => {
+    const HERE: MentionRole = {
+      role_id: "role-member",
+      name: "here",
+      member_ids: [BOB.user_id],
+      mentionable: true,
+    };
+    const herbert = {
+      user_id: "55555555-5555-5555-5555-555555555555",
+      display_name: "Herebert",
+    };
+
+    it("reaches the online members its entry holds", () => {
+      expect(
+        resolveMentions("@here who's around", roster, [...roles, HERE]),
+      ).toEqual([BOB.user_id]);
+    });
+
+    it("never falls through to a member's prefix, even with no entry or nobody online", () => {
+      const withHerbert = [...roster, herbert];
+      expect(resolveMentions("@here", withHerbert, roles)).toEqual([]);
+      expect(resolveMentions("@here", withHerbert, [])).toEqual([]);
+      expect(
+        resolveMentions("@HERE", withHerbert, [
+          ...roles,
+          { ...HERE, member_ids: [] },
+        ]),
+      ).toEqual([]);
+    });
+
+    it("reaches nobody when the sender may not use it", () => {
+      expect(
+        resolveMentions("@here", roster, [
+          ...roles,
+          { ...HERE, mentionable: false },
+        ]),
+      ).toEqual([]);
+    });
+  });
+
   it("collapses a member named twice, once by role", () => {
     expect(resolveMentions("@Jane and @Officers", roster, roles)).toEqual([
       JANE.user_id,
@@ -408,6 +456,74 @@ describe("resolveMentions with roles", () => {
     expect(resolveMentions("@VicePresident", roster, [VP, twin])).toEqual([]);
   });
 
+  it("reaches a tier and a role sharing a name together (#4076)", () => {
+    const tier: MentionRole = {
+      ...OFFICERS,
+      role_id: "tier-officers",
+      kind: "tier",
+      member_ids: [JANE.user_id],
+    };
+    const role: MentionRole = {
+      ...OFFICERS,
+      kind: "role",
+      member_ids: [BOB.user_id],
+    };
+    expect(resolveMentions("@Officers", roster, [role, tier]).sort()).toEqual(
+      [BOB.user_id, JANE.user_id].sort(),
+    );
+  });
+
+  it("reaches two groups sharing a name together, as a pledge class can take a group's name (#4076)", () => {
+    const manual: MentionRole = {
+      ...OFFICERS,
+      role_id: "group-manual",
+      kind: "group",
+      member_ids: [JANE.user_id],
+    };
+    const pledgeClass: MentionRole = {
+      ...OFFICERS,
+      role_id: "group-class",
+      kind: "group",
+      member_ids: [BOB.user_id],
+    };
+    expect(
+      resolveMentions("@Officers", roster, [manual, pledgeClass]).sort(),
+    ).toEqual([BOB.user_id, JANE.user_id].sort());
+  });
+
+  it("still reaches nobody when two tiers fold to the same name", () => {
+    const a: MentionRole = { ...OFFICERS, role_id: "tier-a", kind: "tier" };
+    const b: MentionRole = { ...OFFICERS, role_id: "tier-b", kind: "tier" };
+    const group: MentionRole = { ...OFFICERS, role_id: "g", kind: "group" };
+    expect(resolveMentions("@Officers", roster, [a, b, group])).toEqual([]);
+  });
+
+  it("leaves out the shared-name sets this sender may not ping", () => {
+    const tier: MentionRole = {
+      ...OFFICERS,
+      role_id: "tier-officers",
+      kind: "tier",
+      member_ids: [JANE.user_id],
+      mentionable: false,
+    };
+    const group: MentionRole = {
+      ...OFFICERS,
+      role_id: "group-officers",
+      kind: "group",
+      member_ids: [BOB.user_id],
+    };
+    expect(resolveMentions("@Officers", roster, [tier, group])).toEqual([
+      BOB.user_id,
+    ]);
+    // None allowed: the token is still consumed, so no member takes it.
+    expect(
+      resolveMentions("@Officers", roster, [
+        tier,
+        { ...group, mentionable: false },
+      ]),
+    ).toEqual([]);
+  });
+
   it("never reaches a role holder outside the roster it was given", () => {
     const stranger: MentionRole = {
       ...OFFICERS,
@@ -434,6 +550,48 @@ describe("mentionPickerEntries", () => {
     expect(
       mentionPickerEntries(roster, roles, "").map((entry) => entry.label),
     ).toEqual(["Jane Doe", "Janet Roe", "Bob Stone", "Officers"]);
+  });
+
+  describe("@everyone and @here", () => {
+    const withReserved = [
+      { name: "everyone", mentionable: true },
+      { name: "here", mentionable: true },
+      { name: "Treasurer", mentionable: true },
+      { name: "Officers", mentionable: true },
+      { name: "Rush Chair", mentionable: true },
+    ];
+
+    it("waits for a letter, then matches only the start of the name", () => {
+      const labels = (query: string) =>
+        mentionPickerEntries([], withReserved, query).map((e) => e.label);
+      expect(labels("")).toEqual(["Treasurer", "Officers", "Rush Chair"]);
+      expect(labels("he")).toEqual(["here"]);
+      expect(labels("e")).toEqual(["everyone", "Treasurer", "Officers"]);
+      expect(labels("er")).toEqual(["Treasurer", "Officers"]);
+    });
+
+    it("takes none of the three role rows and sits before them", () => {
+      expect(
+        mentionPickerEntries(
+          [],
+          [...withReserved, { name: "Recruitment", mentionable: true }],
+          "e",
+        ).map((e) => e.label),
+      ).toEqual(["everyone", "Treasurer", "Officers", "Recruitment"]);
+      expect(
+        mentionPickerEntries([], withReserved, "h").map((e) => e.label),
+      ).toEqual(["here", "Rush Chair"]);
+    });
+
+    it("is not offered to a viewer who may not use it", () => {
+      expect(
+        mentionPickerEntries(
+          [],
+          [{ name: "here", mentionable: false }],
+          "here",
+        ),
+      ).toEqual([]);
+    });
   });
 
   it("filters roles by the query as it does members", () => {
@@ -723,9 +881,9 @@ describe("names with spaces (#3825)", () => {
   });
 
   it("reads a known name as one token, as written", () => {
-    expect(
-      findMentionSpans("hey @winston hewitt, you in?", { names }),
-    ).toEqual([{ start: 4, end: 19, token: "winston hewitt" }]);
+    expect(findMentionSpans("hey @winston hewitt, you in?", { names })).toEqual(
+      [{ start: 4, end: 19, token: "winston hewitt" }],
+    );
   });
 
   it("still stops at whitespace without the names, as every body did before", () => {
@@ -815,14 +973,17 @@ describe("names with spaces (#3825)", () => {
         mentionable: true,
       },
     ];
-    expect(resolveMentions("@Vice President", [...chapter, vice], roles)).toEqual(
-      ["u-vice"],
-    );
+    expect(
+      resolveMentions("@Vice President", [...chapter, vice], roles),
+    ).toEqual(["u-vice"]);
   });
 
   describe("a spaced name next to someone the first word names", () => {
     const JORDAN = { user_id: "u-jordan", display_name: "Jordan" };
-    const JORDAN_WILL = { user_id: "u-jordan-will", display_name: "Jordan Will" };
+    const JORDAN_WILL = {
+      user_id: "u-jordan-will",
+      display_name: "Jordan Will",
+    };
     const both = [JORDAN, JORDAN_WILL, JANE];
 
     it("leaves prose after a one-word name alone", () => {
@@ -861,8 +1022,18 @@ describe("names with spaces (#3825)", () => {
     it("reads a send's tokens once, for the resolver and the permission pre-read", () => {
       // An empty "Vice President" role must not hide a held "Vice" role.
       const roles: MentionRole[] = [
-        { role_id: "r-v", name: "Vice", member_ids: ["u-sam"], mentionable: false },
-        { role_id: "r-vp", name: "Vice President", member_ids: [], mentionable: true },
+        {
+          role_id: "r-v",
+          name: "Vice",
+          member_ids: ["u-sam"],
+          mentionable: false,
+        },
+        {
+          role_id: "r-vp",
+          name: "Vice President",
+          member_ids: [],
+          mentionable: true,
+        },
       ];
       expect(
         extractMentionTokens(
@@ -933,5 +1104,482 @@ describe("names with spaces (#3825)", () => {
     const chips = mentionChipFilter(["u-winston"], { members: chapter });
     expect(chips("Winston Hewitt")).toBe(true);
     expect(chips("Winston Park")).toBe(false);
+  });
+});
+
+/**
+ * A pick carries the member's id (#3835, Shawn 2026-11-13): the body stays
+ * `@Jane Doe`, and the id beside it decides who that token reaches.
+ */
+describe("picked mentions (#3835)", () => {
+  const JANE_DOE: MentionCandidate = {
+    user_id: "u-jane-doe",
+    display_name: "Jane Doe",
+  };
+  const JANE_SMITH: MentionCandidate = {
+    user_id: "u-jane-smith",
+    display_name: "Jane Smith",
+  };
+  const pickedJane: MentionPick[] = [
+    { user_id: "u-jane-doe", label: "Jane Doe" },
+  ];
+
+  it("the stale-roster case: a picked member who left reaches nobody, not another Jane", () => {
+    // Jane Doe left between the picker's roster load and the send, so the
+    // server's roster has only Jane Smith.
+    const now = [JANE_SMITH, BOB];
+    // Without the pick, the name reads as `@Jane`, and the first-word tier
+    // hands it to the only Jane left: the bug.
+    expect(resolveMentions("@Jane Doe can you cover?", now)).toEqual([
+      "u-jane-smith",
+    ]);
+    // With it, the token is hers, and she is gone.
+    expect(
+      resolveMentions("@Jane Doe can you cover?", now, [], pickedJane),
+    ).toEqual([]);
+  });
+
+  it("a picked member who renamed reaches nobody under the old name", () => {
+    const renamed = { ...JANE_DOE, display_name: "Janet Doe" };
+    expect(
+      resolveMentions("@Jane Doe hi", [renamed, JANE_SMITH], [], pickedJane),
+    ).toEqual([]);
+  });
+
+  it("a picked member still here is reached through the pick", () => {
+    expect(
+      resolveMentions("@Jane Doe hi", [JANE_DOE, JANE_SMITH], [], pickedJane),
+    ).toEqual(["u-jane-doe"]);
+    // A one-word label and a reduced one too.
+    const sam = { user_id: "u-sam", display_name: "Sam (VP)" };
+    const jane = { user_id: "u-jane", display_name: "Jane" };
+    expect(
+      resolveMentions(
+        "@SamVP and @Jane",
+        [sam, jane, JANE_SMITH],
+        [],
+        [
+          { user_id: "u-sam", label: "SamVP" },
+          { user_id: "u-jane", label: "Jane" },
+        ],
+      ),
+    ).toEqual(["u-sam", "u-jane"]);
+  });
+
+  it("one label reaches one member: the first pick for it, so a re-pick replaces", () => {
+    const a = { user_id: "u-chris-a", display_name: "Chris Lee" };
+    const b = { user_id: "u-chris-b", display_name: "Chris Lee" };
+    // Picked A, deleted the chip, picked B: the newest comes first.
+    const picks = [
+      { user_id: "u-chris-b", label: "Chris Lee" },
+      { user_id: "u-chris-a", label: "Chris Lee" },
+    ];
+    expect(resolveMentions("@Chris Lee", [a, b], [], picks)).toEqual([
+      "u-chris-b",
+    ]);
+    expect(mentionPicksIn("@Chris Lee", picks)).toEqual([picks[0]]);
+  });
+
+  it("a longer roster name doesn't take a picked label", () => {
+    const longer = { user_id: "u-jds", display_name: "Jane Doe Smith" };
+    expect(
+      resolveMentions(
+        "@Jane Doe Smith was asking",
+        [JANE_DOE, longer],
+        [],
+        pickedJane,
+      ),
+    ).toEqual(["u-jane-doe"]);
+    // Nor a one-word pick followed by more words.
+    const jane = { user_id: "u-jane", display_name: "Jane" };
+    expect(
+      resolveMentions(
+        "@Jane Doe hi",
+        [jane, JANE_DOE],
+        [],
+        [{ user_id: "u-jane", label: "Jane" }],
+      ),
+    ).toEqual(["u-jane"]);
+  });
+
+  it("a stale pick isn't read as the member named exactly its first word", () => {
+    // Jane Doe left; a member named exactly "Jane" is still here. The exact
+    // first word would make the reading fall back to `@Jane` without the
+    // picked label being read as written.
+    const jane = { user_id: "u-jane", display_name: "Jane" };
+    expect(resolveMentions("@Jane Doe hi", [jane, BOB])).toEqual(["u-jane"]);
+    expect(
+      resolveMentions("@Jane Doe hi", [jane, BOB], [], pickedJane),
+    ).toEqual([]);
+  });
+
+  it("two members sharing a name are told apart by the pick", () => {
+    const twin = { user_id: "u-jane-doe-2", display_name: "Jane Doe" };
+    const chapter = [JANE_DOE, twin, BOB];
+    // By name the pair is ambiguous and reaches nobody.
+    expect(resolveMentions("@Jane Doe", chapter)).toEqual([]);
+    expect(
+      resolveMentions(
+        "@Jane Doe",
+        chapter,
+        [],
+        [{ user_id: "u-jane-doe-2", label: "Jane Doe" }],
+      ),
+    ).toEqual(["u-jane-doe-2"]);
+  });
+
+  it("an id whose member's name the label doesn't spell reaches nobody", () => {
+    // A forged pick can't ping someone under a word that isn't their name.
+    expect(
+      resolveMentions(
+        "@pizza time",
+        [JANE_DOE, BOB],
+        [],
+        [{ user_id: "u-jane-doe", label: "pizza" }],
+      ),
+    ).toEqual([]);
+    // Nor an id outside the chapter.
+    expect(
+      resolveMentions(
+        "@Jane Doe",
+        [JANE_SMITH],
+        [],
+        [{ user_id: "u-elsewhere", label: "Jane Doe" }],
+      ),
+    ).toEqual([]);
+  });
+
+  it("only the token written as the label is the pick; the rest resolve by name", () => {
+    expect(
+      resolveMentions("@Jane Doe and @Bob", [JANE_SMITH, BOB], [], pickedJane),
+    ).toEqual([BOB.user_id]);
+    // A hand-typed case variant is not what the picker wrote.
+    expect(
+      resolveMentions("@jane doe", [JANE_DOE, JANE_SMITH], [], pickedJane),
+    ).toEqual(["u-jane-doe"]);
+  });
+
+  it("a pick outranks a role of the same name", () => {
+    const officers: MentionRole = {
+      role_id: "r-1",
+      name: "Jane Doe",
+      member_ids: [BOB.user_id],
+      mentionable: true,
+    };
+    expect(
+      resolveMentions("@Jane Doe", [JANE_DOE, BOB], [officers], pickedJane),
+    ).toEqual(["u-jane-doe"]);
+  });
+
+  it("reads a picked spaced label whole for the pre-read too", () => {
+    const reading = sendMentionReading([JANE_SMITH], [], pickedJane);
+    expect(extractMentionTokens("@Jane Doe hi", reading)).toEqual(["Jane Doe"]);
+    expect(
+      extractMentionTokens(
+        "@Jane Doe hi",
+        sendMentionReading([JANE_SMITH], []),
+      ),
+    ).toEqual(["Jane"]);
+  });
+
+  describe("withMentionPick (#4907)", () => {
+    it("puts the newest pick first and keeps one per label", () => {
+      const jane = { user_id: "u1", label: "Jane" };
+      const jane2 = { user_id: "u2", label: "Jane" };
+      const sam = { user_id: "u3", label: "Sam" };
+      expect(withMentionPick(withMentionPick([jane], sam), jane2)).toEqual([
+        jane2,
+        sam,
+      ]);
+    });
+
+    it("holds no more than MAX_MENTION_PICKS", () => {
+      let held: { user_id: string; label: string }[] = [];
+      for (let i = 0; i <= MAX_MENTION_PICKS; i++) {
+        held = withMentionPick(held, { user_id: `u${i}`, label: `m${i}` });
+      }
+      expect(held).toHaveLength(MAX_MENTION_PICKS);
+      expect(held[0]!.label).toBe(`m${MAX_MENTION_PICKS}`);
+    });
+  });
+
+  describe("mentionPicksIn", () => {
+    it("keeps the picks the body still writes, once per label", () => {
+      const picks: MentionPick[] = [
+        { user_id: "u-jane-doe", label: "Jane Doe" },
+        { user_id: "u-jane-doe", label: "Jane Doe" },
+        { user_id: "u-bob", label: "Bob Stone" },
+      ];
+      expect(mentionPicksIn("hey @Jane Doe!", picks)).toEqual([
+        { user_id: "u-jane-doe", label: "Jane Doe" },
+      ]);
+      expect(mentionPicksIn("no mentions", picks)).toEqual([]);
+      // A label inside a longer word is not written.
+      expect(mentionPicksIn("@Jane Doersmith", picks)).toEqual([]);
+      // Nor a case variant of it.
+      expect(mentionPicksIn("@jane doe", picks)).toEqual([]);
+    });
+
+    it("holds at most MAX_MENTION_PICKS", () => {
+      const many = Array.from({ length: MAX_MENTION_PICKS + 5 }, (_, i) => ({
+        user_id: `u-${i}`,
+        label: `Jane${i}`,
+      }));
+      const body = many.map((pick) => `@${pick.label}`).join(" ");
+      expect(mentionPicksIn(body, many)).toHaveLength(MAX_MENTION_PICKS);
+    });
+
+    it("drops strays, so a stored list never pins a token the body lost", () => {
+      expect(
+        mentionPicksIn("@Bob Stone", [
+          { user_id: "u-jane-doe", label: "Jane Doe" },
+          { user_id: "u-bob", label: "Bob Stone" },
+        ]),
+      ).toEqual([{ user_id: "u-bob", label: "Bob Stone" }]);
+    });
+  });
+
+  it("reads a stored list defensively", () => {
+    expect(readMentionPicks(undefined)).toEqual([]);
+    expect(readMentionPicks("Jane")).toEqual([]);
+    expect(
+      readMentionPicks([
+        { user_id: "u-1", label: "Jane Doe" },
+        { user_id: 7, label: "Bob" },
+        null,
+        { user_id: "u-2" },
+      ]),
+    ).toEqual([{ user_id: "u-1", label: "Jane Doe" }]);
+  });
+});
+
+describe("@Frapp, the assistant's handle (#4713)", () => {
+  const FRAPP: MentionCandidate = {
+    user_id: "f0000000-0000-4000-8000-000000000001",
+    display_name: "Frapp",
+  };
+  const FRAPP_FAN: MentionCandidate = {
+    user_id: "f0000000-0000-4000-8000-000000000002",
+    display_name: "Frapp Fan",
+  };
+  const roster = [JANE, BOB];
+
+  describe("reaches nobody", () => {
+    it("never resolves to a member named Frapp, or one whose name starts with it", () => {
+      expect(resolveMentions("@Frapp what's quorum", [JANE, FRAPP])).toEqual(
+        [],
+      );
+      expect(resolveMentions("@frapp hi", [JANE, FRAPP_FAN])).toEqual([]);
+    });
+
+    it("never resolves to a role named Frapp", () => {
+      const role: MentionRole = {
+        role_id: "r-frapp",
+        name: "Frapp",
+        member_ids: [JANE.user_id],
+        mentionable: true,
+      };
+      expect(resolveMentions("@Frapp", roster, [role])).toEqual([]);
+    });
+
+    it("reaches nobody by a pick either, and a menu's Mention does not write it", () => {
+      // The picked-id door (#3835) is not a way round the reserved handle.
+      expect(
+        resolveMentions(
+          "@Frapp what's quorum",
+          [JANE, FRAPP],
+          [],
+          [{ user_id: FRAPP.user_id, label: "Frapp" }],
+        ),
+      ).toEqual([]);
+      expect(draftWithMention("", "Frapp")).toBeNull();
+      expect(draftWithMention("", "Frapp Fan")).toBeNull();
+    });
+
+    it("lets no name read on past the handle, typed or picked", () => {
+      // A member could otherwise rename themselves "Frapp What" and have
+      // `@Frapp what do I owe` posted to the channel and pushed to them.
+      const what: MentionCandidate = {
+        user_id: "f0000000-0000-4000-8000-000000000003",
+        display_name: "Frapp What",
+      };
+      expect(spacedMentionNames([FRAPP_FAN, what, JANE])).toEqual(["Jane Doe"]);
+      expect(resolveMentions("@Frapp Fan hi", [JANE, FRAPP_FAN])).toEqual([]);
+      expect(resolveMentions("@Frapp what do I owe", [JANE, what])).toEqual([]);
+      expect(
+        resolveMentions(
+          "@Frapp Fan hi",
+          [JANE, FRAPP_FAN],
+          [],
+          [{ user_id: FRAPP_FAN.user_id, label: "Frapp Fan" }],
+        ),
+      ).toEqual([]);
+      expect(
+        mentionPicksIn("@Frapp Fan hi", [
+          { user_id: FRAPP_FAN.user_id, label: "Frapp Fan" },
+        ]),
+      ).toEqual([]);
+      const role: MentionRole = {
+        role_id: "r-frapp-team",
+        name: "Frapp Team",
+        member_ids: [JANE.user_id],
+        mentionable: true,
+      };
+      expect(resolveMentions("@Frapp Team hi", roster, [role])).toEqual([]);
+      expect(mentionSuggestions([FRAPP_FAN, JANE], "")).toEqual([
+        { member: JANE, label: "Jane Doe" },
+      ]);
+    });
+
+    it("is one word: a member named F Rapp is still a member", () => {
+      const rapp: MentionCandidate = {
+        user_id: "f0000000-0000-4000-8000-000000000004",
+        display_name: "F Rapp",
+      };
+      expect(resolveMentions("@F Rapp hi", [JANE, rapp])).toEqual([
+        rapp.user_id,
+      ]);
+      expect(draftWithMention("", "F Rapp")).toBe("@F Rapp ");
+      expect(mentionSuggestions([rapp], "")).toEqual([
+        { member: rapp, label: "F Rapp" },
+      ]);
+      expect(
+        askMentionQuestion("@F Rapp are you in?", spacedMentionNames([rapp])),
+      ).toBeNull();
+      // The bare handle is still the assistant's with them on the roster.
+      expect(resolveMentions("@frapp hi", [JANE, rapp])).toEqual([]);
+    });
+
+    it("does not offer a member or a role a pick could not reach", () => {
+      expect(mentionSuggestions([FRAPP, JANE], "")).toEqual([
+        { member: JANE, label: "Jane Doe" },
+      ]);
+      expect(
+        mentionPickerEntries(
+          roster,
+          [{ name: "Frapp", mentionable: true }],
+          "",
+        ),
+      ).toEqual([
+        { kind: "member", member: JANE, label: "Jane Doe" },
+        { kind: "member", member: BOB, label: "Bob Stone" },
+      ]);
+    });
+  });
+
+  describe("mentionPickerRows", () => {
+    const ask = { kind: "ask", label: ASK_MENTION_NAME };
+
+    it("is mentionPickerEntries for a member without Ask", () => {
+      for (const query of ["", "f", "frapp", "jane"]) {
+        expect(mentionPickerRows(roster, [], query, { ask: false })).toEqual(
+          mentionPickerEntries(roster, [], query),
+        );
+      }
+    });
+
+    it("puts Frapp first on a bare @, so a member finds it unprompted (#5476)", () => {
+      expect(mentionPickerRows(roster, [], "", { ask: true })).toEqual([
+        ask,
+        { kind: "member", member: JANE, label: "Jane Doe" },
+        { kind: "member", member: BOB, label: "Bob Stone" },
+      ]);
+    });
+
+    it("puts Frapp first once its name is being typed, in any case", () => {
+      for (const query of ["f", "Fr", "FRAPP", "frapp"]) {
+        expect(
+          mentionPickerRows(roster, [], query, { ask: true })[0],
+          query,
+        ).toEqual(ask);
+      }
+    });
+
+    it("offers no Frapp for text that is not the start of its name", () => {
+      for (const query of ["rapp", "frappe", "jane", "fx"]) {
+        expect(
+          mentionPickerRows(roster, [], query, { ask: true }).some(
+            (row) => row.kind === "ask",
+          ),
+          query,
+        ).toBe(false);
+      }
+    });
+
+    it("takes one of the rows, never one more", () => {
+      const many = Array.from({ length: 20 }, (_, index) => ({
+        user_id: `m-${index}`,
+        display_name: `Frank ${index}`,
+      }));
+      const bare = mentionPickerRows(many, [], "", { ask: true });
+      expect(bare).toHaveLength(8);
+      expect(bare[0]).toEqual(ask);
+      const typed = mentionPickerRows(many, [], "fr", { ask: true });
+      expect(typed).toHaveLength(8);
+      expect(typed[0]).toEqual(ask);
+    });
+  });
+
+  describe("askMentionQuestion", () => {
+    it("is null for a message that does not name Frapp", () => {
+      expect(askMentionQuestion("what's quorum?")).toBeNull();
+      expect(askMentionQuestion("@Jane what's quorum?")).toBeNull();
+      expect(askMentionQuestion("mail frapp@example.com")).toBeNull();
+      expect(askMentionQuestion("@Frappe is a drink")).toBeNull();
+    });
+
+    it("is the words without the handle, wherever the handle is", () => {
+      expect(askMentionQuestion("@Frapp what's quorum?")).toBe(
+        "what's quorum?",
+      );
+      expect(askMentionQuestion("@frapp, what's quorum?")).toBe(
+        "what's quorum?",
+      );
+      expect(askMentionQuestion("what do I owe @Frapp")).toBe("what do I owe");
+      expect(askMentionQuestion("hey @FRAPP: when is chapter")).toBe(
+        "hey when is chapter",
+      );
+      expect(askMentionQuestion("@Frapp @Frapp twice")).toBe("twice");
+    });
+
+    it("keeps the lines of a longer question", () => {
+      expect(askMentionQuestion("@Frapp two things\n1. dues\n2. quorum")).toBe(
+        "two things\n1. dues\n2. quorum",
+      );
+    });
+
+    it("is empty when the handle is all there is", () => {
+      expect(askMentionQuestion("@Frapp")).toBe("");
+      expect(askMentionQuestion("  @Frapp,  ")).toBe("");
+    });
+
+    it("is still a question when a member's name opens on the handle", () => {
+      // Whatever names the caller passes: one that opens on the handle is
+      // dropped here too, so a caller with its own list can't be captured.
+      for (const names of [
+        spacedMentionNames([FRAPP_FAN]),
+        ["Frapp Fan", "Frapp What"],
+      ]) {
+        expect(askMentionQuestion("@Frapp Fan are you in?", names)).toBe(
+          "Fan are you in?",
+        );
+        expect(askMentionQuestion("@Frapp what do I owe", names)).toBe(
+          "what do I owe",
+        );
+      }
+    });
+
+    it("reads another member's spaced name as that member", () => {
+      const names = spacedMentionNames([
+        { user_id: "u-jf", display_name: "Jordan Frapp" },
+      ]);
+      expect(askMentionQuestion("@Jordan Frapp are you in?", names)).toBeNull();
+    });
+
+    it("leaves other mentions in the question as written", () => {
+      expect(askMentionQuestion("@Frapp what does @Jane owe")).toBe(
+        "what does @Jane owe",
+      );
+    });
   });
 });

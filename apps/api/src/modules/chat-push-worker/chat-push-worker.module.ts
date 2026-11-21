@@ -11,7 +11,7 @@ import { SupabaseChatThreadRepository } from '../../infrastructure/supabase/repo
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
-import { ChannelCacheModule } from './channel-cache.module';
+import { ChannelCacheModule } from '../channel-cache/channel-cache.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
 import { AuthModule } from '../auth/auth.module';
 
@@ -19,7 +19,7 @@ import { AuthModule } from '../auth/auth.module';
  * Push worker (ADR-09). Runs in-process on the API; the
  * `OnApplicationBootstrap` lifecycle on `ChatPushWorkerService` opens the
  * Supabase Realtime subscription on `chat_messages`. Scaling watermark for a
- * standalone split is documented in `docs/ops/deployment/render.md`.
+ * standalone split is documented in `docs/ops/deployment/api-process.md`.
  *
  * Imports `NotificationModule` to reuse the preference-aware,
  * quiet-hours-aware Expo fanout; `ChapterModule` to access

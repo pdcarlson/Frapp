@@ -1,4 +1,7 @@
-import { POINTS_REASON_MAX_LENGTH } from "@repo/validation";
+import {
+  POINTS_REASON_MAX_LENGTH,
+  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS,
+} from "@repo/validation";
 import { describe, expect, it } from "vitest";
 import {
   eventFormPrefill,
@@ -8,6 +11,7 @@ import {
   parseHoursArgs,
   parsePointsArgs,
   parsePollArgs,
+  POLL_CLOSES_MAX_MINUTES,
   parseRushArgs,
   parseTaskArgs,
   tokenizeQuotedArgs,
@@ -50,6 +54,15 @@ describe("parsePollArgs", () => {
     expect(r.ok).toBe(false);
   });
 
+  // The API holds every poll card to the New poll forms' lengths.
+  it("rejects a question or an option longer than the forms allow", () => {
+    expect(parsePollArgs(`"${"q".repeat(501)}" Mon Tue`).ok).toBe(false);
+    expect(parsePollArgs(`"Night?" ${"x".repeat(201)} Tue`).ok).toBe(false);
+    expect(
+      parsePollArgs(`"${"q".repeat(500)}" ${"x".repeat(200)} Tue`).ok,
+    ).toBe(true);
+  });
+
   it("rejects more than ten options", () => {
     const r = parsePollArgs('"Pick" a b c d e f g h i j k');
     expect(r.ok).toBe(false);
@@ -67,6 +80,27 @@ describe("parsePollArgs", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.closesInMinutes).toBe(60);
+  });
+
+  // The API refuses a poll that ends more than a year out.
+  it("refuses a close window more than a year out", () => {
+    const r = parsePollArgs(
+      `"Q?" Mon Tue closes=${POLL_CLOSES_MAX_MINUTES + 1}`,
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toBe("A poll can close at most a year from now");
+  });
+
+  it("takes a close window of up to a year", () => {
+    const r = parsePollArgs(`"Q?" Mon Tue closes=${POLL_CLOSES_MAX_MINUTES}`);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.closesInMinutes).toBe(POLL_CLOSES_MAX_MINUTES);
+    // Inside what the API takes: SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS days.
+    expect(POLL_CLOSES_MAX_MINUTES).toBeLessThan(
+      SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS * 24 * 60,
+    );
   });
 
   it("falls back to the default close window on a non-finite value", () => {

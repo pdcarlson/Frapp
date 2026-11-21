@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { networkMock } from "@/tests/network";
 
 /**
@@ -41,6 +41,8 @@ const alumniRead = {
 
 vi.mock("@repo/hooks", () => ({
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
+  // The List/Grid pick is kept per viewer (#4175).
+  useViewerUserId: () => "viewer-1",
   useAlumni: () => alumniRead,
 }));
 
@@ -124,6 +126,34 @@ describe("AlumniDirectory rows (#2484)", () => {
 
     expect(screen.getByTestId("detail-sheet")).toHaveTextContent(
       "Charles Whitmore III",
+    );
+  });
+});
+
+describe("AlumniDirectory as a grid (#4175)", () => {
+  beforeEach(() => {
+    window.localStorage.setItem("frapp.directory.layout.viewer-1", "grid");
+  });
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("draws tiles named for everything the row shows, opening the sheet", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<AlumniDirectory />);
+
+    expect(container.querySelector("ul")?.className).toContain("grid");
+    const tile = screen.getByRole("button", {
+      name: "Charles Whitmore III, Class of 2019 · Acme · Boston, Still reads the minutes.",
+    });
+    // Every fact the row shows, on screen and not only in the name.
+    expect(tile).toHaveTextContent("Class of 2019 · Acme · Boston");
+    expect(tile).toHaveTextContent("Still reads the minutes.");
+
+    await user.click(tile);
+    expect(screen.getByTestId("detail-sheet")).toHaveAttribute(
+      "data-user-id",
+      "u-1",
     );
   });
 });

@@ -25,6 +25,8 @@ export interface DocumentActionsTarget {
   name: string;
   pinned: boolean;
   starred: boolean;
+  /** A copy of a file in the chapter's Google Drive folder (#5157): no Delete. */
+  fromDrive?: boolean;
 }
 
 export interface DocumentActionsSheetProps {
@@ -128,7 +130,7 @@ export const DocumentActionsSheet = forwardRef<
                 styles={styles}
               />
             ) : null}
-            {canManage && target.kind === "document" ? (
+            {canManage && target.kind === "document" && !target.fromDrive ? (
               <ActionRow
                 label="Delete document"
                 // An empty slot the glyphs' width, so the three labels align.

@@ -1,4 +1,5 @@
 import { SupabaseChatMessageActionRepository } from './supabase-chat-message-action.repository';
+import { SignupClaimRefusedError } from '#domain/repositories/chat.repository.interface';
 import {
   CHAPTER_B,
   USER_SHARED,
@@ -147,10 +148,103 @@ describe('SupabaseChatMessageActionRepository — tenant scope', () => {
     ).toEqual([]);
   });
 
+  it('findAllActionsOnMessages names every member on the messages asked about, by action type', async () => {
+    const rows = await repo.findAllActionsOnMessages(
+      [MESSAGE_B, MISSING_MESSAGE],
+      'vote',
+    );
+    expect(rows.map((row) => [row.message_id, row.user_id])).toEqual([
+      [MESSAGE_B, USER_SHARED],
+    ]);
+    expect(await repo.findAllActionsOnMessages([MESSAGE_B], 'rsvp')).toEqual(
+      [],
+    );
+  });
+
   it('findActionsOnMessages asks nothing for an empty list', async () => {
     expect(await repo.findActionsOnMessages([], USER_SHARED, 'vote')).toEqual(
       [],
     );
     expect(harness.ops).toHaveLength(0);
+  });
+});
+
+describe('SupabaseChatMessageActionRepository — claimSignupSlots (#3926)', () => {
+  const claimed = {
+    id: ACTION_B,
+    message_id: MESSAGE_B,
+    user_id: USER_SHARED,
+    action_type: 'signup',
+    payload: { slot_ids: ['fri'] },
+    created_at: '2026-01-01T00:00:00.000Z',
+  };
+
+  const repoAnswering = (canned: { data?: unknown; error?: unknown }) => {
+    const harness = createTenantHarness({
+      tables: seed(),
+      untenantedTables: ['chat_message_actions', 'chat_messages'],
+      rpc: { claim_signup_slots: canned },
+    });
+    return {
+      harness,
+      repo: new SupabaseChatMessageActionRepository(harness.client),
+    };
+  };
+
+  it('passes only the message, the member, the slots and the note: the caller scoped the message', async () => {
+    const { harness, repo } = repoAnswering({
+      data: { action: claimed, updated: true },
+    });
+
+    const result = await repo.claimSignupSlots(
+      MESSAGE_B,
+      USER_SHARED,
+      ['fri'],
+      'late',
+    );
+
+    expect(result).toEqual({ action: claimed, updated: true });
+    expect(harness.rpcCalls.map((c) => ({ fn: c.fn, args: c.args }))).toEqual([
+      {
+        fn: 'claim_signup_slots',
+        args: {
+          p_message_id: MESSAGE_B,
+          p_user_id: USER_SHARED,
+          p_slot_ids: ['fri'],
+          p_note: 'late',
+        },
+      },
+    ]);
+  });
+
+  it.each([
+    ['signup_slot_full', 'full'],
+    ['signup_slot_unknown', 'unknown_slot'],
+    ['signup_card_missing', 'missing'],
+    ['signup_closed', 'closed'],
+  ] as const)(
+    'turns the RPC refusal %s into a %s refusal naming the slot',
+    async (message, reason) => {
+      const { repo } = repoAnswering({
+        error: { message, details: 'fri', code: 'P0001' },
+      });
+
+      const refusal = await repo
+        .claimSignupSlots(MESSAGE_B, USER_SHARED, ['fri'], null)
+        .catch((error: unknown) => error);
+
+      expect(refusal).toBeInstanceOf(SignupClaimRefusedError);
+      expect(refusal).toMatchObject({ reason, slotId: 'fri' });
+    },
+  );
+
+  it('throws any other failure as a query error', async () => {
+    const { repo } = repoAnswering({
+      error: { message: 'connection reset', code: '08006' },
+    });
+
+    await expect(
+      repo.claimSignupSlots(MESSAGE_B, USER_SHARED, ['fri'], null),
+    ).rejects.not.toBeInstanceOf(SignupClaimRefusedError);
   });
 });

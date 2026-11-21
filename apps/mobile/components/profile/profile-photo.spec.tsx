@@ -1,16 +1,9 @@
 /** @vitest-environment jsdom */
 import React, { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import {
-  AccessibilityInfo,
-  ActionSheetIOS,
-  Alert,
-  Image,
-  Platform,
-  Text,
-} from "react-native";
+import { AccessibilityInfo, Alert, Image, Platform, Text } from "react-native";
 import { onlineManager } from "@tanstack/react-query";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 
@@ -47,6 +40,11 @@ vi.mock("@/lib/more/profile-photo", () => ({
 }));
 
 import { CameraGlyph } from "@/components/service-hours/camera-glyph";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 import { ProfilePhoto } from "./profile-photo";
 
 function photo(photoUrl: string | null, fetchedAt = 1) {
@@ -89,14 +87,43 @@ function alertButtons(n = 0): AlertButton[] {
   return vi.mocked(Alert.alert).mock.calls[n]![2] as AlertButton[];
 }
 
-/** Picks an option off the iOS action sheet the avatar opened. */
-function pickSheetOption(label: string) {
-  const [options, choose] = vi.mocked(ActionSheetIOS.showActionSheetWithOptions)
-    .mock.calls[0]!;
+/** Picks a row off the menu the avatar opened, as a tap does. */
+function pickMenuOption(label: string) {
   return act(async () => {
-    choose(options.options.indexOf(label));
+    pickItemMenuAction(label);
   });
 }
+
+/** The open menu's rows, as label and whether it is destructive. */
+const menuRows = () =>
+  currentItemMenu()!.actions.map((action) => [
+    action.label,
+    !!action.destructive,
+  ]);
+
+/** Opens the menu on each platform and returns what it held there. */
+async function menuOnEachPlatform(photoUrl: string) {
+  const platform = Platform as { OS: string };
+  const seen: unknown[] = [];
+  try {
+    for (const os of ["ios", "android"]) {
+      platform.OS = os;
+      const tree = render(photoUrl);
+      await tapAvatar(tree);
+      const { title, message } = currentItemMenu()!;
+      seen.push({ title, message, rows: menuRows() });
+      act(() => dismissItemMenu());
+      act(() => tree.unmount());
+    }
+  } finally {
+    platform.OS = "ios";
+  }
+  return seen;
+}
+
+afterEach(() => {
+  dismissItemMenu();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -174,7 +201,7 @@ describe("ProfilePhoto", () => {
 
     await tapAvatar(tree);
 
-    expect(ActionSheetIOS.showActionSheetWithOptions).not.toHaveBeenCalled();
+    expect(currentItemMenu()).toBeNull();
     expect(Alert.alert).not.toHaveBeenCalled();
     expect(state.pick).toHaveBeenCalledTimes(1);
     // The new photo is the outcome a sighted member sees; a screen reader is
@@ -197,26 +224,46 @@ describe("ProfilePhoto", () => {
     expect(texts(tree)).toContain("Profile photos can be up to 25 MB.");
   });
 
-  it("offers Choose photo and a destructive Remove photo on iOS's action sheet", async () => {
+  it("offers Choose photo and a destructive Remove photo in its menu", async () => {
     const tree = render("https://signed/photo");
 
     await tapAvatar(tree);
 
-    const [options] = vi.mocked(ActionSheetIOS.showActionSheetWithOptions).mock
-      .calls[0]!;
-    expect(options.options).toEqual(["Choose photo", "Remove photo", "Cancel"]);
-    expect(options.destructiveButtonIndex).toBe(1);
-    expect(options.cancelButtonIndex).toBe(2);
+    expect(currentItemMenu()!.title).toBe("Profile photo");
+    expect(currentItemMenu()!.message).toBeUndefined();
+    expect(menuRows()).toEqual([
+      ["Choose photo", false],
+      ["Remove photo", true],
+    ]);
+    expect(Alert.alert).not.toHaveBeenCalled();
 
-    await pickSheetOption("Choose photo");
+    await pickMenuOption("Choose photo");
     expect(state.pick).toHaveBeenCalledTimes(1);
+    expect(currentItemMenu()).toBeNull();
+  });
+
+  it("draws the same menu on iOS and Android", async () => {
+    const [ios, android] = await menuOnEachPlatform("https://signed/photo");
+    expect(android).toEqual(ios);
+    expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the menu is dismissed", async () => {
+    const tree = render("https://signed/photo");
+
+    await tapAvatar(tree);
+    act(() => dismissItemMenu());
+
+    expect(state.pick).not.toHaveBeenCalled();
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(avatar(tree).props.disabled).toBe(false);
   });
 
   it("removes the photo only once the member confirms", async () => {
     const tree = render("https://signed/photo");
 
     await tapAvatar(tree);
-    await pickSheetOption("Remove photo");
+    await pickMenuOption("Remove photo");
 
     // Choosing Remove asks first, in a native alert, and removes nothing yet.
     expect(state.remove).not.toHaveBeenCalled();
@@ -236,37 +283,12 @@ describe("ProfilePhoto", () => {
     );
   });
 
-  it("offers the same choice in an alert on Android", async () => {
-    const platform = Platform as { OS: string };
-    platform.OS = "android";
-    try {
-      const tree = render("https://signed/photo");
-      await tapAvatar(tree);
-
-      expect(ActionSheetIOS.showActionSheetWithOptions).not.toHaveBeenCalled();
-      const labels = alertButtons().map((button) => button.text);
-      expect(labels).toEqual(["Cancel", "Remove photo", "Choose photo"]);
-
-      // Remove photo still confirms before anything is removed.
-      act(() => {
-        alertButtons().find((button) => button.text === "Remove photo")!
-          .onPress!();
-      });
-      expect(state.remove).not.toHaveBeenCalled();
-      expect(vi.mocked(Alert.alert).mock.calls[1]![0]).toBe(
-        "Remove your profile photo?",
-      );
-    } finally {
-      platform.OS = "ios";
-    }
-  });
-
   it("says when a removal fails", async () => {
     state.remove.mockRejectedValue(new Error("offline"));
     const tree = render("https://signed/photo");
 
     await tapAvatar(tree);
-    await pickSheetOption("Remove photo");
+    await pickMenuOption("Remove photo");
     await act(async () => {
       alertButtons().find((button) => button.text === "Remove")!.onPress!();
     });
@@ -307,7 +329,9 @@ describe("ProfilePhoto", () => {
     expect(circle.borderColor).toBe(signetDarkTokens.color.border.hairline);
     expect(circle.backgroundColor).toBe(signetDarkTokens.color.surface.popover);
     for (const colour of ["#CB9FFF", "#251A33"]) {
-      expect(JSON.stringify(initials.parent!.props.style)).not.toContain(colour);
+      expect(JSON.stringify(initials.parent!.props.style)).not.toContain(
+        colour,
+      );
       expect(JSON.stringify(initials.props.style)).not.toContain(colour);
     }
   });
@@ -337,7 +361,7 @@ describe("ProfilePhoto", () => {
 
     expect(avatar(tree).props.disabled).toBe(true);
     expect(texts(tree)).toContain(
-      "Choose a chapter from More → Switch chapter to add a photo.",
+      "Tap the chapter menu at the top of Chat, then Switch chapter, to add a photo.",
     );
   });
 
@@ -354,20 +378,16 @@ describe("ProfilePhoto", () => {
     });
     expect(avatar(tree).props.accessibilityLabel).toBe("Remove profile photo");
     expect(texts(tree)).toContain(
-      "Choose a chapter from More → Switch chapter to add a photo.",
+      "Tap the chapter menu at the top of Chat, then Switch chapter, to add a photo.",
     );
 
     await tapAvatar(tree);
-    const [options] = vi.mocked(ActionSheetIOS.showActionSheetWithOptions).mock
-      .calls[0]!;
-    expect(options.options).toEqual(["Remove photo", "Cancel"]);
-    expect(options.destructiveButtonIndex).toBe(0);
-    expect(options.cancelButtonIndex).toBe(1);
-    expect(options.message).toBe(
-      "Choose a chapter from More → Switch chapter to add a photo.",
+    expect(menuRows()).toEqual([["Remove photo", true]]);
+    expect(currentItemMenu()!.message).toBe(
+      "Tap the chapter menu at the top of Chat, then Switch chapter, to add a photo.",
     );
 
-    await pickSheetOption("Remove photo");
+    await pickMenuOption("Remove photo");
     await act(async () => {
       alertButtons().find((button) => button.text === "Remove")!.onPress!();
     });
@@ -375,25 +395,16 @@ describe("ProfilePhoto", () => {
     expect(state.pick).not.toHaveBeenCalled();
   });
 
-  it("offers Remove alone, with the reason, in Android's alert without a chapter", async () => {
+  it("offers Remove alone, with the reason, on Android too without a chapter", async () => {
     state.chapterId = null;
-    const platform = Platform as { OS: string };
-    platform.OS = "android";
-    try {
-      const tree = render("https://signed/photo");
-      await tapAvatar(tree);
-
-      const [, message] = vi.mocked(Alert.alert).mock.calls[0]!;
-      expect(message).toBe(
-        "Choose a chapter from More → Switch chapter to add a photo.",
-      );
-      expect(alertButtons().map((button) => button.text)).toEqual([
-        "Cancel",
-        "Remove photo",
-      ]);
-    } finally {
-      platform.OS = "ios";
-    }
+    const [ios, android] = await menuOnEachPlatform("https://signed/photo");
+    expect(android).toEqual(ios);
+    expect(android).toEqual({
+      title: "Profile photo",
+      message:
+        "Tap the chapter menu at the top of Chat, then Switch chapter, to add a photo.",
+      rows: [["Remove photo", true]],
+    });
   });
 
   // While an upload or a removal runs, the avatar takes no second tap: one
@@ -434,7 +445,7 @@ describe("ProfilePhoto", () => {
     const tree = render("https://signed/photo");
 
     await tapAvatar(tree);
-    await pickSheetOption("Remove photo");
+    await pickMenuOption("Remove photo");
     await act(async () => {
       alertButtons().find((button) => button.text === "Remove")!.onPress!();
     });
@@ -442,7 +453,8 @@ describe("ProfilePhoto", () => {
     expect(avatar(tree).props.disabled).toBe(true);
 
     await tapAvatar(tree);
-    expect(ActionSheetIOS.showActionSheetWithOptions).toHaveBeenCalledTimes(1);
+    expect(currentItemMenu()).toBeNull();
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       finish({});

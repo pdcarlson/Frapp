@@ -2,8 +2,9 @@
  * Subscription refusals, told to a member rather than to an officer.
  *
  * WHY THIS EXISTS (#2297). Chapter creation is open to any authenticated user
- * and a fresh chapter is `subscription_status 'incomplete'`, so a founder can
- * reach every screen and then fail every write. `ChapterGuard.enforceSubscription`
+ * and, with chapter billing on, a fresh chapter is `subscription_status
+ * 'incomplete'` (while `CHAPTER_BILLING_BETA_OFF` is on it starts `active`),
+ * so a founder can reach every screen and then fail every write. `ChapterGuard.enforceSubscription`
  * refuses those writes permanently, and until this module existed the three
  * write surfaces rendered the refusal as an ordinary save failure and invited a
  * retry that can never succeed. That is the Guideline 2.1 finding: the app

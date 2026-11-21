@@ -31,7 +31,7 @@ function mount(chapterId: string) {
 
 const { __refocus } = expoRouter as unknown as { __refocus: () => void };
 
-const FALL = { id: "inv-fall", title: "Fall dues" };
+const FALL = { id: "inv-fall", title: "Fall dues", capturedAt: 0 };
 
 beforeEach(() => forgetDuesMemory());
 

@@ -21,11 +21,14 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
+import { CHAT_SCHEDULED_MESSAGE_REPOSITORY } from '#domain/repositories/chat-scheduled-message.repository.interface';
 import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import { ChatMentionService } from '../../src/application/services/chat-mention.service';
+import { ChapterPresenceReader } from '../../src/application/services/chapter-presence-reader.service';
 import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../src/application/services/chat-notification-preference.service';
 import { ChatCategoryService } from '../../src/application/services/chat-category.service';
@@ -38,6 +41,8 @@ import { ChannelAccessListService } from '../../src/application/services/channel
 import { EMPTY_ACCESS_HOLDER } from '#domain/utils/channel-access';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
 import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
+import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
+import { createChapterGroupRepoMock } from './chapter-group-repo.mock';
 import { ChatBlockService } from '../../src/application/services/chat-block.service';
 import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
 import { ChannelCacheService } from '../../src/application/services/channel-cache.service';
@@ -136,12 +141,13 @@ export async function createChatServiceFixture() {
     findImportantInChannel: jest.fn(),
     countPinnedByChannel: jest.fn(),
     findPollsByChapter: jest.fn(),
-    findPollCardsByChapter: jest.fn(),
+    findCardsByChapter: jest.fn(),
     findByClientMessageId: jest.fn(),
     findAuthorAvatarPaths: jest.fn().mockResolvedValue([]),
     create: jest.fn(),
     insertIdempotent: jest.fn(),
     compareAndSetFlag: jest.fn(),
+    updateIfLive: jest.fn(),
     update: jest.fn(),
   };
 
@@ -150,11 +156,14 @@ export async function createChatServiceFixture() {
     findOne: jest.fn(),
     updateForVote: jest.fn(),
     findActionsOnMessages: jest.fn(),
+    findAllActionsOnMessages: jest.fn(),
+    claimSignupSlots: jest.fn(),
   };
 
   const mockAttachmentRepo: jest.Mocked<IChatMessageAttachmentRepository> = {
     createMany: jest.fn().mockResolvedValue([]),
     findByMessage: jest.fn().mockResolvedValue([]),
+    findByMessages: jest.fn().mockResolvedValue([]),
     findSharedObjects: jest.fn().mockResolvedValue([]),
   };
 
@@ -190,12 +199,16 @@ export async function createChatServiceFixture() {
   const mockNotificationService: jest.Mocked<
     Pick<
       NotificationService,
-      'notifyUser' | 'notifyChapter' | 'markChatChannelNotificationsRead'
+      | 'notifyUser'
+      | 'notifyChapter'
+      | 'markChatChannelNotificationsRead'
+      | 'rewriteChatMessagePreview'
     >
   > = {
     notifyUser: jest.fn().mockResolvedValue(undefined),
     notifyChapter: jest.fn().mockResolvedValue(undefined),
     markChatChannelNotificationsRead: jest.fn().mockResolvedValue(undefined),
+    rewriteChatMessagePreview: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockMemberRepo = {
@@ -222,6 +235,8 @@ export async function createChatServiceFixture() {
     deleteChapterLevel: jest.fn(),
   };
 
+  const mockGroupRepo = createChapterGroupRepoMock();
+
   const mockChannelCache = {
     get: jest.fn(),
     set: jest.fn(),
@@ -229,6 +244,10 @@ export async function createChatServiceFixture() {
   };
 
   // No open report holds anything unless a case says so (#2481).
+  // What scheduled messages still name (#4971): nothing, unless a test says.
+  const mockScheduledRepo: { findPathsInUse: jest.Mock } = {
+    findPathsInUse: jest.fn().mockResolvedValue([]),
+  };
   const mockReportRepo: { findHeldObjects: jest.Mock } = {
     findHeldObjects: jest.fn().mockResolvedValue([]),
   };
@@ -254,6 +273,9 @@ export async function createChatServiceFixture() {
     setFollowState: jest.fn().mockResolvedValue(undefined),
     markRead: jest.fn().mockResolvedValue(undefined),
     findFollowedUnread: jest.fn().mockResolvedValue([]),
+    findMemberThreads: jest.fn().mockResolvedValue([]),
+    findFollowedChannelIds: jest.fn().mockResolvedValue([]),
+    findMessagesByIds: jest.fn().mockResolvedValue([]),
   };
 
   const mockRbac = {
@@ -267,12 +289,20 @@ export async function createChatServiceFixture() {
     // channel-access.service.spec.ts.
     hasAlumniRole: jest.fn().mockResolvedValue(false),
     isAlumni: jest.fn().mockResolvedValue(false),
+    // Every chapter member's access, for a channel's readers (an edit's
+    // notification rewrite, #4418). Nobody by default.
+    getChapterMemberAccess: jest.fn().mockResolvedValue([]),
   };
 
   // The chapter's roles and tiers, which a who-can-see or who-can-post list
   // names (`ChannelAccessListService`). None by default.
   const mockRoleRepo = { findByChapter: jest.fn().mockResolvedValue([]) };
   const mockTierRepo = { findByChapter: jest.fn().mockResolvedValue([]) };
+
+  // A forward's copy names the original's author (#4864). Nobody by default.
+  const mockUserRepo = {
+    findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([]),
+  };
 
   // Defaults: caller is a member of the chapter, channel resolves, no special
   // permissions. Individual tests override to exercise denial paths.
@@ -285,6 +315,11 @@ export async function createChatServiceFixture() {
     providers: [
       ChatService,
       ChatMentionService,
+      // `@here` reads the chapter's presence topic; no fixture sends one.
+      {
+        provide: ChapterPresenceReader,
+        useValue: { onlineUserIds: jest.fn().mockResolvedValue(new Set()) },
+      },
       ChatAttachmentService,
       ChatNotificationPreferenceService,
       ChatCategoryService,
@@ -318,6 +353,7 @@ export async function createChatServiceFixture() {
       ChannelAccessListService,
       { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
       { provide: ROLE_TIER_REPOSITORY, useValue: mockTierRepo },
+      { provide: CHAPTER_GROUP_REPOSITORY, useValue: mockGroupRepo },
       {
         provide: CHAT_NOTIFICATION_PREFERENCE_REPOSITORY,
         useValue: mockChatNotificationPrefs,
@@ -325,7 +361,12 @@ export async function createChatServiceFixture() {
       { provide: ChannelCacheService, useValue: mockChannelCache },
       { provide: ChatBlockService, useValue: mockChatBlocks },
       { provide: CHAT_MESSAGE_REPORT_REPOSITORY, useValue: mockReportRepo },
+      {
+        provide: CHAT_SCHEDULED_MESSAGE_REPOSITORY,
+        useValue: mockScheduledRepo,
+      },
       { provide: CHAT_THREAD_REPOSITORY, useValue: mockThreadRepo },
+      { provide: USER_REPOSITORY, useValue: mockUserRepo },
     ],
   }).compile();
 
@@ -351,9 +392,12 @@ export async function createChatServiceFixture() {
     mockRbac,
     mockRoleRepo,
     mockTierRepo,
+    mockGroupRepo,
     mockChatBlocks,
     mockReportRepo,
+    mockScheduledRepo,
     mockThreadRepo,
+    mockUserRepo,
   };
 }
 

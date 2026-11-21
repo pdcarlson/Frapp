@@ -10,6 +10,7 @@
  * fault is `{ ok: true, warning }` (#1718) — not an escaped rejection.
  */
 
+import { SERVER_BUSY_COPY, type TaskProofKind } from "@repo/validation";
 import {
   parseAnnounceArgs,
   parseEventArgs,
@@ -33,6 +34,7 @@ import {
 } from "./chat-client";
 import {
   isDefinitiveClientError,
+  isServerBusy,
   randomClientId,
   serverMessageOf,
 } from "@repo/api-sdk";
@@ -204,22 +206,44 @@ export const SIGNED_OUT_POST_COPY =
  * `{ ok: true, warning }` is `sendMessage`'s posted-but-not-saved warning,
  * which the caller must show, as `notifyDispatchOutcome` does for `/poll`.
  */
-export async function postPoll(
+export function postPoll(
   ctx: ChatActionContext,
   channelId: string,
   poll: { content: string; payload: PollPayload },
-): Promise<
-  { ok: true; warning?: string } | { ok: false; error: string; cause?: unknown }
-> {
+): Promise<PostFormCardResult> {
+  return postFormCard(
+    ctx,
+    channelId,
+    "poll",
+    poll,
+    "Couldn't post that poll. Try again.",
+  );
+}
+
+type PostFormCardResult =
+  | { ok: true; warning?: string }
+  | { ok: false; error: string; cause?: unknown };
+
+/**
+ * The one way a + form posts a card that queues like a message: a poll.
+ * Never rejects; the outcomes are `postPoll`'s.
+ */
+async function postFormCard(
+  ctx: ChatActionContext,
+  channelId: string,
+  kind: "poll",
+  card: { content: string; payload: object },
+  failureCopy: string,
+): Promise<PostFormCardResult> {
   if (!ctx.userId) {
     return { ok: false, error: SIGNED_OUT_POST_COPY };
   }
   try {
     const sent = await sendMessage(ctx, {
       channelId,
-      content: poll.content,
-      kind: "poll",
-      payload: poll.payload as unknown as Record<string, unknown>,
+      content: card.content,
+      kind,
+      payload: card.payload as Record<string, unknown>,
       keepDraft: true,
     });
     return sent.warning ? { ok: true, warning: sent.warning } : { ok: true };
@@ -227,7 +251,7 @@ export async function postPoll(
     // The outbox refused the row and `sendMessage` took the optimistic card
     // back out, so nothing is queued or on screen. `cause` is for the
     // caller's error reporting, which chat-core has no port for.
-    return { ok: false, error: "Couldn't post that poll. Try again.", cause };
+    return { ok: false, error: failureCopy, cause };
   }
 }
 
@@ -281,19 +305,9 @@ async function dispatchPoints(
   const parsed = parsePointsArgs(args);
   if (!parsed.ok) return { ok: false, error: parsed.error };
 
-  if (!resolveMember) {
-    return {
-      ok: false,
-      error: "Member directory is still loading — try again in a moment",
-    };
-  }
-  const member = resolveMember(parsed.value.memberToken);
-  if (!member) {
-    return {
-      ok: false,
-      error: `No member matches @${parsed.value.memberToken}`,
-    };
-  }
+  const resolved = requireMember(resolveMember, parsed.value.memberToken);
+  if (!resolved.ok) return resolved;
+  const { member } = resolved;
   return postPointsAdjustment(ctx, channelId, {
     target_user_id: member.user_id,
     amount:
@@ -451,20 +465,14 @@ async function submitPointsAdjustment(
       body: replay.body,
     });
     data = result.data as PointsAdjustResponse | undefined;
-    // Read the status without narrowing on `error`: the generated contract
-    // declares no error responses for this route, so `error` is typed `never`
-    // and `if (result.error)` would narrow the whole branch — `response`
-    // included — to `never`.
-    status = result.response?.status;
+    status = responseStatus(result).status;
     refusal = result.error;
-    if (result.error) status ??= 0;
   } catch {
     // Transport-level: the request may or may not have reached the server.
     return unconfirmed(ctx, replay, isReplay);
   }
 
-  const succeeded = typeof status === "number" && status >= 200 && status < 300;
-  if (!succeeded) {
+  if (!isSuccessStatus(status)) {
     // A key already spent on a DIFFERENT adjustment (`PointsService`
     // `resolveReplay`). Nothing committed under this request, and replaying it
     // never will — the correct recovery is a fresh key, which is what running
@@ -497,7 +505,14 @@ async function submitPointsAdjustment(
         ok: false,
         error:
           status === 429
-            ? `${REFUSED_ERROR} ${serverMessageOf(refusal) ?? RATE_LIMITED_COPY}`
+            ? `${REFUSED_ERROR} ${
+                isServerBusy({
+                  statusCode: 429,
+                  message: serverMessageOf(refusal),
+                })
+                  ? SERVER_BUSY_COPY
+                  : (serverMessageOf(refusal) ?? RATE_LIMITED_COPY)
+              }`
             : REFUSED_ERROR,
       };
     }
@@ -701,6 +716,50 @@ const UNCONFIRMED_VOLATILE_WARNING =
 const UNCONFIRMED_ROW_NOTE =
   "Not confirmed — these points may or may not have been recorded.";
 
+/**
+ * A card POST's status, and whether it succeeded (a 2xx). Read off the
+ * `response` without narrowing on `error`: where the generated contract
+ * declares no error responses for a route, `error` is typed `never`, and
+ * `if (result.error)` would narrow the whole branch, `response` included, to
+ * `never`. An error with no response reads as status 0. An empty-body gateway
+ * 502/504 arrives as `{ error: undefined, response }`, so `if (error)` alone
+ * would read it as success and strand the placeholder (#1717); only a 2xx is
+ * `ok`.
+ */
+function responseStatus(result: { response?: Response; error?: unknown }): {
+  status: number | undefined;
+  ok: boolean;
+} {
+  let status = result.response?.status;
+  if (result.error) status ??= 0;
+  return { status, ok: isSuccessStatus(status) };
+}
+
+function isSuccessStatus(status: number | undefined): boolean {
+  return typeof status === "number" && status >= 200 && status < 300;
+}
+
+/**
+ * The member a `@member` token names, or the refusal to show: the directory
+ * hasn't loaded, or the token matches no one (so nothing is written).
+ */
+function requireMember(
+  resolveMember: ResolveMember | undefined,
+  token: string,
+):
+  | { ok: true; member: NonNullable<ReturnType<ResolveMember>> }
+  | { ok: false; error: string } {
+  if (!resolveMember) {
+    return {
+      ok: false,
+      error: "Member directory is still loading — try again in a moment",
+    };
+  }
+  const member = resolveMember(token);
+  if (!member) return { ok: false, error: `No member matches @${token}` };
+  return { ok: true, member };
+}
+
 function isTerminalStatus(status: number | undefined): boolean {
   // `isDefinitiveClientError` already excludes the statuses an intermediary can emit
   // after the origin may have committed (408/499/460) — see its docblock.
@@ -780,19 +839,9 @@ async function dispatchTask(
   const parsed = parseTaskArgs(args);
   if (!parsed.ok) return { ok: false, error: parsed.error };
 
-  if (!resolveMember) {
-    return {
-      ok: false,
-      error: "Member directory is still loading — try again in a moment",
-    };
-  }
-  const member = resolveMember(parsed.value.assigneeToken);
-  if (!member) {
-    return {
-      ok: false,
-      error: `No member matches @${parsed.value.assigneeToken}`,
-    };
-  }
+  const resolved = requireMember(resolveMember, parsed.value.assigneeToken);
+  if (!resolved.ok) return resolved;
+  const { member } = resolved;
 
   return postTask(ctx, channelId, {
     title: parsed.value.title,
@@ -815,6 +864,19 @@ export interface TaskInput {
   /** Subtask titles, in order (#4003). */
   subtasks?: string[];
   point_reward?: number;
+  /**
+   * Reference photos already uploaded, in order (#4635). On an edit, the
+   * task's photos as they should stand (kept paths and new ones); `undefined`
+   * leaves them as they are.
+   */
+  reference_photo_paths?: string[];
+  /** What Mark done needs (#4635). */
+  proof_kind?: TaskProofKind;
+  /**
+   * Repeat on this rule (#5119). On an edit, the rule as it should stand:
+   * `null` stops the repeat, `undefined` leaves it.
+   */
+  recurrence_rule?: string | null;
 }
 
 /**
@@ -849,20 +911,17 @@ export async function postTask(
         due_at: input.due_at,
         subtasks: input.subtasks,
         point_reward: input.point_reward,
+        reference_photo_paths: input.reference_photo_paths?.length
+          ? input.reference_photo_paths
+          : undefined,
+        proof_kind: input.proof_kind,
+        recurrence_rule: input.recurrence_rule ?? undefined,
         channel_id: channelId,
         client_message_id: clientMessageId,
       },
     });
-    // Read the status without narrowing on `error`: the generated contract
-    // declares no error responses for this route, so `error` is typed `never`
-    // and `if (result.error)` would narrow the whole branch — `response`
-    // included — to `never`. Empty-body gateway 502/504 arrive as
-    // `{ error: undefined, response }`, so `if (error)` alone would treat them
-    // as success and strand the placeholder (#1717).
     const data = result.data as CardPostedResponse | undefined;
-    let status = result.response?.status;
-    if (result.error) status ??= 0;
-    const ok = typeof status === "number" && status >= 200 && status < 300;
+    const { status, ok } = responseStatus(result);
     if (!ok) {
       if (!isTerminalStatus(status)) {
         return lostResponse(
@@ -900,6 +959,61 @@ export async function postTask(
   // Success: the server posts the `task` card (same client_message_id); the
   // Realtime echo reconciles the placeholder via mergeServerRow. Nothing to do
   // unless `card_posted` was an explicit `false` above.
+  return { ok: true };
+}
+
+export const TASK_LINK_UNCONFIRMED_WARNING =
+  "Couldn't confirm the task was linked. Check the channel before you link it again.";
+
+/**
+ * Post an existing task's card into `channelId` (#5772): the + sheet's Task
+ * row, on web and the phone. A `loading` placeholder until the server's card
+ * reconciles it by Realtime echo; dropped on a refusal. A lost answer reads
+ * as unconfirmed, like `/task`'s, since a second link would post a second
+ * card.
+ */
+export async function linkTask(
+  ctx: ChatActionContext,
+  channelId: string,
+  task: { id: string; title: string },
+): Promise<DispatchResult> {
+  const clientMessageId = randomClientId();
+  insertLocalPlaceholder(ctx, {
+    channelId,
+    clientMessageId,
+    content: `Linking "${task.title}"…`,
+  });
+  try {
+    const result = await ctx.apiClient.POST("/v1/tasks/{id}/share", {
+      params: { path: { id: task.id } },
+      body: { channel_id: channelId, client_message_id: clientMessageId },
+    });
+    const { status, ok } = responseStatus(result);
+    if (!ok) {
+      if (!isTerminalStatus(status)) {
+        return lostResponse(
+          ctx,
+          channelId,
+          clientMessageId,
+          TASK_LINK_UNCONFIRMED_WARNING,
+        );
+      }
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return {
+        ok: false,
+        error: apiErrorMessage(result.error, "Couldn't link that task"),
+        cause: result.error,
+      };
+    }
+  } catch {
+    return lostResponse(
+      ctx,
+      channelId,
+      clientMessageId,
+      TASK_LINK_UNCONFIRMED_WARNING,
+    );
+  }
+  // The card arrives by Realtime echo and replaces the placeholder.
   return { ok: true };
 }
 
@@ -1012,14 +1126,10 @@ export async function postEvent(
         client_message_id: card.clientMessageId,
       },
     });
-    // Same status-without-`error` narrowing as `/task` / `/points`. Empty-body
-    // gateway 502/504 must not read as success: `/event` has no server-side
-    // dedupe, so a stranded placeholder invites a duplicating retry (#1717).
+    // `/event` has no server-side dedupe, so a gateway 502/504 read as
+    // success would strand a placeholder that invites a duplicating retry.
     const data = result.data as CardPostedResponse | undefined;
-    let status = result.response?.status;
-    if (result.error) status ??= 0;
-    const ok = typeof status === "number" && status >= 200 && status < 300;
-    if (!ok) {
+    if (!responseStatus(result).ok) {
       card.failed();
       return {
         ok: false,
@@ -1168,13 +1278,10 @@ export async function postHours(
         client_message_id: clientMessageId,
       },
     });
-    // Same status-without-`error` narrowing as `/task` / `/event`. Empty-body
-    // gateway 502/504 must not read as success: `/hours` has no server-side
-    // dedupe, so a stranded placeholder invites a duplicating retry.
+    // `/hours` has no server-side dedupe, so a gateway 502/504 read as
+    // success would strand a placeholder that invites a duplicating retry.
     const data = result.data as CardPostedResponse | undefined;
-    let status = result.response?.status;
-    if (result.error) status ??= 0;
-    const ok = typeof status === "number" && status >= 200 && status < 300;
+    const { status, ok } = responseStatus(result);
     if (!ok) {
       if (!isTerminalStatus(status)) {
         return lostResponse(
@@ -1227,10 +1334,8 @@ async function resolveRushCandidateId(
     const result = await ctx.apiClient.GET("/v1/rush/candidates", {
       params: { query: { name: token } },
     });
-    const status = result.response?.status;
-    const ok = typeof status === "number" && status >= 200 && status < 300;
     const id = (result.data as { id?: string } | undefined)?.id;
-    if (!ok || typeof id !== "string") return null;
+    if (!responseStatus(result).ok || typeof id !== "string") return null;
     return id;
   } catch {
     return null;
@@ -1282,10 +1387,7 @@ async function dispatchRush(
     const result = await ctx.apiClient.POST(path, {
       params: { path: { id } },
     });
-    let status = result.response?.status;
-    if (result.error) status ??= 0;
-    const ok = typeof status === "number" && status >= 200 && status < 300;
-    if (!ok) {
+    if (!responseStatus(result).ok) {
       return { ok: false, error: apiErrorMessage(result.error, fallback) };
     }
   } catch {
@@ -1320,10 +1422,7 @@ async function dispatchRushAdd(
       },
     });
     const data = result.data as CardPostedResponse | undefined;
-    let status = result.response?.status;
-    if (result.error) status ??= 0;
-    const ok = typeof status === "number" && status >= 200 && status < 300;
-    if (!ok) {
+    if (!responseStatus(result).ok) {
       removeLocalPlaceholder(ctx, channelId, clientMessageId);
       return {
         ok: false,

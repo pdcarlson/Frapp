@@ -1138,7 +1138,7 @@ describe("ImportWizard — the bot path", () => {
         preset("Pick a date");
         fireEvent.change(since(), { target: { value: "2024-06-01" } });
         expect(
-          screen.getByText("Messages before Jun 1, 2024 are left out."),
+          screen.getByText("Messages before June 1, 2024 are left out."),
         ).toBeInTheDocument();
         fireEvent.click(startButton());
         await waitFor(() =>

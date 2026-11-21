@@ -156,6 +156,8 @@ const config: Partial<Config> = {
         },
         border: colorVar("--border"),
         input: colorVar("--input"),
+        /* A control's identifying edge (foundations §3, #4389). */
+        "control-edge": colorVar("--control-edge"),
         /* Also written per chapter, from `--signet-accent-ring`. */
         ring: colorVar("--ring"),
 
@@ -171,7 +173,7 @@ const config: Partial<Config> = {
          * two homes were pure duplication.
          *
          * What stays app-local, and why it is not an oversight: the `gold`
-         * family is an `apps/web` treatment (the Ask pill), and the
+         * family is an `apps/web` treatment (Ask's source markers), and the
          * landing's three marketing type roles sit deliberately ABOVE the
          * locked six (`foundations.md` §7 amendment). Promoting either
          * would claim a treatment the other surface does not implement.
@@ -192,6 +194,7 @@ const config: Partial<Config> = {
         info: {
           DEFAULT: colorVar("--info"),
           foreground: colorVar("--info-foreground"),
+          tint: colorVar("--info-tint"),
         },
         // The AA-lifted danger tone for text/icons on a danger tint (§5).
         "destructive-text": colorVar("--destructive-text"),

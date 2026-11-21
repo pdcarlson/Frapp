@@ -2,6 +2,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { useRef, useState } from "react";
 import { Share } from "react-native";
 import { useCreateInvite, useInvites } from "@repo/hooks";
+import { EVERYONE_ROLE_NAME } from "@repo/validation";
 import { inviteTokenOf, webJoinUrl } from "./invite-link";
 
 /**
@@ -9,7 +10,7 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
  * owner pick 2026-11-06 "Share first") and, inside a chapter, the Invite
  * members screen (`app/(app)/invite.tsx`) draw the same flow from here.
  *
- * An invite lets one person in and lapses after a day, so every press of
+ * An invite lets one person in and lapses after 7 days, so every press of
  * Share invite mints a fresh link and opens the share sheet with it. The
  * founder never sees a token or a "Create another link" button; they press
  * Share once per person. Nothing is minted before a press, so a founder who
@@ -26,11 +27,13 @@ import { inviteTokenOf, webJoinUrl } from "./invite-link";
  */
 
 /**
- * The role a setup invite grants, by name: the seeded Member role
- * (`spec/behavior/onboarding.md`). Not the chapter's configured default,
- * which the Invite members screen gets by naming no role.
+ * The role a setup invite grants, by name: the Everyone role, the seeded
+ * Member role until #4191 (`spec/behavior/onboarding.md`). A build that still
+ * sends "Member" names no role now, and the redeem falls back to the same one.
+ * Not the chapter's configured default, which the Invite members screen gets
+ * by naming no role.
  */
-export const INVITE_ROLE = "Member";
+export const INVITE_ROLE = EVERYONE_ROLE_NAME;
 
 /** How often the step re-reads the chapter's invites to mark a link Joined. */
 export const INVITE_WATCH_INTERVAL_MS = 15_000;

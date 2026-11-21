@@ -11,6 +11,17 @@ const data = vi.hoisted(() => ({
   present: vi.fn(),
   /** A sheet name that throws while rendering. */
   throws: null as string | null,
+  /** The Ask conversation's New conversation. */
+  resetAsk: vi.fn(),
+  newMinutes: vi.fn(),
+}));
+// The meeting actions are their own spec (`meeting-actions.spec.tsx`).
+vi.mock("@/components/quick-actions/meeting-actions", () => ({
+  useMeetingQuickActions: () => ({
+    record: null,
+    newMinutes: data.newMinutes,
+    sheets: null,
+  }),
 }));
 vi.mock("@/components/route-error", () => ({ reportRouteError: vi.fn() }));
 
@@ -18,6 +29,7 @@ vi.mock("@repo/hooks", () => ({
   useActiveChapterId: () => data.chapterId,
   useEvents: () => ({ data: data.events }),
   useDocumentFolders: () => ({ data: [] }),
+  useAsk: () => ({ reset: data.resetAsk }),
 }));
 
 // Each sheet stands in as a host node that can be presented, so a spec sees
@@ -33,6 +45,9 @@ function sheet(name: string) {
     },
   );
 }
+vi.mock("@/components/ask/ask-sheet", () => ({
+  AskSheet: sheet("AskSheet"),
+}));
 vi.mock("@/components/events/new-event-sheet", () => ({
   NewEventSheet: sheet("NewEventSheet"),
 }));
@@ -257,6 +272,42 @@ describe("a sheet that fails to render", () => {
   });
 });
 
+describe("the Ask sheet failing to render (#4713)", () => {
+  it("starts a new conversation, so the next open does not draw the turn that threw", () => {
+    // The conversation is held above the sheet, so dropping the sheet alone
+    // would bring the same turn, and the same failure, back on every open.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const tree = render();
+      data.throws = "AskSheet";
+      act(() => latest.ask());
+      expect(hosts(tree, "AskSheet")).toHaveLength(0);
+      expect(data.resetAsk).toHaveBeenCalledTimes(1);
+      expect(reportRouteError).toHaveBeenCalledWith(expect.any(Error), {
+        boundary: "sheet",
+      });
+      data.throws = null;
+      act(() => latest.ask());
+      expect(hosts(tree, "AskSheet")).toHaveLength(1);
+      expect(data.resetAsk).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("leaves the conversation alone when another sheet fails", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      render();
+      data.throws = "LogHoursSheet";
+      run("logHours");
+      expect(data.resetAsk).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe("where the rest go", () => {
   it("sends Message to the directory, Invite to invites and Study to study", () => {
     render();
@@ -270,30 +321,6 @@ describe("where the rest go", () => {
     ]);
   });
 
-  it("checks straight in to the one event open now", () => {
-    data.events = [event("now", -10), event("later", 120)];
-    render();
-    run("checkIn");
-    expect(router.push).toHaveBeenCalledWith({
-      pathname: "/check-in",
-      params: { eventId: "now" },
-    });
-  });
-
-  it("lets the member choose on Events when none or several are open", () => {
-    data.events = [event("later", 120)];
-    const tree = render();
-    run("checkIn");
-    data.events = [event("a", -10), event("b", -5)];
-    act(() => tree.update(<Harness />));
-    run("checkIn");
-    expect(router.push).not.toHaveBeenCalled();
-    expect(vi.mocked(router.navigate).mock.calls).toEqual([
-      ["/events"],
-      ["/events"],
-    ]);
-  });
-
   it("hosts the soonest event still open to check-in", () => {
     data.events = [event("later", 120), event("soon", 30)];
     render();
@@ -304,9 +331,18 @@ describe("where the rest go", () => {
     });
   });
 
-  it("sends Host check-in to Events when nothing is coming up", () => {
+  it("sends Search to search and New minutes to its sheet (#5287)", () => {
+    render();
+    run("search");
+    run("newMinutes");
+    expect(router.push).toHaveBeenCalledWith("/search");
+    expect(data.newMinutes).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends Host check-in to the Calendar when nothing is coming up", () => {
     render();
     run("hostCheckIn");
-    expect(router.navigate).toHaveBeenCalledWith("/events");
+    // A pushed screen since #5310.
+    expect(router.push).toHaveBeenCalledWith("/events");
   });
 });

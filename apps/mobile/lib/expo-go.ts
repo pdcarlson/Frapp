@@ -4,11 +4,10 @@ import Constants, { ExecutionEnvironment } from "expo-constants";
 /**
  * Is the app running inside Expo Go?
  *
- * Four isolation modules gate on this: `lib/keyboard.tsx` calls it directly,
- * and `lib/notifications/push.ts`, `lib/payments/stripe.ts` and
- * `lib/google-auth.ts` reach it through `isWebOrExpoGo` below. Go ships
- * neither the keyboard controller, remote push, Stripe's native module, nor
- * Google Sign-In, so the package must never be required there —
+ * The isolation modules gate on this: `lib/keyboard.tsx` calls it directly,
+ * and the rest reach it through `isWebOrExpoGo` below (find them by that
+ * name; `spec/ui/mobile/README.md` § Run paths lists them). Go doesn't ship
+ * their native packages, so a package must never be required there —
  * that is the crash-prevention property, not merely a reported unavailability.
  *
  * Read inside the function rather than at module scope so a spec can mock

@@ -1,13 +1,39 @@
 import { Module } from '@nestjs/common';
+import { ActivityCardService } from '../../application/services/activity-card.service';
+import { ActivityCardController } from '../../interface/controllers/activity-card.controller';
+import { ActivityLayoutService } from '../../application/services/activity-layout.service';
+import { ActivityLayoutController } from '../../interface/controllers/activity-layout.controller';
+import { SupabaseActivityLayoutRepository } from '../../infrastructure/supabase/repositories/supabase-activity-layout.repository';
+import { ACTIVITY_LAYOUT_REPOSITORY } from '#domain/repositories/activity-layout.repository.interface';
+import { MeetingModule } from '../meeting/meeting.module';
+import { MemberNudgeModule } from '../member-nudge/member-nudge.module';
 import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
+import { ActivityStandingService } from '../../application/services/activity-standing.service';
+import { ActivityRecapService } from '../../application/services/activity-recap.service';
 import { SupabaseChatMessageLinkRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-link.repository';
 import { CHAT_MESSAGE_LINK_REPOSITORY } from '#domain/repositories/chat-message-link.repository.interface';
 import { SupabaseActivityItemReadRepository } from '../../infrastructure/supabase/repositories/supabase-activity-item-read.repository';
 import { ACTIVITY_ITEM_READ_REPOSITORY } from '#domain/repositories/activity-item-read.repository.interface';
 import { ActivityController } from '../../interface/controllers/activity.controller';
+import { ChatReminderController } from '../../interface/controllers/chat-reminder.controller';
+import { ChatReminderService } from '../../application/services/chat-reminder.service';
+import { ChatReminderSweepService } from '../../application/workers/chat-reminder-sweep.service';
+import { ActivityRecapPushService } from '../../application/workers/activity-recap-push.service';
+import { SupabaseActivityRecapPushRepository } from '../../infrastructure/supabase/repositories/supabase-activity-recap-push.repository';
+import { ACTIVITY_RECAP_PUSH_REPOSITORY } from '#domain/repositories/activity-recap-push.repository.interface';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
+import { SupabaseChatMessageReminderRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-reminder.repository';
+import { CHAT_MESSAGE_REMINDER_REPOSITORY } from '#domain/repositories/chat-message-reminder.repository.interface';
+import { NotificationModule } from '../notification/notification.module';
+import { LinkTitleSweepService } from '../../application/workers/link-title-sweep.service';
+import { HttpsLinkTitleFetcher } from '../../infrastructure/link-title/https-link-title.fetcher';
+import { LINK_TITLE_FETCHER } from '#domain/adapters/link-title.interface';
 import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
 import { SupabaseChatMessageActionRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-action.repository';
+import { SupabaseChatFormResponseRepository } from '../../infrastructure/supabase/repositories/supabase-chat-form-response.repository';
+import { CHAT_FORM_RESPONSE_REPOSITORY } from '#domain/repositories/chat-form-response.repository.interface';
 import { SupabaseAttendanceRepository } from '../../infrastructure/supabase/repositories/supabase-attendance.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { ATTENDANCE_REPOSITORY } from '#domain/repositories/attendance.repository.interface';
@@ -21,8 +47,11 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { ChatModule } from '../chat/chat.module';
 import { EventModule } from '../event/event.module';
+import { GoalsModule } from '../goals/goals.module';
+import { PointsModule } from '../points/points.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ServiceEntryModule } from '../service-entry/service-entry.module';
+import { StudyModule } from '../study/study.module';
 import { TaskModule } from '../task/task.module';
 
 @Module({
@@ -41,16 +70,62 @@ import { TaskModule } from '../task/task.module';
     ChannelAccessModule,
     RbacModule,
     AuthModule,
+    // The standing (`GET /v1/activity/standing`): the semester's points and
+    // board, and the member's own study sessions.
+    PointsModule,
+    StudyModule,
+    // Each member's goal on points, service and study (#1062).
+    GoalsModule,
+    NotificationModule,
+    // The card at the top of the page (#5464): new minutes, and the nudge
+    // records and words.
+    MeetingModule,
+    MemberNudgeModule,
   ],
-  controllers: [ActivityController],
+  controllers: [
+    ActivityController,
+    ChatReminderController,
+    ActivityCardController,
+    ActivityLayoutController,
+  ],
   providers: [
     ActivityService,
+    ActivityCardService,
     ActivityLinkService,
+    ActivityStandingService,
+    // Last week's recap (`GET /v1/activity/recap`, #4983).
+    ActivityRecapService,
+    // And its weekly push (#4985): the hourly sweep, its once-a-week claims,
+    // and the chapter list it walks.
+    ActivityRecapPushService,
+    {
+      provide: ACTIVITY_RECAP_PUSH_REPOSITORY,
+      useClass: SupabaseActivityRecapPushRepository,
+    },
+    { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
     // Links on Activity (#3897): this module is the table's only reader. The
-    // database's triggers on `chat_messages` write it.
+    // database's triggers on `chat_messages` write its rows; the title sweep
+    // below writes only their page titles.
     {
       provide: CHAT_MESSAGE_LINK_REPOSITORY,
       useClass: SupabaseChatMessageLinkRepository,
+    },
+    // Link titles (#4187): the background sweep that reads each link's page
+    // title, through the one guarded fetcher in the API that opens a
+    // URL a member posted. Built by a factory, since a spec passes its own
+    // DNS and request in place of the network.
+    LinkTitleSweepService,
+    // "Remind me about this" (#4957): its routes, its Activity section and
+    // the minute sweep that sends its pushes.
+    ChatReminderService,
+    ChatReminderSweepService,
+    {
+      provide: CHAT_MESSAGE_REMINDER_REPOSITORY,
+      useClass: SupabaseChatMessageReminderRepository,
+    },
+    {
+      provide: LINK_TITLE_FETCHER,
+      useFactory: () => new HttpsLinkTitleFetcher(),
     },
     // Which items each member opened, for unread dots (#4173). This module
     // is the table's only reader and writer.
@@ -69,11 +144,27 @@ import { TaskModule } from '../task/task.module';
       provide: CHAT_MESSAGE_ACTION_REPOSITORY,
       useClass: SupabaseChatMessageActionRepository,
     },
+    // Which form cards the member has answered (#3926 step 4), read by id
+    // and never their answers.
+    {
+      provide: CHAT_FORM_RESPONSE_REPOSITORY,
+      useClass: SupabaseChatFormResponseRepository,
+    },
     // The member's role ids (their own answer to each event) and their
     // attendance rows, read directly: the event list has already settled
     // which events they may see.
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: ATTENDANCE_REPOSITORY, useClass: SupabaseAttendanceRepository },
+    // How each member ordered and hid their cards (#5520). This module is the
+    // table's only reader and writer.
+    ActivityLayoutService,
+    {
+      provide: ACTIVITY_LAYOUT_REPOSITORY,
+      useClass: SupabaseActivityLayoutRepository,
+    },
   ],
+  // For Frapp AI's standing tools (#4901), which read the standing as `GET
+  // /v1/activity/standing` does.
+  exports: [ActivityStandingService],
 })
 export class ActivityModule {}

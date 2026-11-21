@@ -1,3 +1,5 @@
+import { DIRECTORY_COPY, EVENTS_COPY } from "@repo/validation";
+
 export const stateMicrocopy = {
   // Rewritten by the greenfield Directory lane (#2146). The board's state rule
   // is "Empty = accent tile + tinted CTA. No results = neutral tile, names the
@@ -18,11 +20,12 @@ export const stateMicrocopy = {
     // shipped mobile Directory renders for the same state
     // (`apps/mobile/app/(app)/directory.tsx`). The two surfaces are meant to
     // read as one product, and this is the cheapest place to stop them drifting.
-    empty: "No actives yet.",
-    noFilterMatches: "No actives match these filters.",
+    empty: DIRECTORY_COPY.activesEmpty,
+    noFilterMatches: DIRECTORY_COPY.activesNoFilterMatches,
     offlineTitle: "Members unavailable offline",
     offlineDescription: "Reconnect to load the roster.",
-    errorTitle: "Couldn't load members",
+    // One string with the phone's (#4135): `@repo/validation` screen-copy.
+    errorTitle: DIRECTORY_COPY.loadError,
     supportErrorTitle: "Couldn't load roles and points",
     supportErrorDescription: "Filtering, sorting and assignment need both.",
   },
@@ -30,31 +33,20 @@ export const stateMicrocopy = {
   // not an empty chapter. The `preview*` pair had no reader left.
   events: {
     loading: "Loading chapter events...",
-    // Inline lines, not card titles (`components.md` §10). A chapter with no
-    // events opens on the calendar, so `empty` is what the List tab says if
-    // someone switches to it; the calendar carries its own line.
-    empty: "No events yet.",
+    // Inline lines, not card titles (`components.md` §10). Said over the
+    // agenda, whose days still list tasks and birthdays. The phone says the
+    // same `empty` line (#4135).
+    empty: EVENTS_COPY.empty,
     noUpcoming: "No upcoming events.",
     noPast: "No past events.",
-    // Upcoming holds the next two weeks (#3707); what's after them waits
-    // behind Later, right under this line.
-    noneSoon: "Nothing in the next two weeks.",
     noSearchMatches: "No events match that search.",
     noFilterMatches: "No events match these filters.",
-    // On the calendar of a chapter with no events. Officers who can create
-    // get the how; everyone else gets the fact.
-    calendarFirstEvent: "Pick a day to schedule the first event.",
-    // The compact month (#4022): pressing a day picks it, and New event under
-    // the grid makes one on the picked day.
-    calendarFirstEventCompact:
-      "Pick a day, then New event to schedule the first event.",
-    // The compact month's day list, for a picked day with nothing on it.
-    calendarDayEmpty: "Nothing on this day.",
-    calendarNothingYet: "Nothing on the calendar yet.",
+    // The agenda (#5560): seven days from where it starts hold nothing.
+    nothingThisWeek: "Nothing this week.",
     offlineTitle: "Events workspace unavailable offline",
     offlineDescription:
       "Reconnect to load event schedules and attendance updates.",
-    errorTitle: "Couldn't load chapter events",
+    errorTitle: EVENTS_COPY.loadError,
   },
   points: {
     loading: "Loading points ledger...",
