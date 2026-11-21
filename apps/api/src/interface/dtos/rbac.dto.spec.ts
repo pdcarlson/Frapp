@@ -6,7 +6,11 @@ import {
   UpdateRoleDto,
   UpdateRoleTierDto,
 } from './rbac.dto';
-import { UpdateChapterGroupDto } from './chapter-group.dto';
+import { ROLE_COLOR_HEXES } from '@repo/validation';
+import {
+  CreateChapterGroupDto,
+  UpdateChapterGroupDto,
+} from './chapter-group.dto';
 
 // #3485, #5784: a role color is a palette value, or a custom color that reads
 // on every surface and isn't red or gold, in any letter case, stored in its
@@ -46,8 +50,8 @@ describe('role color input', () => {
     expect(errors.map((e) => e.property)).not.toContain('color');
   });
 
-  it.each(['#FF0000', '#EFB63B', '#1E3A8A', 'blue'])(
-    'refuses %s: red, gold, too dark, or not a color',
+  it.each(['#FF0000', '#FF8A80', '#EFB63B', '#1E3A8A', '#7ce', 'blue'])(
+    'refuses %s: red, readable red, gold, too dark, short hex, or not a color',
     async (color) => {
       const dto = plainToInstance(UpdateRoleDto, { color });
       const errors = await validate(dto);
@@ -63,6 +67,29 @@ describe('role color input', () => {
     expect(dto.color).toBe(stored);
     expect(await validate(dto)).toEqual([]);
   });
+
+  // Shipped phone builds may send any palette value; the oasdiff waiver for
+  // #5784 (apps/mobile/store/api-breaking-ignore.txt) rests on this.
+  it.each(ROLE_COLOR_HEXES)(
+    'accepts palette color %s on every role and group write, as listed',
+    async (hex) => {
+      for (const cls of [
+        CreateRoleDto,
+        UpdateRoleDto,
+        CreateChapterGroupDto,
+        UpdateChapterGroupDto,
+      ] as ClassConstructor<object>[]) {
+        const dto = plainToInstance(cls, {
+          name: 'Rush Chair',
+          permissions: [],
+          color: hex.toLowerCase(),
+        }) as { color?: string };
+        expect(dto.color).toBe(hex);
+        const errors = await validate(dto);
+        expect(errors.map((e) => e.property)).not.toContain('color');
+      }
+    },
+  );
 
   it('refuses a gold group color', async () => {
     const dto = plainToInstance(UpdateChapterGroupDto, { color: '#FFD700' });

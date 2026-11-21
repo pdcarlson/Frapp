@@ -24438,7 +24438,7 @@
           "role_color": {
             "type": "string",
             "nullable": true,
-            "description": "Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it."
+            "description": "Color (palette or readable custom, `isPaintableRoleColor`) of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it."
           }
         },
         "required": [
@@ -26455,7 +26455,7 @@
           "color": {
             "type": "string",
             "nullable": true,
-            "description": "A role's palette color; null for a tier or an uncolored role."
+            "description": "A role's color (palette or readable custom, `isPaintableRoleColor`); null for a tier or an uncolored role."
           },
           "tier_id": {
             "type": "string",
@@ -26510,7 +26510,7 @@
           "color": {
             "type": "string",
             "nullable": true,
-            "description": "The role’s palette color, or null."
+            "description": "The role’s color (a palette color or a readable custom `#RRGGBB`, `isPaintableRoleColor`), or null."
           },
           "mentionable": {
             "type": "boolean",
@@ -33633,7 +33633,7 @@
           "color": {
             "type": "string",
             "nullable": true,
-            "description": "One of the role palette colors, or null."
+            "description": "A palette color, or a custom `#RRGGBB` that reads on every surface (`isPaintableRoleColor` in `@repo/validation`), or null."
           },
           "mentionable": {
             "type": "boolean",

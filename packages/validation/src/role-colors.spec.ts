@@ -1,4 +1,4 @@
-import { contrastRatio, hexToOklch, parseHex } from "@repo/color";
+import { AA_NORMAL, contrastRatio, hexToOklch, parseHex } from "@repo/color";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,7 +8,6 @@ import {
   reservedBandForHue,
   reservedRoleHue,
   ROLE_COLOR_HEXES,
-  ROLE_COLOR_MIN_CONTRAST,
   ROLE_COLOR_PALETTE,
   ROLE_COLOR_RESERVED_BANDS,
   ROLE_COLOR_SURFACES,
@@ -54,11 +53,16 @@ describe("roleColorOrNull", () => {
     expect(roleColorOrNull("#6B7280")).toBeNull();
     expect(roleColorOrNull("#FF665C")).toBeNull();
     expect(roleColorOrNull("#EFB63B")).toBeNull();
+    // A red that reads (5.5:1 on --card-hover): only the red band refuses it.
+    expect(minContrast("#FF8A80")).toBeGreaterThanOrEqual(AA_NORMAL);
+    expect(roleColorOrNull("#FF8A80")).toBeNull();
     expect(roleColorOrNull("#123456")).toBeNull();
     expect(roleColorOrNull(null)).toBeNull();
     expect(roleColorOrNull(undefined)).toBeNull();
     expect(roleColorOrNull(42)).toBeNull();
-    expect(roleColorOrNull("#ABC")).not.toBe("#ABC");
+    // A short #RGB is refused even when its long form reads (#77CCEE does).
+    expect(roleColorOrNull("#77CCEE")).toBe("#77CCEE");
+    expect(roleColorOrNull("#7ce")).toBeNull();
     expect(roleColorOrNull("blue")).toBeNull();
   });
 
@@ -66,9 +70,7 @@ describe("roleColorOrNull", () => {
     // Emerald, the pre-#3485 seed: it reads at AA everywhere and isn't red
     // or gold, so since #5784 it paints.
     expect(roleColorOrNull("#10b981")).toBe("#10B981");
-    expect(minContrast("#10B981")).toBeGreaterThanOrEqual(
-      ROLE_COLOR_MIN_CONTRAST,
-    );
+    expect(minContrast("#10B981")).toBeGreaterThanOrEqual(AA_NORMAL);
   });
 
   it("paints every palette value exactly as listed, including the two that need a hover lift", () => {
@@ -113,7 +115,7 @@ describe("roleColorForHue", () => {
       const { hex } = roleColorForHue(hue);
       expect(isPaintableRoleColor(hex), `${hue}° → ${hex}`).toBe(true);
       expect(roleColorOrNull(hex)).toBe(hex);
-      expect(minContrast(hex)).toBeGreaterThanOrEqual(ROLE_COLOR_MIN_CONTRAST);
+      expect(minContrast(hex)).toBeGreaterThanOrEqual(AA_NORMAL);
       expect(reservedRoleHue(hex), `${hue}° → ${hex}`).toBeNull();
     }
   });
@@ -140,13 +142,6 @@ describe("roleColorForHue", () => {
 });
 
 describe("adjustRoleColor", () => {
-  it("returns every palette value unchanged", () => {
-    for (const hex of ROLE_COLOR_HEXES) {
-      expect(adjustRoleColor(hex)).toEqual({ hex, nudged: null });
-      expect(adjustRoleColor(hex.toLowerCase())).toEqual({ hex, nudged: null });
-    }
-  });
-
   it("returns a color that already reads as it is", () => {
     expect(adjustRoleColor("#10B981")).toEqual({
       hex: "#10B981",
@@ -157,9 +152,7 @@ describe("adjustRoleColor", () => {
   it("lifts a dark color until it reads, keeping its hue", () => {
     const result = adjustRoleColor("#1E3A8A")!; // a dark navy
     expect(result.nudged).toBeNull();
-    expect(minContrast(result.hex)).toBeGreaterThanOrEqual(
-      ROLE_COLOR_MIN_CONTRAST,
-    );
+    expect(minContrast(result.hex)).toBeGreaterThanOrEqual(AA_NORMAL);
     expect(
       Math.abs(roleColorHue(result.hex)! - roleColorHue("#1E3A8A")!),
     ).toBeLessThan(5);

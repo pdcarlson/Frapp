@@ -7473,7 +7473,7 @@ export interface components {
             /** @description May be an empty string: the column is NOT NULL DEFAULT '', so clients treat empty as unresolved rather than rendering a blank name. */
             display_name: string;
             avatar_url: string | null;
-            /** @description Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
+            /** @description Color (palette or readable custom, `isPaintableRoleColor`) of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
             role_color: string | null;
         };
         MemberBirthdayDto: {
@@ -8207,7 +8207,7 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
-            /** @description A role's palette color; null for a tier or an uncolored role. */
+            /** @description A role's color (palette or readable custom, `isPaintableRoleColor`); null for a tier or an uncolored role. */
             color: string | null;
             /**
              * Format: uuid
@@ -8232,7 +8232,7 @@ export interface components {
             kind: "role" | "tier" | "group";
             /** @description The name; the picker inserts it folded. */
             name: string;
-            /** @description The role’s palette color, or null. */
+            /** @description The role’s color (a palette color or a readable custom `#RRGGBB`, `isPaintableRoleColor`), or null. */
             color: string | null;
             /** @description Whether the caller may `@` it: its own switch (`mentionable` on the role, tier or group, on by default), or the caller holding `channels:manage` or `roles:manage`. A token naming one the sender may not ping reaches nobody. */
             mentionable: boolean;
@@ -10726,7 +10726,7 @@ export interface components {
             kind: "manual" | "pledge_class" | "class_year" | "major";
             /** @description The group's name, which `@` mentions it. An automatic group's is its pledge class's, "Class of" and the year, or the major as most of its members write it. */
             name: string;
-            /** @description One of the role palette colors, or null. */
+            /** @description A palette color, or a custom `#RRGGBB` that reads on every surface (`isPaintableRoleColor` in `@repo/validation`), or null. */
             color: string | null;
             /** @description Whether any member may `@` the group. While false, only a member holding `channels:manage` or `roles:manage` can ping it. */
             mentionable: boolean;

@@ -1,9 +1,10 @@
 import {
-  contrastRatio,
+  AA_NORMAL,
   hexToOklch,
-  normalizeHex,
+  meetsContrast,
   oklchToHex,
   parseHex,
+  type Rgb,
 } from "@repo/color";
 
 import {
@@ -93,8 +94,13 @@ export const ROLE_COLOR_SURFACES = {
   cardHover: "#34323A",
 } as const;
 
-/** WCAG AA for normal-size text, which a name in chat is. */
-export const ROLE_COLOR_MIN_CONTRAST = 4.5;
+/** The surfaces, parsed once. */
+const SURFACE_RGBS: readonly Rgb[] = Object.values(ROLE_COLOR_SURFACES).map(
+  (surface) => parseHex(surface)!,
+);
+
+/** A stored custom color is exactly `#RRGGBB`: the shape the API writes. */
+const SIX_DIGIT_HEX = /^#[0-9A-F]{6}$/i;
 
 /**
  * The OKLCH hue bands a custom role color may not sit in, in degrees, `from`
@@ -143,13 +149,19 @@ function normalizedHue(hue: number): number {
   return ((finite % 360) + 360) % 360;
 }
 
-/** The reserved band a hue falls in, ignoring chroma. */
-export function reservedBandForHue(hue: number): ReservedRoleHue | null {
+type ReservedBand = (typeof ROLE_COLOR_RESERVED_BANDS)[number];
+
+/** The band a hue falls in, `from` inclusive and `to` exclusive. */
+function bandForHue(hue: number): ReservedBand | undefined {
   const h = normalizedHue(hue);
-  const band = ROLE_COLOR_RESERVED_BANDS.find(
+  return ROLE_COLOR_RESERVED_BANDS.find(
     (candidate) => h >= candidate.from && h < candidate.to,
   );
-  return band?.key ?? null;
+}
+
+/** The reserved band a hue falls in, ignoring chroma. */
+export function reservedBandForHue(hue: number): ReservedRoleHue | null {
+  return bandForHue(hue)?.key ?? null;
 }
 
 /** The reserved band a color reads as, or `null` for any other color (and a non-color). */
@@ -168,9 +180,7 @@ export function reservedRoleHueReason(band: ReservedRoleHue): string {
 /** The nearest hue outside every reserved band, with the band it left. */
 function nudgeHue(hue: number): { hue: number; band: ReservedRoleHue | null } {
   const h = normalizedHue(hue);
-  const band = ROLE_COLOR_RESERVED_BANDS.find(
-    (candidate) => h >= candidate.from && h < candidate.to,
-  );
+  const band = bandForHue(h);
   if (!band) return { hue: h, band: null };
   const toLower = h - band.from;
   const toUpper = band.to - h;
@@ -195,12 +205,10 @@ function awayFromBands(hue: number): -1 | 1 {
   return best.direction;
 }
 
-function readsOnEverySurface(hex: string): boolean {
-  const rgb = parseHex(hex);
-  if (!rgb) return false;
-  return Object.values(ROLE_COLOR_SURFACES).every(
-    (surface) =>
-      contrastRatio(rgb, parseHex(surface)!) >= ROLE_COLOR_MIN_CONTRAST,
+/** WCAG AA for normal-size text (`AA_NORMAL`), which a name in chat is, on every surface. */
+function readsOnEverySurface(rgb: Rgb): boolean {
+  return SURFACE_RGBS.every((surface) =>
+    meetsContrast(rgb, surface, { minimum: AA_NORMAL }),
   );
 }
 
@@ -219,8 +227,9 @@ export function isPaintableRoleColor(value: unknown): boolean {
  *
  * Case-insensitive, because the column is free text and older writes may
  * differ in case. A palette value comes back exactly as listed, so the ten
- * quick picks paint as they always have. Any other hex comes back uppercase
- * when it reads at AA on every surface and isn't red or gold; anything else
+ * quick picks paint as they always have. Any other `#RRGGBB` (six digits, as
+ * the API stores it; a short `#RGB` is refused) comes back uppercase when it
+ * reads at AA on every surface and isn't red or gold; anything else
  * (including the pre-#3485 seed `#FFD700`, gold, and `#6B7280`, too dark) is
  * `null`, so a render path never paints a color nobody checked for contrast.
  */
@@ -228,18 +237,17 @@ export function roleColorOrNull(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const palette = BY_UPPER_HEX.get(value.trim().toUpperCase());
   if (palette) return palette;
-  const hex = normalizeHex(value);
-  if (hex.length !== 7) return null;
+  const hex = value.trim().toUpperCase();
+  if (!SIX_DIGIT_HEX.test(hex)) return null;
   if (reservedRoleHue(hex) !== null) return null;
-  return readsOnEverySurface(hex) ? hex : null;
+  return readsOnEverySurface(parseHex(hex)!) ? hex : null;
 }
 
 /**
- * The nearest paintable color to `hex` (#5784): the one shared adjustment
- * every picker and test goes through.
+ * The nearest paintable color to `hex` (#5784), the step behind
+ * {@link roleColorForHue}, which is how the picker reaches it.
  *
- * A palette value is returned exactly as listed. Otherwise the color keeps its
- * hue and chroma, its hue moves just past the nearer edge of a reserved band
+ * The color keeps its hue and chroma, its hue moves just past the nearer edge of a reserved band
  * it sits in (`nudged` names that band, for the picker's one line of why), and
  * its OKLCH lightness rises until it reads at AA on every surface. Lifting is
  * always enough on Frapp's dark surfaces: at full lightness every color is
@@ -248,8 +256,6 @@ export function roleColorOrNull(value: unknown): string | null {
 export function adjustRoleColor(
   input: string,
 ): { hex: string; nudged: ReservedRoleHue | null } | null {
-  const palette = BY_UPPER_HEX.get(input.trim().toUpperCase());
-  if (palette) return { hex: palette, nudged: null };
   const oklch = hexToOklch(input);
   if (!oklch) return null;
   const grey = oklch.c < ROLE_COLOR_RESERVED_CHROMA;

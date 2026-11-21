@@ -68,7 +68,7 @@ export type AssignmentRow = {
   kind: "role" | "group";
   id: string;
   name: string;
-  /** A palette color, or `null` for none. */
+  /** A paintable color (`roleColorOrNull`), or `null` for none. */
   color: string | null;
   /** Whether the member has it now. */
   held: boolean;

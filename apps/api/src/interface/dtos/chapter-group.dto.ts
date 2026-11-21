@@ -44,7 +44,8 @@ export class ChapterGroupDto {
   @ApiProperty({
     type: String,
     nullable: true,
-    description: 'One of the role palette colors, or null.',
+    description:
+      'A palette color, or a custom `#RRGGBB` that reads on every surface (`isPaintableRoleColor` in `@repo/validation`), or null.',
   })
   color: string | null;
 

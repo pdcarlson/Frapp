@@ -57,7 +57,8 @@ POST /v1/backwork added the pattern '^[0-9a-f]{64}$' to the request property 'fi
 # #5784 lets a role or group color be any readable hue, so the request `color` drops its enum of the
 # ten palette values. oasdiff reads a dropped enum value as a narrowing, but this is a widening: every
 # value the enum listed is still accepted and stored as before (`isPaintableRoleColor` passes the whole
-# palette; `apps/api/src/interface/dtos/rbac.dto.spec.ts` pins it), so no request a shipped binary can
+# palette; `apps/api/src/interface/dtos/rbac.dto.spec.ts` pins every palette value on all four
+# writes), so no request a shipped binary can
 # send is refused that wasn't refused before.
 POST /v1/roles removed the enum value '#3DD6C4' of the request property 'color'
 POST /v1/roles removed the enum value '#5CC8F0' of the request property 'color'
