@@ -120,6 +120,25 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-21",
+    title: "New in this update",
+    changes: [
+      "The + in a conversation is down to the things people post most, and its Task option now lets you find any task you can see and post it into the conversation.",
+      "You can @ a major now, like @Mechanical Engineering, to ping everyone in your chapter with it, and the Major field on your profile suggests the majors your chapter already has.",
+      "Start minutes with No meeting when there isn't one on the calendar yet, and link the meeting before you post them. Minutes now read Not started, Drafting, or the name of whoever is recording.",
+      "A suggested task from minutes can go straight onto the next meeting's agenda instead, or wait for that meeting to be scheduled.",
+      "An event that's happening right now shows at the top of Chat and Activity, with when it ends and whether you've checked in.",
+      "Officers can make a new event type right from the Type menu while creating an event, and on your phone that menu no longer covers the whole form.",
+    ],
+    web: [
+      "Right-click a document for its actions.",
+    ],
+    phone: [
+      "The app opens straight to your last chat instead of waiting on the logo, then catches up in the background.",
+      "Menus are smaller and open right where you tap, instead of the system sheet that covered the screen.",
+    ],
+  },
+  {
     date: "2026-11-20",
     title: "New in this update",
     changes: [
