@@ -1069,6 +1069,10 @@ export function MessageThreadScreen({
             onChangeText={onChangeText}
             onSend={staging.submit}
             onPickMember={staging.addMentionPick}
+            dictationTarget={`${channelId}|${rootId}`}
+            tidyDictation={
+              !!openChannel && !isDirectChannel(openChannel.channel)
+            }
             // Search needs the network, and the + isn't offered while editing.
             onOpenPlus={
               gifs.available && !staging.isEditing ? openGif : undefined

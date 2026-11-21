@@ -694,7 +694,12 @@ How Frapp finds out whether an answer was any good, without keeping anyone's wor
 
 ### Dictation
 
-A member can speak a question into Ask's field instead of typing it (#5276).
+A member can speak a question into Ask's field instead of typing it (#5276), and, on the phone, a message into any chat composer: a channel, a DM or a thread (#5772, Paul 2026-11-21; web has no mic in either).
+Chat uses the same recogniser, the same cleanup route and the same rules below, with three differences:
+
+- **Never a DM's words.** In a DM or group DM (and while the channel is still loading) the words land as the phone heard them and nothing goes to the cleanup, because Frapp AI never receives direct messages (privacy policy, Frapp AI).
+- **One go holds what the cleanup takes** (1,000 characters) as well as what the message has left of its 10,000. The `full` line names the limit that stopped it: "That's all one dictation can hold." or "That's all one message can hold."
+- **Words go only where they were spoken for.** A dictation in progress is dropped when the channel changes in place or a reply or edit opens, and the Original chip goes once the box holds anything other than the tidied words.
 
 - **The phone hears it.**
   The phone's own speech recogniser turns the speech into words: on the device where the phone can, otherwise Apple's or Google's recogniser.

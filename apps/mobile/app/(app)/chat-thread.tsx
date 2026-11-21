@@ -2239,6 +2239,10 @@ function ChannelThreadScreen() {
               mentionRoles={mentionRoles.data}
               onPickMember={addMentionPick}
               ask={mayAskHere ? { naming: asksFrapp } : null}
+              dictationTarget={channelId}
+              tidyDictation={
+                !!openChannel && !isDirectChannel(openChannel.channel)
+              }
               placeholder={composerPlaceholder}
               // A send that never reached the outbox has no failed row to show
               // (nothing was queued), so this line is the only report of it.

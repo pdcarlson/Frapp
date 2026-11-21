@@ -26,9 +26,9 @@ import {
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * Dictation's pieces of Ask's composer (#5276; Paul's pick on 2026-11-17 from
- * the design page, modelled on Bevel's assistant field, ChatGPT's dictation
- * and Wispr Flow):
+ * Dictation's pieces, in Ask's composer (#5276; Paul's pick on 2026-11-17
+ * from the design page, modelled on Bevel's assistant field, ChatGPT's
+ * dictation and Wispr Flow) and every chat composer on the phone (#5772):
  *
  * - {@link DictationMic}: a mic inside the field's right end, so dictation can
  *   add to words already typed and send never moves.
@@ -46,8 +46,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The waveform, the clock and the words line read the live values themselves
  * (`useDictationLive`), so a level sample redraws them and nothing else.
  *
- * Phone only: web's Ask has no mic in #5276. The words are this file's own,
- * not `ASK_COPY`'s, for that reason.
+ * Phone only: web has no mic (#5276; for chat, Paul 2026-11-21). The words
+ * are this file's own, not `ASK_COPY`'s, for that reason.
  */
 
 export const DICTATION_COPY = {
@@ -66,11 +66,16 @@ export const DICTATION_COPY = {
     unavailable: "Dictation isn't available right now.",
     failed: "Dictation stopped.",
     full: "That's all that fits in one question.",
-  } satisfies Record<Notice, string>,
+    /** Chat's `full` when the message itself is full. */
+    fullMessage: "That's all one message can hold.",
+    /** Chat's `full` when one go reached what the cleanup takes. */
+    fullDictation: "That's all one dictation can hold.",
+  } satisfies Record<Notice | "fullMessage" | "fullDictation", string>,
 } as const;
 
 /** 32pt inside a 44pt field; the slop reaches 44. */
-const MIC_SIZE = 32;
+export const DICTATION_MIC_SIZE = 32;
+const MIC_SIZE = DICTATION_MIC_SIZE;
 
 export function DictationMic({ onPress }: { onPress: () => void }) {
   const { tokens } = useFrappTheme();
@@ -181,7 +186,10 @@ export function DictationHeard({ live }: { live: DictationLive }) {
       importantForAccessibility="no"
       style={[
         typeRole(tokens.typography.role.caption),
-        { color: tokens.color.text.muted, paddingHorizontal: tokens.spacing.sm },
+        {
+          color: tokens.color.text.muted,
+          paddingHorizontal: tokens.spacing.sm,
+        },
       ]}
     >
       {words}
@@ -251,15 +259,20 @@ export function DictationOriginal({ onPress }: { onPress: () => void }) {
 export function DictationNotice({
   failure,
   onDismiss,
+  fullText = DICTATION_COPY.notice.full,
 }: {
   failure: Notice;
   onDismiss: () => void;
+  /** What `full` says where the field isn't Ask's question. */
+  fullText?: string;
 }) {
   const { tokens } = useFrappTheme();
   const themed = createStyles(tokens);
   return (
     <View style={themed.notice} accessibilityLiveRegion="polite">
-      <Text style={themed.noticeText}>{DICTATION_COPY.notice[failure]}</Text>
+      <Text style={themed.noticeText}>
+        {failure === "full" ? fullText : DICTATION_COPY.notice[failure]}
+      </Text>
       {failure === "denied" ? (
         <Pressable
           accessibilityRole="link"
@@ -274,6 +287,17 @@ export function DictationNotice({
       ) : null}
     </View>
   );
+}
+
+/** Dictated words after what is already in the field, cut to `max`. */
+export function joinDictated(
+  before: string,
+  added: string,
+  max: number,
+): string {
+  const head = before.trimEnd();
+  const next = head ? `${head} ${added.trim()}` : added.trim();
+  return next.slice(0, max);
 }
 
 const styles = StyleSheet.create({

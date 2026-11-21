@@ -68,6 +68,10 @@
 //   only the Terms pin: ruled non-material by the owner on his decision card
 //   (2026-11-20), since every member who accepted before it confirmed 18,
 //   which covers both ages.
+//   The dictation clause naming chat messages too, with Frapp AI tidying the
+//   words for Ask Frapp and chapter channels, never direct messages
+//   (2026-11-21, #5772), moved only the Privacy pin on the #5276 precedent,
+//   pending the owner's material-or-not ruling in its PR.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -106,7 +110,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "November 2026",
-    fingerprint: "0fc56f87cbeee9d2",
+    fingerprint: "98e31cdc03fa1ed4",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

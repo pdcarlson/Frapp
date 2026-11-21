@@ -7,8 +7,8 @@ import { useFrappClient } from "./use-frapp-client";
 export const ASK_DICTATION_TIMEOUT_MS = 3000;
 
 /**
- * Dictation's cleanup in Ask's field (#5276, `spec/behavior/ai.md` § Ask
- * Frapp, Dictation): hands the words the phone's recogniser heard to
+ * Dictation's cleanup in Ask's field (#5276) and the phone's channel
+ * composers (#5772, never a DM's), per `spec/behavior/ai.md` § Dictation: hands the words the phone's recogniser heard to
  * `POST /v1/ai/ask/dictation` and resolves them tidied.
  *
  * It never throws. Anything but a cleaned answer (offline, a refusal such as

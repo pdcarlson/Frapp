@@ -47,7 +47,7 @@ import {
   DictationNotice,
   DictationOriginal,
   DictationTidying,
-} from "@/components/ask/ask-dictation";
+} from "@/components/dictation/dictation-controls";
 import { AskOpening } from "@/components/ask/ask-opening";
 import { AskTurn } from "@/components/ask/ask-turn";
 import {
@@ -69,13 +69,8 @@ import {
 } from "@/components/sheet-scaffold";
 import { useActActions, useMayAct } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useDictation } from "@/lib/dictation/use-dictation";
-import {
-  fontFamilyFor,
-  tint,
-  typeRole,
-  useFrappTheme,
-} from "@/lib/theme";
+import { useFieldDictation } from "@/components/dictation/use-field-dictation";
+import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
 
@@ -291,29 +286,16 @@ export const AskSheet = forwardRef<
   });
 
   const [draft, setDraft] = useState(initialDraft ?? "");
-  const draftRef = useRef(draft);
-  useEffect(() => {
-    draftRef.current = draft;
-  }, [draft]);
-  // Tidied dictation just landed: what the Original chip puts back, until the
-  // member types or sends (#5276).
-  const [original, setOriginal] = useState<{
-    tidied: string;
-    restore: string;
-  } | null>(null);
+  // Dictation (#5276): the room, the joining and the Original chip are the
+  // chat composer's too (`useFieldDictation`).
   const cleanDictation = useCleanDictation();
-  const dictation = useDictation({
+  const field = useFieldDictation({
+    value: draft,
+    setValue: setDraft,
+    max: ASK_QUESTION_MAX_LENGTH,
     clean: cleanDictation,
-    // What the field has left, with a space before the new words.
-    room: ASK_QUESTION_MAX_LENGTH - (draft.trim() ? draft.trimEnd().length + 1 : 0),
-    onText: (text, heard) => {
-      const before = draftRef.current;
-      const tidied = joinDraft(before, text);
-      const restore = joinDraft(before, heard);
-      setDraft(tidied);
-      setOriginal(tidied === restore ? null : { tidied, restore });
-    },
   });
+  const { dictation, original } = field;
   const listening = dictation.phase === "listening";
   const tidying = dictation.phase === "cleaning";
   const leftForSource = useRef(false);
@@ -363,6 +345,7 @@ export const AskSheet = forwardRef<
   }, [working, askedHere]);
   const cancelDictation = dictation.cancel;
   const dismissDictation = dictation.dismiss;
+  const clearOriginal = field.clearOriginal;
   const onDismiss = useCallback(() => {
     setShownOpen(false);
     cancelDictation();
@@ -400,12 +383,12 @@ export const AskSheet = forwardRef<
     (text: string) => {
       if (!text.trim() || workingRef.current) return;
       setDraft("");
-      setOriginal(null);
+      clearOriginal();
       dismissDictation();
       clearNotice();
       void ask(text, options());
     },
-    [ask, options, clearNotice, dismissDictation],
+    [ask, options, clearNotice, dismissDictation, clearOriginal],
   );
 
   const pick = useCallback(
@@ -550,10 +533,7 @@ export const AskSheet = forwardRef<
           ) : null}
           {original !== null && dictation.phase === "idle" ? (
             <DictationOriginal
-              onPress={() => {
-                setDraft(original.restore);
-                setOriginal(null);
-              }}
+              onPress={field.restoreOriginal}
             />
           ) : null}
           <View style={styles.composerRow}>
@@ -580,12 +560,7 @@ export const AskSheet = forwardRef<
                       dictated paragraph shows whole, up to five lines. */}
                   <BottomSheetTextInput
                     value={draft}
-                    onChangeText={(next) => {
-                      setDraft(next);
-                      if (original !== null && next !== original.tidied) {
-                        setOriginal(null);
-                      }
-                    }}
+                    onChangeText={setDraft}
                     onSubmitEditing={() => submit(draft)}
                     multiline
                     submitBehavior="submit"
@@ -598,10 +573,7 @@ export const AskSheet = forwardRef<
                   />
                   {dictation.available ? (
                     <DictationMic
-                      onPress={() => {
-                        setOriginal(null);
-                        dictation.start();
-                      }}
+                      onPress={field.start}
                     />
                   ) : null}
                 </>
@@ -645,13 +617,6 @@ export const AskSheet = forwardRef<
 const FIELD_LINE_HEIGHT = 20;
 const FIELD_MAX_LINES = 5;
 const FIELD_BORDER = 1;
-
-/** Typed or tidied words after what is already in the field. */
-function joinDraft(before: string, added: string): string {
-  const head = before.trimEnd();
-  const next = head ? `${head} ${added.trim()}` : added.trim();
-  return next.slice(0, ASK_QUESTION_MAX_LENGTH);
-}
 
 function createStyles(tokens: SignetTokens) {
   // What is left of the 44pt field once one line and the border are drawn,
