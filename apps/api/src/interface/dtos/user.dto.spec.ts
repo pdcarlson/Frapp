@@ -56,6 +56,12 @@ describe('UpdateUserDto', () => {
     });
   });
 
+  it('keeps a number that is not a valid US one as typed, not turned into +1', async () => {
+    await expect(
+      transform(UpdateUserDto, { phone: '0412 345 678' }),
+    ).resolves.toEqual({ phone: '0412 345 678' });
+  });
+
   it('keeps a short local number as typed, trimmed', async () => {
     await expect(
       transform(UpdateUserDto, { phone: ' 555-0142 ' }),

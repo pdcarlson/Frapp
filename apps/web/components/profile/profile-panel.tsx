@@ -117,15 +117,19 @@ export function ProfilePanel() {
   // field the member edited from one they left alone.
   const seededFrom = useRef<CurrentUser | null>(null);
 
-  // Where the Phone field's caret goes once its formatted value renders.
+  // Where the Phone field's caret goes once its formatted value renders. It
+  // runs after every keystroke, not only when the value changed: a keystroke
+  // the formatting undoes (a space mid-number) still has React write the value
+  // back, which would throw the caret to the end.
   const phoneInput = useRef<HTMLInputElement>(null);
   const phoneCaret = useRef<number | null>(null);
+  const [phoneKeystrokes, setPhoneKeystrokes] = useState(0);
   useLayoutEffect(() => {
     const caret = phoneCaret.current;
-    if (caret === null || !phoneInput.current) return;
     phoneCaret.current = null;
+    if (caret === null || !phoneInput.current) return;
     phoneInput.current.setSelectionRange(caret, caret);
-  }, [profileDraft.phone]);
+  }, [phoneKeystrokes]);
 
   useEffect(() => {
     if (!userQuery.data) return;
@@ -432,17 +436,31 @@ export function ProfilePanel() {
                   setPhoneError(false);
                   // Formats as the member types (#5798), keeping the caret
                   // among the same digits.
+                  const inputType = (event.nativeEvent as InputEvent).inputType;
                   const typed = formatPhoneInput(
                     event.target.value,
                     event.target.selectionStart ?? event.target.value.length,
                     profile.phone ?? "",
+                    inputType === "deleteContentForward"
+                      ? "forward"
+                      : "backward",
                   );
                   phoneCaret.current = typed.caret;
+                  setPhoneKeystrokes((count) => count + 1);
                   setProfileDraft((prev) => ({
                     ...prev,
                     phone: typed.value,
                   }));
                 }}
+                // A 7-digit local number reads `555-0142` once the member
+                // leaves the field, not half-grouped as a longer one.
+                onBlur={() =>
+                  setProfileDraft((prev) =>
+                    prev.phone
+                      ? { ...prev, phone: formatPhone(prev.phone) }
+                      : prev,
+                  )
+                }
                 placeholder={PROFILE_FIELD_COPY.phone.placeholder}
               />
               <p

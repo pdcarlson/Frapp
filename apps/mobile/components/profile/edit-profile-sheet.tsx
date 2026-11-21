@@ -15,7 +15,7 @@ import {
 } from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useFieldReveal, useUpdateUser } from "@repo/hooks";
-import { formatPhoneInput } from "@repo/formatting";
+import { formatPhone, formatPhoneInput } from "@repo/formatting";
 import {
   BIRTHDAY_COPY,
   DISPLAY_NAME_MAX_LENGTH,
@@ -412,6 +412,12 @@ export const EditProfileSheet = forwardRef<
         onBlur={() => {
           setFocused((current) => (current === name ? null : current));
           reveal.blur(name);
+          // A 7-digit local number reads `555-0142` once the member leaves
+          // the field, not half-grouped as a longer one (#5798).
+          if (name === "phone" && formatPhone(shown.phone) !== shown.phone) {
+            const tidy = formatPhone(shown.phone);
+            setEdits((latest) => applyEdit(latest, original, "phone", tidy));
+          }
         }}
         placeholder={options.placeholder}
         placeholderTextColor={tokens.color.text.muted}

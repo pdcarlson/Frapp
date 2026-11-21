@@ -863,8 +863,9 @@ describe("MemberProfile fact rows", () => {
   });
 
   // #3711: a contact card, the phone first.
+  // #5798: stored normalized, shown formatted, there and in the menu.
   it("draws the member's phone above Email, and a tap offers Call or Text", () => {
-    state.phones[CARA] = "(518) 555-0142";
+    state.phones[CARA] = "+15185550142";
     const sheet = vi
       .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
       .mockImplementation(() => {});
@@ -877,7 +878,10 @@ describe("MemberProfile fact rows", () => {
     expect(phoneRow?.props.value).toBe("(518) 555-0142");
     act(() => phoneRow?.props.onPress());
     expect(sheet).toHaveBeenCalledWith(
-      expect.objectContaining({ options: ["Call", "Text", "Cancel"] }),
+      expect.objectContaining({
+        options: ["Call", "Text", "Cancel"],
+        message: "(518) 555-0142",
+      }),
       expect.any(Function),
     );
     delete state.phones[CARA];

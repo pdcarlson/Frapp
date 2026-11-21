@@ -677,10 +677,6 @@ describe("EditProfileSheet (#3387)", () => {
   });
 });
 
-/**
- * #5280. The You tab's rows open the sheet at the field tapped: once the sheet
- * settles open it scrolls that field into view and focuses it, once a visit.
- */
 // #5798: the phone formats as it is typed, one keystroke at a time.
 describe("EditProfileSheet phone formatting (#5798)", () => {
   function typeEach(tree: ReactTestRenderer, text: string) {
@@ -702,12 +698,34 @@ describe("EditProfileSheet phone formatting (#5798)", () => {
     expect(input(tree, "Phone").props.value).toBe("+44 20 7946 0958");
   });
 
+  it("backspaces through the formatting a digit at a time", () => {
+    const tree = render();
+    typeEach(tree, "555");
+    expect(input(tree, "Phone").props.value).toBe("(555)");
+    type(tree, "Phone", "(555");
+    expect(input(tree, "Phone").props.value).toBe("55");
+  });
+
+  it("tidies a 7-digit local number when the field is left", () => {
+    const tree = render();
+    typeEach(tree, "5550142");
+    expect(input(tree, "Phone").props.value).toBe("(555) 014-2");
+    act(() => {
+      input(tree, "Phone").props.onBlur();
+    });
+    expect(input(tree, "Phone").props.value).toBe("555-0142");
+  });
+
   it("shows a stored number formatted", () => {
     const tree = render({ ...PROFILE, phone: "+15185550142" });
     expect(input(tree, "Phone").props.value).toBe("(518) 555-0142");
   });
 });
 
+/**
+ * #5280. The You tab's rows open the sheet at the field tapped: once the sheet
+ * settles open it scrolls that field into view and focuses it, once a visit.
+ */
 describe("EditProfileSheet opens at a field (#5280)", () => {
   const scrollTo = vi.fn();
   const focus = new Map<string, ReturnType<typeof vi.fn>>();

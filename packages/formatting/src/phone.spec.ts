@@ -3,9 +3,9 @@ import { formatPhone, formatPhoneInput, normalizePhone } from "./phone";
 
 describe("normalizePhone", () => {
   it.each([
-    ["5551234567", "+15551234567"],
-    ["(555) 123 4567", "+15551234567"],
-    ["555-123-4567", "+15551234567"],
+    ["5185550142", "+15185550142"],
+    ["(518) 555 0142", "+15185550142"],
+    ["518-555-0142", "+15185550142"],
     ["518.555.0142", "+15185550142"],
     ["1 518 555 0142", "+15185550142"],
     [" +1 518 555 0142 ", "+15185550142"],
@@ -14,8 +14,18 @@ describe("normalizePhone", () => {
     expect(normalizePhone(typed)).toBe(stored);
   });
 
-  it("keeps a short local number as typed", () => {
+  it("keeps a 7-digit local number as 555-0142, however it was grouped", () => {
     expect(normalizePhone(" 555-0142 ")).toBe("555-0142");
+    expect(normalizePhone("(555) 014-2")).toBe("555-0142");
+  });
+
+  it("doesn't turn a number from elsewhere, typed without its +, into a US one", () => {
+    expect(normalizePhone("0412 345 678")).toBe("0412 345 678");
+    expect(normalizePhone("44 20 7946 0958")).toBe("44 20 7946 0958");
+  });
+
+  it("keeps a number that isn't a real one as typed", () => {
+    expect(normalizePhone("(555) 123-4567")).toBe("(555) 123-4567");
   });
 
   it("leaves letters and extensions for validation to refuse", () => {
@@ -26,18 +36,25 @@ describe("normalizePhone", () => {
 
 describe("formatPhone", () => {
   it.each([
-    ["+15551234567", "(555) 123-4567"],
+    ["+15185550142", "(518) 555-0142"],
     ["5551234567", "(555) 123-4567"],
     ["555-123-4567", "(555) 123-4567"],
     ["(555) 123 4567", "(555) 123-4567"],
+    ["+15551234567", "(555) 123-4567"],
     ["+442079460958", "+44 20 7946 0958"],
     ["+44 20 7946 0958", "+44 20 7946 0958"],
   ])("shows %j as %j", (stored, shown) => {
     expect(formatPhone(stored)).toBe(shown);
   });
 
-  it("shows what doesn't read as a whole number as it was stored", () => {
+  it("shows a 7-digit local number as 555-0142", () => {
     expect(formatPhone(" 555-0142 ")).toBe("555-0142");
+    expect(formatPhone("5550142")).toBe("555-0142");
+  });
+
+  it("shows a number no US number could be as it was stored", () => {
+    expect(formatPhone("0412 345 678")).toBe("0412 345 678");
+    expect(formatPhone("123-456-7890")).toBe("123-456-7890");
   });
 
   it("is empty for none", () => {
@@ -80,7 +97,7 @@ describe("formatPhoneInput", () => {
     });
   });
 
-  it("takes the digit before a separator a backspace removed", () => {
+  it("takes the digit before a separator Backspace removed", () => {
     expect(formatPhoneInput("(555", 4, "(555)")).toEqual({
       value: "55",
       caret: 2,
@@ -89,6 +106,25 @@ describe("formatPhoneInput", () => {
       value: "(555) 124-567",
       caret: 8,
     });
+  });
+
+  it("takes the digit after a separator the Delete key removed", () => {
+    expect(formatPhoneInput("(555 123", 4, "(555) 123", "forward")).toEqual({
+      value: "(555) 23",
+      caret: 4,
+    });
+  });
+
+  it("never trims a paste over the field", () => {
+    expect(formatPhoneInput("518-555-0142", 12, "(212) 555-1234").value).toBe(
+      "(518) 555-0142",
+    );
+    expect(formatPhoneInput("5185550142", 10, "(518) 555-0142").value).toBe(
+      "(518) 555-0142",
+    );
+    expect(
+      formatPhoneInput("+442079460958", 13, "+44 20 7946 0958").value,
+    ).toBe("+44 20 7946 0958");
   });
 
   it("works out the caret from the text before, when none is given", () => {
@@ -108,8 +144,14 @@ describe("formatPhoneInput", () => {
     expect(formatPhoneInput("+", 1, "")).toEqual({ value: "+", caret: 1 });
   });
 
-  it("drops letters and stops at 15 digits", () => {
-    expect(formatPhoneInput("555a").value).toBe("(555)");
+  it("leaves a letter or an extension as typed, for Save to refuse", () => {
+    expect(formatPhoneInput("(518) 555-0142 x12").value).toBe(
+      "(518) 555-0142 x12",
+    );
+    expect(formatPhoneInput("555a", 4).value).toBe("555a");
+  });
+
+  it("stops at 15 digits", () => {
     expect(
       formatPhoneInput("+1234567890123456789").value.replace(/\D/g, ""),
     ).toHaveLength(15);

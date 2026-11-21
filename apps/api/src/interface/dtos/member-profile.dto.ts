@@ -59,7 +59,7 @@ export class MemberProfileDto {
     type: String,
     nullable: true,
     description:
-      "The member's own phone number (#3711), stored E.164 when it reads as a whole number (#5798), else as typed, or null. Clients show it with `formatPhone` (`@repo/formatting`). Only they set it.",
+      "The member's own phone number (#3711), stored E.164 when it is a valid number (#5798), else as typed, or null. Clients show it with `formatPhone` (`@repo/formatting`). Only they set it.",
   })
   phone: string | null;
 

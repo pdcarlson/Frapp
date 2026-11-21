@@ -353,6 +353,45 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     expect(phone).toHaveValue("+44 20 7946 0958");
   });
 
+  it("shows a stored number formatted", async () => {
+    mocks.userQuery.data = { ...mocks.userQuery.data, phone: "+15185550142" };
+    render(<ProfilePanel />);
+    expect(screen.getByLabelText("Phone")).toHaveValue("(518) 555-0142");
+  });
+
+  it("backspaces through the formatting a digit at a time", async () => {
+    render(<ProfilePanel />);
+    const phone = screen.getByLabelText("Phone");
+    await userEvent.type(phone, "555");
+    expect(phone).toHaveValue("(555)");
+    await userEvent.type(phone, "{Backspace}");
+    expect(phone).toHaveValue("55");
+  });
+
+  it("keeps the caret after a digit typed mid-number", async () => {
+    render(<ProfilePanel />);
+    const phone = screen.getByLabelText("Phone") as HTMLInputElement;
+    await userEvent.type(phone, "555123456");
+    expect(phone).toHaveValue("(555) 123-456");
+    // Between "(55" and "5": type a 9.
+    await userEvent.type(phone, "9", {
+      initialSelectionStart: 3,
+      initialSelectionEnd: 3,
+    });
+    expect(phone).toHaveValue("(559) 512-3456");
+    expect(phone.selectionStart).toBe(4);
+  });
+
+  it("leaves an extension in the field for Save to refuse", async () => {
+    render(<ProfilePanel />);
+    await userEvent.type(screen.getByLabelText("Phone"), "5185550142 x12");
+    // The space is formatting the field drops; the letter stops it.
+    expect(screen.getByLabelText("Phone")).toHaveValue("(518) 555-0142x12");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter a phone number");
+    expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("draws no share switch while there is no birthday (#5282)", () => {
     render(<ProfilePanel />);
     expect(

@@ -77,7 +77,7 @@ export interface MemberProfile {
   current_company: string | null;
   email: string;
   /**
-   * `users.phone` (#3711): the member's own number, stored E.164 when it reads as a whole number (#5798), or null.
+   * `users.phone` (#3711): the member's own number, stored E.164 when it is a valid number (#5798), or null.
    * Only they set it (`PATCH /v1/users/me`).
    */
   phone: string | null;

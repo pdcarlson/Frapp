@@ -9,7 +9,7 @@ import { PHONE_MAX_LENGTH } from "./field-limits";
 
 /** The fewest and most digits a phone number has (E.164 caps it at 15). */
 const PHONE_MIN_DIGITS = 7;
-const PHONE_MAX_DIGITS = 15;
+export const PHONE_MAX_DIGITS = 15;
 
 /** What the wording of a refused number says, on the API and both forms. */
 export const PHONE_INVALID_MESSAGE =

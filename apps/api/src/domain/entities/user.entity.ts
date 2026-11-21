@@ -51,7 +51,7 @@ export interface User {
   current_city: string | null;
   current_company: string | null;
   /**
-   * The member's own phone number (#3711), stored E.164 when it reads as a whole number (#5798), or null. Only
+   * The member's own phone number (#3711), stored E.164 when it is a valid number (#5798), or null. Only
    * they set it; it shows on their profile in every chapter they are in.
    * Optional so fixtures that predate it still type-check.
    */

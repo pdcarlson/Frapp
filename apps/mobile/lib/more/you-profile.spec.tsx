@@ -233,6 +233,20 @@ describe("Profile tap to edit (#3711)", () => {
     tree.unmount();
   });
 
+  // #5798: the Phone row shows the stored number formatted.
+  it("shows the stored phone formatted on the Phone row", () => {
+    currentUser = {
+      ...LOADED_USER,
+      data: { ...LOADED_USER.data, phone: "+15185550142" },
+    };
+    const { tree } = renderWithSheet();
+    const row = detailListRows(tree).find(
+      (candidate) => candidate.props.label === "Phone",
+    );
+    expect(row?.props.value).toBe("(518) 555-0142");
+    tree.unmount();
+  });
+
   it("opens the sheet from the bio card at Bio", () => {
     currentUser = {
       ...LOADED_USER,

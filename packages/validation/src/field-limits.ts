@@ -104,9 +104,10 @@ export const GRADUATION_YEAR_MAX = 2100;
 export const MAJOR_MAX_LENGTH = 100;
 
 /**
- * A member's phone number (`users.phone`, #3711), trimmed, and stored E.164 when it reads as a whole number (#5798).
- * Room for an international number with its spaces and an extension; the
- * column's check stops anything longer. {@link isPhoneNumber} is what the API
+ * A member's phone number (`users.phone`, #3711): stored E.164 when it is a
+ * valid number, else trimmed as typed (#5798). Room for an international
+ * number with its spaces (an extension is refused); the column's check stops
+ * anything longer. {@link isPhoneNumber} is what the API
  * and both forms accept.
  */
 export const PHONE_MAX_LENGTH = 32;
