@@ -153,7 +153,6 @@ export class SupabaseRoleRepository implements IRoleRepository {
     if (!data) return null;
     return {
       strippedMemberIds: data.stripped_member_ids ?? [],
-      givenEveryoneMemberIds: data.given_everyone_member_ids ?? [],
     };
   }
 }

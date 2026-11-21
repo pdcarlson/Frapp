@@ -20,8 +20,8 @@
 --    lists, events' attendance by role, documents, tasks) now means the
 --    actives, and every member who held Everyone is an active, with exactly
 --    the access they had. It is renamed "Actives" ("Actives (base)" if the
---    chapter already has a role of that name) and becomes mentionable, as
---    every other role is by default.
+--    chapter already has a role of that name); its `@` switch stays as it
+--    was (8).
 -- 2. A new Everyone role (`system_key` EVERYONE) is added outside the tiers
 --    with `members:view` only, the directory and the channels open to the
 --    whole chapter. It takes the old row's `@everyone` switch, so a chapter
@@ -36,8 +36,17 @@
 -- 6. `delete_role` stops handing the Actives role to a holder left with no
 --    member-access role: everyone keeps the floor, and nobody becomes an
 --    active without an officer saying so.
+-- 7. A member left holding two base roles from before #4191 (graduating
+--    then meant unticking Member and ticking Alumni, two steps) keeps one:
+--    Alumni over the others, then Actives over New Member. A role save now
+--    refuses a set holding two (`role.base_conflict`), so without this an
+--    officer couldn't change such a member's other roles.
+-- 8. The Actives role keeps the old row's `@` switch, and a tier holding it
+--    follows that switch (chat-mention.service.ts), so `@Actives` and
+--    `@Members` stay officers-only wherever `@everyone` was.
 --
--- WHAT IT DOESN'T: no member's permissions shrink, no list is rewritten, no
+-- WHAT IT DOESN'T: no member's permissions shrink, except a graduate who
+-- still held the old Member row beside Alumni (7), no list is rewritten, no
 -- tier moves. `reorder_role_tiers` still keys its floor on `MEMBER`, which is
 -- now "New members and Alumni stay at or below the Actives tier", the rule it
 -- always meant. `transfer_presidency` still appends the `MEMBER` row when the
@@ -76,8 +85,7 @@ begin
       v_name := 'Actives (base)';
     end if;
     update public.roles
-       set name = v_name,
-           mentionable = true
+       set name = v_name
      where id = r.id;
 
     -- 2. The new floor, after every other role in the chapter's order.
@@ -107,6 +115,36 @@ begin
   end loop;
 end
 $$;
+
+-- 7. One base role each: Alumni wins, then Actives over New Member.
+update public.members m
+   set role_ids = array(
+         select x from unnest(m.role_ids) with ordinality as u(x, n)
+          where not exists (
+            select 1 from public.roles b
+             where b.chapter_id = m.chapter_id
+               and lower(u.x) = b.id::text
+               and (
+                 (b.system_key in ('MEMBER', 'NEW_MEMBER') and exists (
+                   select 1 from public.roles a, unnest(m.role_ids) as y
+                    where a.chapter_id = m.chapter_id
+                      and a.system_key = 'ALUMNI'
+                      and lower(y) = a.id::text))
+                 or (b.system_key = 'NEW_MEMBER' and exists (
+                   select 1 from public.roles a, unnest(m.role_ids) as y
+                    where a.chapter_id = m.chapter_id
+                      and a.system_key = 'MEMBER'
+                      and lower(y) = a.id::text))
+               )
+          )
+          order by u.n
+       )
+ where (
+   select count(*) from public.roles b, unnest(m.role_ids) as z
+    where b.chapter_id = m.chapter_id
+      and b.system_key in ('MEMBER', 'NEW_MEMBER', 'ALUMNI')
+      and lower(z) = b.id::text
+ ) > 1;
 
 -- 5. Every member row holds its chapter's Everyone role.
 create or replace function public.members_keep_everyone_role()

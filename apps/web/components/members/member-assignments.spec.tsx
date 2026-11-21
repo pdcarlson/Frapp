@@ -2,14 +2,15 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { updateRoles, setMembership, permissions, mockToast } = vi.hoisted(
-  () => ({
+const { updateRoles, setMembership, permissions, mockToast, baseRoles } =
+  vi.hoisted(() => ({
     updateRoles: vi.fn(),
     setMembership: vi.fn(),
     permissions: { current: ["*"] as string[] },
     mockToast: vi.fn(),
-  }),
-);
+    // The chapter's base roles, off unless a test seeds them (#5802).
+    baseRoles: { current: [] as ReturnType<typeof Object>[] },
+  }));
 
 const TIERS = [
   {
@@ -60,8 +61,8 @@ const ROLES = [
 
 vi.mock("@/components/roles/use-roles-data", () => ({
   useRolesData: () => ({
-    roles: ROLES,
-    rolesQuery: { data: ROLES, isError: false },
+    roles: [...ROLES, ...baseRoles.current],
+    rolesQuery: { data: [...ROLES, ...baseRoles.current], isError: false },
     tiers: TIERS,
     reach: {
       wildcard: permissions.current.includes("*"),
@@ -135,6 +136,7 @@ function renderIt(roleIds = ["r-sec", "r-everyone"]) {
 
 beforeEach(() => {
   permissions.current = ["*"];
+  baseRoles.current = [];
   updateRoles.mockReset().mockResolvedValue({});
   setMembership.mockReset().mockResolvedValue({});
   mockToast.mockReset();
@@ -382,6 +384,56 @@ describe("MemberAssignments (Paul, 2026-11-19)", () => {
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({ title: "Couldn't take out of that group" }),
       ),
+    );
+  });
+});
+
+describe("base roles (#5802)", () => {
+  beforeEach(() => {
+    baseRoles.current = [
+      role("r-new", "New Member", "t-chairs", {
+        system_key: "NEW_MEMBER",
+        is_system: true,
+      }),
+      role("r-actives", "Actives", "t-chairs", {
+        system_key: "MEMBER",
+        is_system: true,
+      }),
+      role("r-alumni", "Alumni", null, {
+        system_key: "ALUMNI",
+        is_system: true,
+      }),
+    ];
+  });
+
+  it("says a member holds no base role, only to someone who can give one", () => {
+    const { unmount } = renderIt(["r-sec", "r-everyone"]);
+    expect(screen.getByText("No base role")).toBeInTheDocument();
+    unmount();
+    permissions.current = ["members:view"];
+    renderIt(["r-sec", "r-everyone"]);
+    expect(screen.queryByText("No base role")).toBeNull();
+  });
+
+  it("offers the base roles as one pick, and a new one replaces the old", async () => {
+    const user = userEvent.setup();
+    renderIt(["r-sec", "r-actives", "r-everyone"]);
+    expect(screen.queryByText("No base role")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Add role" }));
+    const list = screen.getByRole("dialog", {
+      name: "Roles and groups for Jimmy Mitchell",
+    });
+    expect(
+      within(list).getByRole("menuitemradio", { name: /Actives/ }),
+    ).toHaveAttribute("aria-checked", "true");
+    await user.click(
+      within(list).getByRole("menuitemradio", { name: /Alumni/ }),
+    );
+    await waitFor(() =>
+      expect(updateRoles).toHaveBeenCalledWith({
+        id: "m1",
+        role_ids: ["r-sec", "r-alumni", "r-everyone"],
+      }),
     );
   });
 });

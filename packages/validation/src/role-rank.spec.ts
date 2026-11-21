@@ -109,3 +109,29 @@ describe("role rank", () => {
     expect(highestRankedRole([], positions)).toBeNull();
   });
 });
+
+describe("the Everyone floor (#5802)", () => {
+  const floor = {
+    id: "floor-everyone",
+    name: "Everyone",
+    display_order: 9,
+    tier_id: null,
+    is_system: true,
+    system_key: "EVERYONE",
+  };
+  const guest = {
+    id: "guest",
+    name: "Rush Guest",
+    display_order: 3,
+    tier_id: null,
+    is_system: false,
+  };
+
+  it("ranks below every other role, a custom role outside the tiers included", () => {
+    expect(highestRankedRole([floor, guest], positions)?.id).toBe("guest");
+    expect(
+      sortRolesByRank([floor, firstFloor, guest], positions).at(-1)?.id,
+    ).toBe("floor-everyone");
+    expect(highestRankedRole([floor], positions)?.id).toBe("floor-everyone");
+  });
+});

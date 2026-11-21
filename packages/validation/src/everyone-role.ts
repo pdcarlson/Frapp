@@ -30,6 +30,17 @@ export const EVERYONE_ROLE_SYSTEM_KEY = "EVERYONE";
  */
 export const ACTIVE_ROLE_SYSTEM_KEY = "MEMBER";
 
+/**
+ * Whether a role row is the Actives base role. It can't leave its tier
+ * (the API answers `role.everyone_fixed`), so the role pages lock its tier.
+ */
+export function isActiveRole(role: unknown): boolean {
+  if (!role || typeof role !== "object") return false;
+  return (
+    (role as Record<string, unknown>).system_key === ACTIVE_ROLE_SYSTEM_KEY
+  );
+}
+
 /** The Actives role's seeded name in a new chapter. */
 export const ACTIVE_ROLE_NAME = "Actives";
 

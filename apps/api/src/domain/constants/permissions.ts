@@ -339,7 +339,9 @@ const SEEDED_ROLES = [
     // It keeps the `MEMBER` key, so every lookup of "the Member role" (the
     // semester rollover's promotion, presidency's floor, the tier reorder's
     // floor) finds it, and its starting tier, so actives rank where members
-    // did. A chapter renames it ("Brothers").
+    // did. A chapter renames it ("Brothers"). `@Actives` reaches nearly the
+    // whole chapter, so it starts officers-only, as `@everyone` does, and the
+    // Members tier follows its switch.
     name: ACTIVE_ROLE_NAME,
     system_key: SystemRoleKeys.MEMBER,
     starting_tier: 2,
@@ -347,6 +349,7 @@ const SEEDED_ROLES = [
     is_system: true,
     display_order: 5,
     color: null,
+    mentionable: false,
   },
   {
     name: 'New Member',

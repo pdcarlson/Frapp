@@ -1,3 +1,5 @@
+import { isEveryoneRole } from "./everyone-role";
+
 /**
  * Which of a member's roles ranks highest, shared by the API and both apps so
  * every surface names the same title and draws the same order (Paul,
@@ -31,6 +33,7 @@ export interface RankableRole {
   tier_id?: string | null;
   permissions?: readonly string[] | null;
   is_system?: boolean;
+  system_key?: string | null;
 }
 
 /** A tier's position by id, from the chapter's tiers. */
@@ -55,6 +58,10 @@ export function compareRolesByRank(
   b: RankableRole,
   positions: TierPositions,
 ): number {
+  // The Everyone role (#5802) is the floor every member holds, below every
+  // other role, so it never names a member's title over a role of theirs.
+  const floorA = isEveryoneRole(a);
+  if (floorA !== isEveryoneRole(b)) return floorA ? 1 : -1;
   const tierA = tierRankOf(a, positions);
   const tierB = tierRankOf(b, positions);
   if (tierA !== tierB) return tierA < tierB ? -1 : 1;

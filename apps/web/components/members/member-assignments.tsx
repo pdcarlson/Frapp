@@ -193,7 +193,7 @@ export function MemberAssignments({
         // so it is said where the base role would be, before the officer
         // opens the list.
         notice={
-          editable &&
+          canManageRoles &&
           data.rolesQuery.data !== undefined &&
           needsBaseRole(data.roles, heldRoleIds)
             ? NO_BASE_ROLE_LABEL

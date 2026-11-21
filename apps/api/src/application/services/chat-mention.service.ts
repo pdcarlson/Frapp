@@ -15,7 +15,10 @@ import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '#domain/repositories/member.repository.interface';
-import { SystemPermissions } from '#domain/constants/permissions';
+import {
+  SystemPermissions,
+  SystemRoleKeys,
+} from '#domain/constants/permissions';
 import type { ChapterMemberIdentity } from '#domain/entities/member.entity';
 import type { Role, RoleTier } from '#domain/entities/role.entity';
 import type {
@@ -526,10 +529,11 @@ function nameIsFree(name: string): boolean {
  * anyone's), so a member whose role leaves the tier stops getting it. In tier
  * order, highest first, with the tier's own switch.
  *
- * A tier holding the Everyone role reaches nearly the whole chapter, so it is
- * `@everyone` under another name: it also follows the Everyone role's switch
- * (#4191, officers only by default), or `@Members` would let any member ping
- * everyone past the rule `@everyone` keeps.
+ * A tier holding the Everyone role, or since #5802 the Actives role (the old
+ * Everyone row), reaches nearly the whole chapter, so it is `@everyone` under
+ * another name: it also follows that role's switch (#4191, officers only by
+ * default), or `@Members` would let any member ping everyone past the rule
+ * `@everyone` keeps.
  */
 function mentionTierViews(
   tiers: readonly RoleTier[],
@@ -541,7 +545,10 @@ function mentionTierViews(
     .sort((a, b) => a.position - b.position)
     .map((tier) => {
       const inTier = roles.filter((role) => role.tier_id === tier.id);
-      const everyone = inTier.find(isEveryoneRole);
+      const everyone = inTier.find(
+        (role) =>
+          isEveryoneRole(role) || role.system_key === SystemRoleKeys.MEMBER,
+      );
       return {
         role_id: tier.id,
         kind: 'tier' as const,

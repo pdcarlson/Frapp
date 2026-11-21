@@ -139,7 +139,7 @@ describe('SupabaseRoleRepository — tenant scope', () => {
           data: {
             role: { id: ROLE_B },
             stripped_member_ids: ['m-1', 'm-2'],
-            given_everyone_member_ids: ['m-2'],
+            given_everyone_member_ids: [],
           },
         },
       },
@@ -152,7 +152,6 @@ describe('SupabaseRoleRepository — tenant scope', () => {
 
     expect(deletion).toEqual({
       strippedMemberIds: ['m-1', 'm-2'],
-      givenEveryoneMemberIds: ['m-2'],
     });
     expect(harness.rpcCalls[0].args).toEqual({
       p_chapter_id: CHAPTER_B,

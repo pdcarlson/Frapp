@@ -113,6 +113,7 @@ export {
   EVERYONE_ROLE_SYSTEM_KEY,
   HERE_MENTION_NAME,
   type HereMentionSource,
+  isActiveRole,
   isBaseRole,
   isEveryoneRole,
   mentionRoleHint,

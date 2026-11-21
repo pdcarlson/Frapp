@@ -268,7 +268,6 @@ describe('RbacService', () => {
     mockRoleRepo.update.mockResolvedValue({ ...role, name: 'Renamed' });
     mockRoleRepo.delete.mockResolvedValue({
       strippedMemberIds: [],
-      givenEveryoneMemberIds: [],
     });
     mockChapterAuditLogService.record.mockRejectedValue(
       new Error('audit insert failed'),
@@ -681,7 +680,6 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.delete.mockResolvedValue({
       strippedMemberIds: [],
-      givenEveryoneMemberIds: [],
     });
 
     await service.delete('role-1', 'ch-1', ACTOR);
@@ -699,13 +697,13 @@ describe('RbacService', () => {
   });
 
   // #4547: the delete takes the role off its holders in the same
-  // transaction, and the audit row says who lost it and who got Everyone.
-  it('records who lost a deleted role and who was given Everyone', async () => {
+  // transaction, and the audit row says who lost it. Since #5802 nobody is
+  // given a role in its place.
+  it('records who lost a deleted role', async () => {
     const role: Role = roleFixture();
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.delete.mockResolvedValue({
       strippedMemberIds: ['m-1', 'm-2'],
-      givenEveryoneMemberIds: ['m-2'],
     });
 
     await service.delete('role-1', 'ch-1', ACTOR);
@@ -716,7 +714,6 @@ describe('RbacService', () => {
         diff: {
           role: { from: role, to: null },
           removed_from_member_ids: { from: ['m-1', 'm-2'], to: null },
-          given_everyone_member_ids: { from: null, to: ['m-2'] },
         },
       }),
     );

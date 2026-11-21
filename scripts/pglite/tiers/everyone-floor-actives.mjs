@@ -24,8 +24,12 @@ console.log(
     taken: "a5802000-0000-4000-8000-0000000000e2",
     chair: "a5802000-0000-4000-8000-0000000000e3",
     memberB: "b5802000-0000-4000-8000-0000000000e1",
+    newMember: "a5802000-0000-4000-8000-0000000000e4",
+    alumni: "a5802000-0000-4000-8000-0000000000e5",
   };
-  const U = [1, 2, 3, 4].map((n) => `a5802000-0000-4000-8000-00000000000${n}`);
+  const U = [1, 2, 3, 4, 5, 6, 7].map(
+    (n) => `a5802000-0000-4000-8000-00000000000${n}`,
+  );
   const backfillSql = (() => {
     const file = readFileSync(
       join(
@@ -71,11 +75,16 @@ console.log(
         ('${R.member}', '${A}', 'Everyone', 'MEMBER', true, 5, '{members:view}', '${T}', true),
         ('${R.taken}', '${A}', 'Actives', null, false, 6, '{}', null, true),
         ('${R.chair}', '${A}', 'Chair', null, false, 2, '{members:view}', null, true),
+        ('${R.newMember}', '${A}', 'New Member', 'NEW_MEMBER', true, 7, '{}', null, true),
+        ('${R.alumni}', '${A}', 'Alumni', 'ALUMNI', true, 8, '{}', null, true),
         ('${R.memberB}', '${B}', 'Everyone', 'MEMBER', true, 5, '{members:view}', null, false);
       insert into members (chapter_id, user_id, role_ids) values
         ('${A}', '${U[0]}', '{${R.member}}'),
         ('${A}', '${U[1]}', '{${R.chair}}'),
-        ('${A}', '${U[2]}', '{}');
+        ('${A}', '${U[2]}', '{}'),
+        ('${A}', '${U[4]}', '{${R.member},${R.chair},${R.alumni}}'),
+        ('${A}', '${U[5]}', '{${R.newMember},${R.member}}'),
+        ('${A}', '${U[6]}', '{${R.newMember},${R.alumni}}');
       update chapters set default_invite_role_id = '${R.member}' where id = '${A}';
     `);
 
@@ -100,6 +109,15 @@ console.log(
     check("a chapter with no clash calls it Actives", ourB.name === "Actives", {
       ourB,
     });
+    const [switchB] = await rows(
+      `select mentionable from roles where id = $1`,
+      [R.memberB],
+    );
+    check(
+      "the old row keeps its @ switch, so @Actives stays officers-only",
+      switchB.mentionable === false,
+      { switchB },
+    );
 
     const everyoneA = await everyoneOf(A);
     const e = everyoneA[0];
@@ -132,6 +150,21 @@ console.log(
       "a member with no role holds Everyone alone",
       same(await rolesOf(U[2]), [e.id]),
       { roles: await rolesOf(U[2]) },
+    );
+    check(
+      "a graduate who kept the old row holds Alumni alone of the base roles",
+      same(await rolesOf(U[4]), [R.chair, R.alumni, e.id]),
+      { roles: await rolesOf(U[4]) },
+    );
+    check(
+      "a member holding Actives and New Member keeps Actives",
+      same(await rolesOf(U[5]), [R.member, e.id]),
+      { roles: await rolesOf(U[5]) },
+    );
+    check(
+      "a member holding New Member and Alumni keeps Alumni",
+      same(await rolesOf(U[6]), [R.alumni, e.id]),
+      { roles: await rolesOf(U[6]) },
     );
     const [{ d }] = await rows(
       `select default_invite_role_id::text as d from chapters where id = $1`,

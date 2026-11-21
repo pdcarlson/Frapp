@@ -509,9 +509,11 @@ describe('ChapterService', () => {
       is_system: roleDef.is_system,
       display_order: roleDef.display_order,
       color: roleDef.color ?? null,
-      // Every seeded role can be pinged but Everyone, which only officers
-      // may use until the chapter opens it.
-      mentionable: roleDef.system_key !== SystemRoleKeys.EVERYONE,
+      // Every seeded role can be pinged but Everyone and Actives, which only
+      // officers may use until the chapter opens them.
+      mentionable:
+        roleDef.system_key !== SystemRoleKeys.EVERYONE &&
+        roleDef.system_key !== SystemRoleKeys.MEMBER,
     }));
     expect(mockRoleRepo.createMany).toHaveBeenCalledWith(expectedRolesData);
     const byKey = (key: string) =>
@@ -780,10 +782,11 @@ describe('ChapterService', () => {
       config: {},
     });
 
+    // The founder is an active too (#5802); the database appends Everyone.
     expect(mockMemberRepo.create).toHaveBeenCalledWith({
       user_id: 'user-1',
       chapter_id: chapter.id,
-      role_ids: [presidentRole.id],
+      role_ids: [presidentRole.id, 'role-actives'],
       has_completed_onboarding: true,
     });
   });

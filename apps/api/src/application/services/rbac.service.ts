@@ -835,12 +835,6 @@ export class RbacService {
             to: null,
           },
         }),
-        ...(deletion.givenEveryoneMemberIds.length > 0 && {
-          given_everyone_member_ids: {
-            from: null,
-            to: deletion.givenEveryoneMemberIds,
-          },
-        }),
       } satisfies AuditDiff,
     });
   }
