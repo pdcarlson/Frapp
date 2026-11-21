@@ -32,6 +32,9 @@ import {
 } from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
+  AGENDA_LOCKED_COPY,
+  agendaCheckOffOpen,
+  agendaItemsChanged,
   checkInWindowBounds,
   checkSeriesLength,
   isRepeatRule,
@@ -611,6 +614,9 @@ export class EventService {
       // client, so a phone build that drops the key keeps it and none can
       // name another chapter's minutes.
       existing ??= await this.findById(id, chapterId);
+      if (agendaItemsChanged(agenda, existing.agenda ?? [])) {
+        assertAgendaOpen(input.start_time ?? existing.start_time);
+      }
       meetingOwn.agenda = keepAgendaTabledFrom(agenda, existing.agenda);
     }
     if (rawAttachments !== undefined) {
@@ -736,10 +742,12 @@ export class EventService {
     id: string,
     chapterId: string,
     item: EventAgendaItem,
+    now: Date = new Date(),
   ): Promise<EventAgendaItem[]> {
     const event = await this.findById(id, chapterId);
     const agenda = event.agenda ?? [];
     if (agenda.some((entry) => entry.id === item.id)) return agenda;
+    assertAgendaOpen(event.start_time, now);
     if (agenda.length >= EVENT_AGENDA_MAX) {
       throw new ConflictException(
         `An agenda holds at most ${EVENT_AGENDA_MAX} items.`,
@@ -829,4 +837,19 @@ function withoutRequirements(input: CreateEventInput): CreateEventInput {
       required_role_ids: input.required_role_ids,
     }),
   };
+}
+
+/**
+ * Once a meeting has started its agenda takes check-offs only (Paul
+ * 2026-11-20, "lock agenda edits once the meeting has started";
+ * `spec/behavior/events.md` § Agenda and attachments): adding, removing,
+ * moving or rewording an item is a 409. `start` is the meeting's start as
+ * this write leaves it, so a meeting moved later is open again.
+ */
+function assertAgendaOpen(start: string, now: Date = new Date()): void {
+  if (!agendaCheckOffOpen(start, now)) return;
+  throw new ConflictException({
+    code: 'event.agenda_locked',
+    message: AGENDA_LOCKED_COPY,
+  });
 }

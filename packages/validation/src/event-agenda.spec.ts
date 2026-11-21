@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agendaItemsChanged,
   agendaWithPending,
   agendaProblem,
   attachmentLinkTitle,
@@ -122,5 +123,33 @@ describe("reorderEventEntry", () => {
   it("leaves the list as it is for an index off either end", () => {
     expect(ids(reorderEventEntry(items, 1, 9))).toEqual(["a", "b", "c", "d"]);
     expect(ids(reorderEventEntry(items, -1, 0))).toEqual(["a", "b", "c", "d"]);
+  });
+});
+
+describe("agendaItemsChanged", () => {
+  const stored = [
+    { id: "a1", text: "Vote", done: false },
+    { id: "a2", text: "Rush recap", done: false },
+  ];
+  it("reads stored text as a save would normalize it", () => {
+    expect(
+      agendaItemsChanged(stored, [
+        { id: "a1", text: "Vote ", done: false },
+        stored[1]!,
+      ]),
+    ).toBe(false);
+  });
+  it("ignores check-offs", () => {
+    expect(
+      agendaItemsChanged([{ ...stored[0]!, done: true }, stored[1]!], stored),
+    ).toBe(false);
+  });
+  it.each([
+    ["an added item", [...stored, { id: "a3", text: "New", done: false }]],
+    ["a removed item", [stored[0]!]],
+    ["a moved item", [stored[1]!, stored[0]!]],
+    ["a reworded item", [{ ...stored[0]!, text: "Revote" }, stored[1]!]],
+  ])("sees %s", (_label, next) => {
+    expect(agendaItemsChanged(next, stored)).toBe(true);
   });
 });
