@@ -1,8 +1,10 @@
 import {
   BASE_ROLE_SYSTEM_KEYS,
+  compareRolesByRank,
   isBaseRole,
   isEveryoneRole,
   roleColorOrNull,
+  tierPositionsOf,
 } from "@repo/validation";
 import { matchesWordStarts, normalizeWords } from "./fuzzy-match";
 import type { ChapterGroup } from "./use-groups";
@@ -278,8 +280,9 @@ export function memberGroupChips(
 }
 
 /**
- * The member's roles as chips in rank order (tier position, then the role's
- * own order), the Everyone role left out.
+ * The member's roles as chips, highest-ranked first, by the same rank every
+ * other surface uses (`compareRolesByRank`, `spec/behavior/rbac.md` § Rank),
+ * the Everyone role left out.
  */
 export function memberRoleChips(inputs: {
   roles: readonly TieredRole[];
@@ -290,24 +293,11 @@ export function memberRoleChips(inputs: {
   /** The member's `users.id`, so the rank rules can place them. */
   userId?: string;
 }): AssignmentChip[] {
-  const positions = new Map(
-    inputs.tiers.map((tier) => [tier.id, tier.position]),
-  );
-  const rank = (role: TieredRole) =>
-    isWildcardRole(role)
-      ? -1
-      : role.tier_id === null
-        ? Number.POSITIVE_INFINITY
-        : (positions.get(role.tier_id) ?? Number.POSITIVE_INFINITY);
+  const positions = tierPositionsOf(inputs.tiers);
   const held = new Set(inputs.heldRoleIds);
   return inputs.roles
     .filter((role) => held.has(role.id) && !isEveryoneRole(role))
-    .sort(
-      (a, b) =>
-        rank(a) - rank(b) ||
-        a.display_order - b.display_order ||
-        a.name.localeCompare(b.name),
-    )
+    .sort((a, b) => compareRolesByRank(a, b, positions))
     .map((role) => ({
       kind: "role",
       id: role.id,
@@ -320,4 +310,65 @@ export function memberRoleChips(inputs: {
         memberReachable(inputs) &&
         assignsRole(inputs.reach, role, inputs.tiers),
     }));
+}
+
+/**
+ * How many chips a profile's roles or groups row shows before it folds the
+ * rest behind "+N more" (Shawn, 2026-11-20, #5783: a member holding a
+ * position, a floor, a tree and majors had a wall of chips). Discord's
+ * profile lists every role; this keeps the top three, in rank order, and
+ * opens the rest in place.
+ */
+export const CHIP_PREVIEW_COUNT = 3;
+
+export type ChipCut<T> = {
+  /** The chips to draw now. */
+  shown: T[];
+  /** How many the row folds away, 0 when it shows them all. */
+  hidden: number;
+  /**
+   * The toggle after the chips: "+N more" while folded, "Show less" once
+   * opened, or `null` when the row is short enough to need neither.
+   */
+  toggle: { label: string; expands: boolean } | null;
+};
+
+/**
+ * The cut one roles or groups row makes, the same on web and phone. Chips
+ * arrive in their order (`memberRoleChips` ranks them), so the first three
+ * are the member's highest. A row that would fold away only one chip shows
+ * it instead: "+1 more" takes about the room of the chip it hides.
+ */
+export function cutChips<T>(
+  chips: readonly T[],
+  expanded: boolean,
+): ChipCut<T> {
+  if (chips.length <= CHIP_PREVIEW_COUNT + 1) {
+    return { shown: [...chips], hidden: 0, toggle: null };
+  }
+  if (expanded) {
+    return {
+      shown: [...chips],
+      hidden: 0,
+      toggle: { label: "Show less", expands: false },
+    };
+  }
+  const hidden = chips.length - CHIP_PREVIEW_COUNT;
+  return {
+    shown: chips.slice(0, CHIP_PREVIEW_COUNT),
+    hidden,
+    toggle: { label: `+${hidden} more`, expands: true },
+  };
+}
+
+/**
+ * The toggle's accessible name on both apps: its visible words first, so a
+ * voice-control "Tap Show less" still finds it, then which row it opens,
+ * since the Roles and Groups rows can each show one ("+5 more roles").
+ */
+export function chipToggleName(
+  toggle: { label: string },
+  noun: "roles" | "groups",
+): string {
+  return `${toggle.label} ${noun}`;
 }

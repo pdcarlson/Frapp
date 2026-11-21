@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ASSIGN_CAPTIONS,
+  CHIP_PREVIEW_COUNT,
+  cutChips,
   groupFollowsLabel,
   memberAssignmentSections,
   memberGroupChips,
@@ -290,6 +292,88 @@ describe("memberGroupChips", () => {
     expect(
       memberGroupChips(GROUPS, "u1", false).every((c) => !c.removable),
     ).toBe(true);
+  });
+});
+
+describe("cutChips", () => {
+  const eight = [
+    "P",
+    "VP",
+    "Treasurer",
+    "Rush",
+    "Social",
+    "Floor 2",
+    "Tree",
+    "Math",
+  ];
+
+  it("shows the first three of eight, then +5 more", () => {
+    const cut = cutChips(eight, false);
+    expect(CHIP_PREVIEW_COUNT).toBe(3);
+    expect(cut.shown).toEqual(["P", "VP", "Treasurer"]);
+    expect(cut.hidden).toBe(5);
+    expect(cut.toggle).toEqual({ label: "+5 more", expands: true });
+  });
+
+  it("opens to all of them in order, with Show less", () => {
+    const cut = cutChips(eight, true);
+    expect(cut.shown).toEqual(eight);
+    expect(cut.hidden).toBe(0);
+    expect(cut.toggle).toEqual({ label: "Show less", expands: false });
+  });
+
+  it("never folds away a single chip, and needs no toggle for a short row", () => {
+    for (const n of [0, 1, 3, 4]) {
+      const chips = eight.slice(0, n);
+      for (const expanded of [false, true]) {
+        expect(cutChips(chips, expanded)).toEqual({
+          shown: chips,
+          hidden: 0,
+          toggle: null,
+        });
+      }
+    }
+    expect(cutChips(eight.slice(0, 5), false).toggle?.label).toBe("+2 more");
+  });
+
+  it("cuts a member's eight roles to their three highest-ranked", () => {
+    // Listed out of order, as the API may send them.
+    const roles = [
+      role("r-floor", "Floor 2", null, { display_order: 0 }),
+      role("r-social", "Social Chair", "t-chairs", { display_order: 3 }),
+      ...ROLES,
+      role("r-tree", "Tree", null, { display_order: 2 }),
+      role("r-treas", "Treasurer", "t-exec", { display_order: 2 }),
+      role("r-alumni", "Alumni", null, { is_system: true, display_order: 9 }),
+    ];
+    const chips = memberRoleChips({
+      roles,
+      tiers: TIERS,
+      heldRoleIds: roles.map((r) => r.id),
+      reach: VP_REACH,
+      canManageRoles: false,
+    });
+    const names = (list: { name: string }[]) => list.map((c) => c.name);
+    expect(names(chips)).toEqual([
+      "President",
+      "Vice President",
+      "Treasurer",
+      "Rush Chair",
+      "Social Chair",
+      // Outside the tiers: a system role above the chapter's own.
+      "Alumni",
+      "Floor 2",
+      "Past Cor Sec",
+      "Tree",
+    ]);
+    const folded = cutChips(chips, false);
+    expect(names(folded.shown)).toEqual([
+      "President",
+      "Vice President",
+      "Treasurer",
+    ]);
+    expect(folded.toggle?.label).toBe("+6 more");
+    expect(names(cutChips(chips, true).shown)).toEqual(names(chips));
   });
 });
 

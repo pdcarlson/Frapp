@@ -11,8 +11,10 @@ import {
 } from "@repo/hooks";
 import {
   DISPLAY_NAME_MAX_LENGTH,
+  NAME_LOCK_COPY,
   ONBOARDING_YOU_COPY,
   initialNameField,
+  isDisplayNameLocked,
   typedNameMissing,
 } from "@repo/validation";
 import { AuthScreen } from "@/components/auth/auth-screen";
@@ -103,8 +105,12 @@ export function WelcomeYou() {
   }
 
   const storedName = (me.display_name ?? "").trim();
-  const nameValue =
-    nameDraft ?? initialNameField(me.display_name, me.email ?? null);
+  // A member already settled in a chapter that locks names (#5801) keeps the
+  // name they have: it shows read-only, and isn't sent.
+  const nameLocked = isDisplayNameLocked(me);
+  const nameValue = nameLocked
+    ? storedName
+    : (nameDraft ?? initialNameField(me.display_name, me.email ?? null));
 
   // Validated on Go to chat, not per keystroke. A name that didn't change
   // isn't sent again; one that did is saved first, so a failure keeps the
@@ -113,12 +119,12 @@ export function WelcomeYou() {
     event.preventDefault();
     if (leaving) return;
     const name = nameValue.trim();
-    if (typedNameMissing(name)) {
+    if (!nameLocked && typedNameMissing(name)) {
       setNameError(ONBOARDING_YOU_COPY.nameRequired);
       return;
     }
     setLeaving(true);
-    if (name !== storedName) {
+    if (!nameLocked && name !== storedName) {
       try {
         await updateUser.mutateAsync({ display_name: name });
       } catch {
@@ -176,16 +182,33 @@ export function WelcomeYou() {
             autoCapitalize="words"
             spellCheck={false}
             disabled={leaving}
+            readOnly={nameLocked}
+            className={nameLocked ? "text-muted-foreground" : undefined}
             aria-invalid={nameError ? true : undefined}
-            aria-describedby={nameError ? "welcome-name-error" : undefined}
+            aria-describedby={
+              nameLocked
+                ? "welcome-name-hint"
+                : nameError
+                  ? "welcome-name-error"
+                  : undefined
+            }
           />
-          <p
-            id="welcome-name-error"
-            aria-live="polite"
-            className="min-h-5 text-sm text-destructive"
-          >
-            {nameError}
-          </p>
+          {nameLocked ? (
+            <p
+              id="welcome-name-hint"
+              className="min-h-5 text-sm text-muted-foreground"
+            >
+              {NAME_LOCK_COPY.lockedLine}
+            </p>
+          ) : (
+            <p
+              id="welcome-name-error"
+              aria-live="polite"
+              className="min-h-5 text-sm text-destructive"
+            >
+              {nameError}
+            </p>
+          )}
         </div>
 
         <Button

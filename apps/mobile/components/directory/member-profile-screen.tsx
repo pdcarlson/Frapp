@@ -13,6 +13,8 @@ import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  chipToggleName,
+  cutChips,
   dmChannelIdOf,
   memberGroupChips,
   memberRoleChips,
@@ -28,6 +30,7 @@ import {
   useRemoveMember,
   useRoles,
   useViewerUserId,
+  type AssignmentChip,
 } from "@repo/hooks";
 import {
   PHONE_REACH_LABEL,
@@ -140,7 +143,8 @@ import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * **Roles, then groups**, right under Message (Paul, 2026-11-19, the same
  * order as web's card and profile): chips in the chapter's rank order
- * (`memberRoleChips`, as web's card), each with its color. A viewer holding `roles:manage`
+ * (`memberRoleChips`, as web's card), each with its color, the top three
+ * shown and "+N more" opening the rest in place (#5783, `cutChips`). A viewer holding `roles:manage`
  * or `groups:manage` gets "+ Add role" and "+ Add to group", which open
  * {@link MemberRolesSheet}, the one roles-and-groups editor on mobile.
  *
@@ -219,8 +223,8 @@ export function MemberProfile({
     [memberQuery.data],
   );
   const rolesData = useRolesData();
-  // Ordered as web's card orders them (`memberRoleChips`): by tier, then the
-  // role's own order, the Everyone role left out.
+  // Ordered as web's card orders them (`memberRoleChips`): by rank
+  // (`compareRolesByRank`), the Everyone role left out.
   const roleChips = useMemo(
     () =>
       memberRoleChips({
@@ -553,13 +557,7 @@ export function MemberProfile({
                     </Text>
                   </View>
                 ) : null}
-                {roleChips.map((chip) => (
-                  <ColorChip
-                    key={chip.id}
-                    name={chip.name}
-                    color={chip.color}
-                  />
-                ))}
+                <FoldedChips chips={roleChips} noun="roles" />
                 {canOpenAssignments ? (
                   <AddChip
                     label="Add role"
@@ -580,13 +578,7 @@ export function MemberProfile({
                 Groups
               </Text>
               <View style={styles.chips}>
-                {memberGroups.map((group) => (
-                  <ColorChip
-                    key={group.id}
-                    name={group.name}
-                    color={group.color}
-                  />
-                ))}
+                <FoldedChips chips={memberGroups} noun="groups" />
                 {canOpenAssignments ? (
                   <AddChip
                     label="Add to group"
@@ -820,6 +812,46 @@ function AddChip({
   );
 }
 
+/**
+ * A roles or groups row's chips: the top three, then "+N more" opening the
+ * rest in place, and "Show less" folding them back (#5783, the same cut as
+ * web's, `cutChips`). Editing happens in the sheet, which lists every role.
+ */
+function FoldedChips({
+  chips,
+  noun,
+}: {
+  chips: readonly AssignmentChip[];
+  noun: "roles" | "groups";
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const [expanded, setExpanded] = useState(false);
+  const cut = cutChips(chips, expanded);
+  return (
+    <>
+      {cut.shown.map((chip) => (
+        <ColorChip key={chip.id} name={chip.name} color={chip.color} />
+      ))}
+      {cut.toggle ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={chipToggleName(cut.toggle, noun)}
+          accessibilityState={{ expanded }}
+          hitSlop={8}
+          onPress={() => setExpanded(cut.toggle?.expands ?? false)}
+          style={({ pressed }) => [
+            styles.moreChip,
+            pressed ? styles.addChipDim : null,
+          ]}
+        >
+          <Text style={styles.moreChipText}>{cut.toggle.label}</Text>
+        </Pressable>
+      ) : null}
+    </>
+  );
+}
+
 /** A role or a group: its color as a dot, its name beside it. */
 function ColorChip({ name, color }: { name: string; color: string | null }) {
   const { tokens } = useFrappTheme();
@@ -944,6 +976,18 @@ function createStyles(tokens: SignetTokens) {
     },
     addChipDim: {
       opacity: 0.5,
+    },
+    // "+N more" and "Show less": the chip's step with no box, quieter than
+    // the chips it stands for.
+    moreChip: {
+      justifyContent: "center",
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
+      borderRadius: tokens.radius.card,
+    },
+    moreChipText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     chips: {
       flexDirection: "row",

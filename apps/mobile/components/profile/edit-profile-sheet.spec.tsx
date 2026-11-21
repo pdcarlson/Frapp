@@ -381,6 +381,13 @@ describe("EditProfileSheet (#3387)", () => {
     expect(mutate).toHaveBeenCalledTimes(1);
   });
 
+  it("shows a name the chapter locks read-only, saying who sets it (#5801)", () => {
+    const tree = render({ ...PROFILE, nameLocked: true });
+    expect(input(tree, "Name").props.editable).toBe(false);
+    expect(input(tree, "City").props.editable).toBe(true);
+    expect(screenText(tree)).toContain("Your chapter's officers set names.");
+  });
+
   it("makes the fields read-only while a save runs", () => {
     heldSave();
     const tree = render();
@@ -940,9 +947,9 @@ describe("EditProfileSheet — Major suggests the chapter's majors (#5778)", () 
     type(tree, "Major", "mech");
     const [list] = suggestions(tree);
     expect(list).toBeDefined();
-    expect(screenText({ root: list } as unknown as ReactTestRenderer)).toContain(
-      "Mechanical Engineering",
-    );
+    expect(
+      screenText({ root: list } as unknown as ReactTestRenderer),
+    ).toContain("Mechanical Engineering");
     expect(
       screenText({ root: list } as unknown as ReactTestRenderer),
     ).not.toContain("Music");

@@ -5,12 +5,14 @@ import {
   NotFoundException,
   BadRequestException,
   GoneException,
+  ForbiddenException,
 } from '@nestjs/common';
 import {
   ACCOUNT_DELETED_MESSAGE,
   fileExtension,
   isLaterReleaseNoteVersion,
   isValidBirthday,
+  NAME_LOCK_COPY,
 } from '@repo/validation';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -26,6 +28,10 @@ import {
   profileFolderPrefix,
 } from '#domain/constants/storage';
 import { ProfilePhotoUrlService } from './profile-photo-url.service';
+import { DisplayNameLockService } from './display-name-lock.service';
+
+/** The caller's own row, as `/v1/users/me` answers it. */
+export type OwnProfile = User & { display_name_locked: boolean };
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { assertUploadRequestAllowed } from './chapter-upload';
@@ -49,6 +55,7 @@ export class UserService {
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
     private readonly photoUrls: ProfilePhotoUrlService,
+    private readonly nameLock: DisplayNameLockService,
   ) {}
 
   async findById(id: string): Promise<User> {
@@ -57,14 +64,35 @@ export class UserService {
     return user;
   }
 
+  /**
+   * The caller's own profile edit. A changed name is refused while a chapter
+   * locks it (#5801), and otherwise recorded in the audit log of each of the
+   * member's chapters, so officers see every rename.
+   */
   async update(id: string, data: Partial<User>): Promise<User> {
     const current = await this.requireLiveUser(id);
-    return this.userRepo.update(id, birthdayPatch(current, data));
+    const patch = birthdayPatch(current, data);
+    const renamed =
+      data.display_name !== undefined &&
+      data.display_name !== current.display_name;
+    if (renamed) {
+      if (await this.nameLock.isLocked(id)) {
+        throw new ForbiddenException(NAME_LOCK_COPY.refusal);
+      }
+      // Recorded before it is saved: a failed audit write refuses the rename
+      // instead of saving one no chapter can see (#5801).
+      await this.nameLock.recordRename(
+        current,
+        current.display_name,
+        data.display_name as string,
+      );
+    }
+    return this.userRepo.update(id, patch);
   }
 
   /** {@link findById} with `avatar_url` made renderable, for the caller's own profile. */
-  async findProfile(id: string): Promise<User> {
-    return this.withSignedPhoto(await this.findById(id));
+  async findProfile(id: string): Promise<OwnProfile> {
+    return this.ownProfile(await this.findById(id));
   }
 
   /**
@@ -101,9 +129,37 @@ export class UserService {
     return user.whats_new_seen_version ?? version;
   }
 
-  /** `avatar_url` made renderable; see {@link ProfilePhotoUrlService}. */
-  withSignedPhoto(user: User): Promise<User> {
-    return this.photoUrls.signRow(user, user.id);
+  /**
+   * The caller's own row as every `/v1/users/me` route answers it:
+   * `avatar_url` made renderable (see {@link ProfilePhotoUrlService}), and
+   * `display_name_locked`, which tells Profile to show the name read-only
+   * (#5801, {@link DisplayNameLockService}).
+   */
+  async ownProfile(user: User): Promise<OwnProfile> {
+    const [signed, locked] = await Promise.all([
+      this.photoUrls.signRow(user, user.id),
+      this.nameLockForDisplay(user.id),
+    ]);
+    return { ...signed, display_name_locked: locked };
+  }
+
+  /**
+   * The lock as Profile shows it. A failed read shows the name editable
+   * rather than failing a route whose write already landed; the rename
+   * itself is still checked when it is sent.
+   */
+  private async nameLockForDisplay(userId: string): Promise<boolean> {
+    try {
+      return await this.nameLock.isLocked(userId);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not read the name lock for user ${userId}; showing the name editable`,
+        error,
+      );
+      return false;
+    }
   }
 
   /**
@@ -203,7 +259,7 @@ export class UserService {
         `Skipped the profile photo sweep for user ${userId}: could not re-read avatar_url`,
         error,
       );
-      return this.withSignedPhoto(user);
+      return this.ownProfile(user);
     }
     const keep = new Set([storagePath, current]);
     const staleBefore = Date.now() - STRAY_UPLOAD_AGE_MS;
@@ -221,18 +277,18 @@ export class UserService {
     if (previous && !keep.has(previous)) doomed.add(previous);
     await this.deletePhotosQuietly(userId, [...doomed]);
 
-    return this.withSignedPhoto(user);
+    return this.ownProfile(user);
   }
 
   /** Clear the caller's profile photo and delete the object behind it. */
   async removeAvatar(userId: string): Promise<User> {
     const existing = await this.requireLiveUser(userId);
-    if (!existing.avatar_url) return this.withSignedPhoto(existing);
+    if (!existing.avatar_url) return this.ownProfile(existing);
 
     const user = await this.userRepo.update(userId, { avatar_url: null });
     const previous = ownProfilePhotoPath(existing.avatar_url, userId);
     if (previous) await this.deletePhotosQuietly(userId, [previous]);
-    return this.withSignedPhoto(user);
+    return this.ownProfile(user);
   }
 
   /**

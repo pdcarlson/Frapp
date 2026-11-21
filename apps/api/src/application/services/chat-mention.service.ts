@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+  CLASS_STANDINGS,
+  classStanding,
   EVERYONE_MENTION_NAME,
   extractMentionTokens,
   foldMentionName,
@@ -493,7 +496,12 @@ export function mentionRoleViews(
     ...mentionGroupViews(
       sets.groups ?? [],
       sets.memberships ?? [],
-      namesMajorsGiveWayTo(roles, members, sets),
+      // With no roles read (a failed read), what a major or a standing gives
+      // way to isn't known, so neither is offered: a chapter's own "Seniors"
+      // role must not hand its pings to the class for one failed read.
+      roles.length > 0
+        ? namesAutomaticGroupsGiveWayTo(roles, members, sets)
+        : null,
     ),
   );
   if (roles.length === 0) return views;
@@ -566,15 +574,15 @@ function mentionTierViews(
 }
 
 /**
- * The names, folded as a mention folds them, that a major's group gives way
- * to (#5778): every role, tier and other kind of group of the chapter, and
+ * The names, folded as a mention folds them, that a major's group and a
+ * class year's standing give way to (#5778, #5786): every role, tier and other kind of group of the chapter, and
  * every member's name and first name. A member types their own major, so
  * without this anyone could join an officer role's pings by saving its name
  * ("Exec Board"), or take a hand-typed `@Art` from a member named Art. A
  * major named like one of these isn't a mention target; its group still
  * lists, and the other set keeps the name.
  */
-function namesMajorsGiveWayTo(
+function namesAutomaticGroupsGiveWayTo(
   roles: readonly Role[],
   members: readonly ChapterMemberIdentity[],
   sets: Partial<MentionSets>,
@@ -594,38 +602,96 @@ function namesMajorsGiveWayTo(
 }
 
 /**
+ * The id a class year's standing row carries (#5786): a name-based UUID
+ * (RFC 4122 version 5) of the group's id and the standing, so it is still a
+ * UUID, as `MentionRoleDto.role_id` promises, the same on every read, and
+ * never the group's own. Nothing looks it up; a picker only keys rows by it.
+ */
+export function standingMentionId(groupId: string, standing: string): string {
+  const bytes = createHash('sha1')
+    .update(`frapp:class-standing:${groupId}:${standing}`)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** The class standings (#5786), folded as a mention folds a name. */
+const STANDING_NAMES: ReadonlySet<string> = new Set(
+  CLASS_STANDINGS.map(foldMentionName),
+);
+
+/**
  * Each group as a mention (#4076): it reaches the group's members now, as
  * `chapter_group_memberships` reads them, with the group's own switch.
  * Manual groups first, then pledge classes, class years and majors. A major
- * named like a role, tier, other group or member is left out
- * ({@link namesMajorsGiveWayTo}).
+ * named like a role, tier, other group, member or class standing is left out
+ * ({@link namesAutomaticGroupsGiveWayTo}).
+ *
+ * A class year with a standing also goes by it (#5786): in 2026-27,
+ * `@Sophomores` is listed just before `@Class of 2029`, reaching the same
+ * members with the same switch. It has its own id
+ * ({@link standingMentionId}), so a picker keying rows by id, as every
+ * installed build does, never sees two rows share one. The
+ * standing gives way as a major does: while the chapter has a role, tier,
+ * other group or member by that name, the name is theirs alone, so a
+ * chapter's own "Sophomores" role keeps meaning what it did until an officer
+ * deletes it.
+ *
+ * `taken` is `null` when the chapter's roles couldn't be read: then no major
+ * or standing is offered, since what it would give way to isn't known.
  */
 function mentionGroupViews(
   groups: readonly ChapterGroup[],
   memberships: readonly ChapterGroupMembership[],
-  taken: ReadonlySet<string> = new Set(),
+  taken: ReadonlySet<string> | null = new Set(),
+  now: Date = new Date(),
 ): MentionRoleView[] {
   return (
     withMembers(
       groups.filter(
         (group) =>
           nameIsFree(group.name) &&
-          !(group.kind === 'major' && taken.has(foldMentionName(group.name))),
+          !(
+            group.kind === 'major' &&
+            (!taken ||
+              taken.has(foldMentionName(group.name)) ||
+              // A major named "Seniors" must not join `@Seniors` (#5786).
+              STANDING_NAMES.has(foldMentionName(group.name)))
+          ),
       ),
       memberships,
     )
       // An automatic group nobody is in (a class not yet given members) is
       // left out, as the Groups page leaves it out.
       .filter((group) => group.kind === 'manual' || group.member_ids.length > 0)
-      .map((group) => ({
-        role_id: group.id,
-        kind: 'group' as const,
-        name: group.name,
-        color: group.color,
-        member_ids: group.member_ids,
-        open_to_all: group.mentionable !== false,
-        mentionable: false,
-      }))
+      .flatMap((group) => {
+        const view = {
+          role_id: group.id,
+          kind: 'group' as const,
+          name: group.name,
+          color: group.color,
+          member_ids: group.member_ids,
+          open_to_all: group.mentionable !== false,
+          mentionable: false,
+        };
+        const standing =
+          group.kind === 'class_year'
+            ? classStanding(group.class_year, now)
+            : null;
+        return standing && taken && !taken.has(foldMentionName(standing))
+          ? [
+              {
+                ...view,
+                role_id: standingMentionId(group.id, standing),
+                name: standing,
+              },
+              view,
+            ]
+          : [view];
+      })
   );
 }
 

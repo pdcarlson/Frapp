@@ -90,6 +90,7 @@ import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsBirthdayPosts } from "@/components/settings/settings-birthday-posts";
+import { SettingsMemberNames } from "@/components/settings/settings-member-names";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsAiTab } from "@/components/settings/settings-ai-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
@@ -738,6 +739,23 @@ function SettingsPageContent() {
                       birthdayChannelId
                         ? "Birthday posts on"
                         : "Birthday posts off",
+                    )
+                  }
+                />
+              </div>
+            ) : null}
+            {config ? (
+              <div className="mt-10">
+                <SettingsMemberNames
+                  enabled={config.members_can_change_name === true}
+                  canManage={canManage}
+                  isSaving={pendingConfigKeys.has("members_can_change_name")}
+                  onChange={(enabled) =>
+                    patchConfig(
+                      { members_can_change_name: enabled },
+                      enabled
+                        ? "Members can change their own name"
+                        : "Member names locked",
                     )
                   }
                 />

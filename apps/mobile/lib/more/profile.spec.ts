@@ -34,7 +34,15 @@ describe("selectViewerProfile", () => {
       birthdayDay: 4,
       birthdayYear: null,
       birthdayVisibility: "chapter",
+      nameLocked: false,
     });
+  });
+
+  it("says when the chapter locks the member's name (#5801)", () => {
+    expect(
+      selectViewerProfile({ display_name: "Ethan", display_name_locked: true })
+        ?.nameLocked,
+    ).toBe(true);
   });
 
   it("returns null before the first payload", () => {

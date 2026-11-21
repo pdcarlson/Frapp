@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, CalendarCheck, ListChecks, MoreHorizontal } from "lucide-react";
+import { Bell, CalendarCheck, ListChecks } from "lucide-react";
 import {
   useChapterRoster,
   useClearMeetingDateReminder,
@@ -36,13 +36,7 @@ import {
   PanelHeader,
 } from "@/components/shared/panel";
 import { TaskForm, taskDraftFrom } from "@/components/tasks/task-form";
-import { IconButton } from "@/components/ui/icon-button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ActionMenuButton } from "@/components/shared/row-menu";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { tasksTaskLink } from "@/lib/tasks/task-links";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -204,30 +198,22 @@ export function ComingUpDates({
           );
         }}
         trailing={(item, index) => (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <IconButton label={COMING_UP_COPY.more(item.text)}>
-                <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
-              </IconButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {comingUpMenu({
-                hasEvent: !!tracking[index]?.event,
-                upcoming: comingUpIsAhead(item.date),
-                canCreateEvents,
-                canManageTasks,
-                hasReminder: !!reminderOn(item),
-                canRemind: comingUpReminderTime(item.date) !== null,
-              }).map((entry) => (
-                <DropdownMenuItem
-                  key={entry.action}
-                  onSelect={() => void act(entry.action, item, index)}
-                >
-                  {entry.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <ActionMenuButton
+            label={COMING_UP_COPY.more(item.text)}
+            entries={comingUpMenu({
+              hasEvent: !!tracking[index]?.event,
+              upcoming: comingUpIsAhead(item.date),
+              canCreateEvents,
+              canManageTasks,
+              hasReminder: !!reminderOn(item),
+              canRemind: comingUpReminderTime(item.date) !== null,
+            }).map((entry) => ({
+              type: "item" as const,
+              key: entry.action,
+              label: entry.label,
+              onSelect: () => void act(entry.action, item, index),
+            }))}
+          />
         )}
       />
 

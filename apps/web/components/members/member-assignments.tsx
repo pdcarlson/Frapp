@@ -4,6 +4,8 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, Loader2, Plus, X } from "lucide-react";
 import {
   ASSIGN_COPY,
+  chipToggleName,
+  cutChips,
   memberAssignmentSections,
   NO_BASE_ROLE_LABEL,
   needsBaseRole,
@@ -285,7 +287,7 @@ function ChipRow({
   onRemove,
   add,
 }: {
-  title: string;
+  title: "Roles" | "Groups";
   chips: AssignmentChip[];
   /** A muted, dashed chip first, for a missing base role. */
   notice?: string | null;
@@ -296,7 +298,14 @@ function ChipRow({
   add: React.ReactNode;
 }) {
   const headingId = useId();
+  const listId = useId();
+  // The top three, then "+N more" opening the rest in place (#5783, the
+  // same cut as the phone's). Opened, every chip the viewer may take away
+  // shows its x, so editing still reaches the whole list.
+  const [expanded, setExpanded] = useState(false);
+  const noun = title === "Roles" ? "roles" : "groups";
   if (compact && chips.length === 0 && !add) return null;
+  const cut = cutChips(chips, expanded);
   return (
     <section className="space-y-2" aria-labelledby={headingId}>
       <h3
@@ -305,13 +314,13 @@ function ChipRow({
       >
         {title}
       </h3>
-      <ul className="flex flex-wrap items-center gap-1.5">
+      <ul id={listId} className="flex flex-wrap items-center gap-1.5">
         {notice ? (
           <li className="inline-flex items-center rounded-full border border-dashed border-border px-2.5 py-1 text-caption text-muted-foreground">
             {notice}
           </li>
         ) : null}
-        {chips.map((chip) => {
+        {cut.shown.map((chip) => {
           const saving = pending.has(`${chip.kind}:${chip.id}`);
           return (
             <li
@@ -360,6 +369,23 @@ function ChipRow({
             </li>
           );
         })}
+        {cut.toggle ? (
+          <li>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={listId}
+              aria-label={chipToggleName(cut.toggle, noun)}
+              onClick={() => setExpanded(cut.toggle?.expands ?? false)}
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-1 text-caption font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground",
+                FOCUS_RING_OFFSET,
+              )}
+            >
+              {cut.toggle.label}
+            </button>
+          </li>
+        ) : null}
         {add ? <li>{add}</li> : null}
         {chips.length === 0 && !add && !notice ? (
           <li className="text-caption text-muted-foreground">{empty}</li>
