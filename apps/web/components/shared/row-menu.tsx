@@ -63,6 +63,8 @@ export type RowMenuEntry =
       disabled?: boolean;
       /** Id of the text explaining why the item is disabled. */
       describedBy?: string;
+      /** Why the item is disabled, when no text on the page says it (offline). */
+      title?: string;
     } & (
       | { onSelect: () => void; href?: never; external?: never }
       | {
@@ -137,6 +139,7 @@ function Entries({
         const itemProps = {
           disabled: entry.disabled,
           "aria-describedby": entry.describedBy,
+          title: entry.title,
           className: entry.destructive ? DESTRUCTIVE_ITEM_CLASS : undefined,
         };
         if (entry.onSelect) {

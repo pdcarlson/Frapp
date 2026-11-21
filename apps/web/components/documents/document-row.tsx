@@ -281,7 +281,8 @@ function useRowActions({
   const permissions = useMyPermissions().data?.permissions;
   const canManage = !!permissions && can("chapter_docs:manage", permissions);
   const pinned = !!doc.pinned_at;
-  const describedBy = gate.controlProps()["aria-describedby"];
+  // The gate's reason: the notice's id, or offline, a native title.
+  const { title, "aria-describedby": describedBy } = gate.controlProps();
   const entries: RowMenuEntry[] = [
     {
       type: "item",
@@ -290,6 +291,7 @@ function useRowActions({
       icon: starred ? StarOnIcon : StarOffIcon,
       disabled: !gate.allowed,
       describedBy,
+      title,
       onSelect: () => onToggleStar(doc),
     },
   ];
@@ -301,6 +303,7 @@ function useRowActions({
       icon: pinned ? PinOnIcon : PinOffIcon,
       disabled: !gate.allowed || pinBusy,
       describedBy,
+      title,
       onSelect: () => onTogglePin(doc),
     });
   }
@@ -312,6 +315,7 @@ function useRowActions({
       icon: Users,
       disabled: !gate.allowed,
       describedBy,
+      title,
       onSelect: () => onSetAccess(doc),
     });
   }
@@ -333,6 +337,7 @@ function useRowActions({
       destructive: true,
       disabled: !gate.allowed || deleting,
       describedBy,
+      title,
       onSelect: () => onDelete(doc),
     });
   }

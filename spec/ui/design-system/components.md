@@ -744,6 +744,7 @@ _Added 2026-11-20 (#5739), after an inventory found 57 patterns on web and 44 on
 - Hidden menus are shortcuts. Every entry is one visible ⋯ away, shown on hover, keyboard focus and always on touch (Apple: "always make context menu items available in the main interface, too"; NN/g, contextual menus and kebab icons).
 - The screen's main action is a visible button. A menu of one or two items becomes buttons (Apple, pull-down buttons and toolbars).
 - Exception: a chat message's long-press keeps its sheet with the reaction row.
+- Exception on web *(2026-11-21)*: chat keeps three menus of its own until each gets its own pass: the channel header menu (it swaps panels in place), the channel row's menu (its notification choices are a radio submenu), and a message's hover action bar. Lint grandfathers them in `apps/web/eslint.config.js` with these reasons.
 - Lint (`packages/eslint-config/ui-rules.js`, `moreMenu` and `systemMenu`) fails a hand-built ⋯ or context menu on web, and `ActionSheetIOS` or an `Alert` with three or more inline buttons on the phone. *(Changed 2026-11-20: `lib/action-menu` is deleted and every phone menu opens the glass menu; lint keeps its import selector so the module can't come back.)* That is all lint sees (an aliased icon import slips past it); the order, grouping and "never the only way in" rules are checked in review.
 
 ### Settings rows
