@@ -53,6 +53,8 @@ describe('Event chat card — create endpoint wiring (e2e)', () => {
   let app: INestApplication;
 
   const eventServiceMock = {
+    // Add to next meeting's agenda listens for created events (#5790).
+    onCreated: jest.fn(),
     findByChapter: jest.fn(),
     findById: jest.fn(),
     create: jest.fn().mockResolvedValue(createdEvent),

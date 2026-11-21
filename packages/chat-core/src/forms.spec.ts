@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  buildFormMessage,
   fetchOwnFormResponse,
   formAnswerProblems,
   formAnswersForSave,
@@ -50,44 +49,6 @@ const card: FormPayload = {
 };
 
 describe("forms (#3926 step 3)", () => {
-  it("builds the card a client posts, with ids for questions and options", () => {
-    let n = 0;
-    const built = buildFormMessage(
-      {
-        title: " Room picks ",
-        description: " ",
-        questions: [
-          { type: "yes_no", title: "Staying?", required: true },
-          {
-            type: "dropdown",
-            title: "Room",
-            required: false,
-            options: [" A "],
-          },
-        ],
-        closesAt: new Date("2026-11-20T18:00:00Z"),
-      },
-      () => `id${++n}`,
-    );
-    expect(built).toEqual({
-      content: "Room picks",
-      payload: {
-        title: "Room picks",
-        questions: [
-          { id: "id1", type: "yes_no", title: "Staying?", required: true },
-          {
-            id: "id2",
-            type: "dropdown",
-            title: "Room",
-            required: false,
-            options: [{ id: "id3", label: "A" }],
-          },
-        ],
-        closes_at: "2026-11-20T18:00:00.000Z",
-      },
-    });
-  });
-
   it("reads a card, skipping a question type it doesn't know", () => {
     const read = readFormPayload(
       message({

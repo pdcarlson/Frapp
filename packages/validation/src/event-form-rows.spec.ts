@@ -5,8 +5,12 @@ import {
   describeCheckIn,
   describeEventTypeSets,
   eventLengthLabel,
+  addEventTypeLabel,
+  eventTypeFromForm,
+  eventTypeToAdd,
   type EventFormRow,
 } from "./event-form-rows";
+import { EVENT_TYPE_NAME_MAX_LENGTH, EVENT_TYPES_MAX } from "./field-limits";
 
 describe("the event form's rows (#5561)", () => {
   it("names every row, in the order both apps draw them", () => {
@@ -18,9 +22,7 @@ describe("the event form's rows (#5561)", () => {
     expect(
       EVENT_FORM_ROWS.filter(
         (row): row is Exclude<EventFormRow, "notes"> => row !== "notes",
-      ).map(
-        (row) => EVENT_FORM_ROW_LABELS[row],
-      ),
+      ).map((row) => EVENT_FORM_ROW_LABELS[row]),
     ).toEqual([
       "Type",
       "When",
@@ -68,5 +70,54 @@ describe("eventLengthLabel", () => {
     expect(eventLengthLabel(90)).toBe("1.5 hrs");
     expect(eventLengthLabel(120)).toBe("2 hrs");
     expect(eventLengthLabel(105)).toBe("1.75 hrs");
+  });
+});
+
+describe("eventTypeToAdd", () => {
+  const types = [{ name: "Chapter meeting" }, { name: "Social" }];
+
+  it("offers the typed name, tidied, when no type is called that", () => {
+    expect(eventTypeToAdd("  Work   party ", types)).toBe("Work party");
+  });
+
+  it("offers nothing for a blank field or a name a type already has", () => {
+    expect(eventTypeToAdd("   ", types)).toBeNull();
+    expect(eventTypeToAdd("social", types)).toBeNull();
+    expect(eventTypeToAdd(" CHAPTER MEETING ", types)).toBeNull();
+  });
+
+  it("offers nothing past the name limit or the chapter's type limit", () => {
+    expect(
+      eventTypeToAdd("x".repeat(EVENT_TYPE_NAME_MAX_LENGTH + 1), types),
+    ).toBeNull();
+    const full = Array.from({ length: EVENT_TYPES_MAX }, (_, i) => ({
+      name: `Type ${i}`,
+    }));
+    expect(eventTypeToAdd("Work party", full)).toBeNull();
+  });
+
+  it("names the row with the typed name", () => {
+    expect(addEventTypeLabel("Work party")).toBe("Create “Work party”");
+  });
+});
+
+describe("eventTypeFromForm", () => {
+  it("carries the form's points and whether everyone must come", () => {
+    expect(eventTypeFromForm("Work party", " 10 ", true)).toEqual({
+      name: "Work party",
+      point_value: 10,
+      is_mandatory: true,
+    });
+  });
+
+  it("caps points the field holds past the limit, as both apps read them", () => {
+    expect(eventTypeFromForm("A", "150000", false).point_value).toBe(100_000);
+  });
+
+  it("makes 0 points from a blank, refused or member's field", () => {
+    expect(eventTypeFromForm("A", "", false).point_value).toBe(0);
+    expect(eventTypeFromForm("A", "-3", false).point_value).toBe(0);
+    expect(eventTypeFromForm("A", "1.5", false).point_value).toBe(0);
+    expect(eventTypeFromForm("A", null, false).point_value).toBe(0);
   });
 });

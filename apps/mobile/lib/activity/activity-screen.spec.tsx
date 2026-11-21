@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
+import { NowCard } from "@/components/now-card";
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { Alert, Platform } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import {
@@ -11,7 +12,11 @@ import {
   useMutation,
 } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { activityKeys, activityStandingKeys } from "@repo/hooks";
+import {
+  activityKeys,
+  activitySnoozeOptions,
+  activityStandingKeys,
+} from "@repo/hooks";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 import { StyleSheet } from "react-native";
@@ -259,6 +264,9 @@ vi.mock("@/components/tasks/new-task-sheet", async () => {
   };
 });
 
+const eventsNow = vi.hoisted(() => ({
+  value: { events: [] as unknown[], now: Date.now() },
+}));
 const snoozeWrites = vi.hoisted(() => ({
   snooze: vi.fn(() => Promise.resolve()),
   unsnooze: vi.fn(() => Promise.resolve()),
@@ -282,6 +290,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
   }),
   useActivity: () => activity.value,
+  // The Now card's read (#5777): nothing on unless a test says so.
+  useEventsOnNow: () => eventsNow.value,
   useActivityStanding: () => standing.value,
   useActivityRecap: () => recap.value,
   useActivityArchive: (options: { enabled?: boolean }) => {
@@ -386,7 +396,12 @@ import { HairlineChip, StatusChip } from "@/components/status-chip";
 import { MemberAvatar } from "@/components/member-avatar";
 import { ScreenShell } from "@/components/screen-shell";
 import { ActivityEditor } from "@/components/activity/activity-editor";
-import { ItemActionsMenu } from "@/components/item-actions-menu";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  ItemActionsMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 import { UndoBar } from "@/components/tasks/undo-bar";
 import { ProgressRing } from "@/components/activity/progress-ring";
 import { ReviewCard } from "@/components/activity/review-card";
@@ -546,6 +561,7 @@ describe("Activity screen (#3897)", () => {
     act(() => {
       for (const tree of mounted.splice(0)) tree.unmount();
     });
+    dismissItemMenu();
   });
 
   it("is a tab, so it draws no back row (#4610)", () => {
@@ -632,7 +648,13 @@ describe("Activity screen (#3897)", () => {
       activity.value = {
         ...activity.value,
         data: read({
-          coming_up: [eventIn(0.1, { check_in_open: true })],
+          coming_up: [
+            eventIn(0.1, {
+              check_in_open: true,
+              // Happening now runs until the end (#5777).
+              end_time: new Date(Date.now() + 2 * 3_600_000).toISOString(),
+            }),
+          ],
         }),
       };
       const tree = render();
@@ -651,6 +673,34 @@ describe("Activity screen (#3897)", () => {
       expect(button.props.action.label).toBe("Check in");
       // The task it displaced is the list's now.
       expect(hasSection(tree, "To do")).toBe(true);
+    });
+
+    it("puts an event that's on in the Now card and leaves it out of the week card and To do (#5777)", () => {
+      const live = eventIn(-0.5, {
+        end_time: new Date(Date.now() + 1_800_000).toISOString(),
+        check_in_open: true,
+        // Not checked in: Activity alone would list it as Happening now.
+        checked_in: false,
+      });
+      activity.value = {
+        ...activity.value,
+        data: read({ coming_up: [live] }),
+      };
+      eventsNow.value = { events: [live], now: Date.now() };
+      try {
+        const tree = render();
+        const now = tree.root.findByType(NowCard);
+        expect(drawnText(now)).toContain("Chapter");
+        expect(drawnText(now)).toContain("Check-in is open");
+        const card = tree.root.findByType(WeekCard);
+        expect(card.props.next?.title).not.toBe("Chapter");
+        expect(drawnText(card)).not.toContain("Happening now");
+        // Nowhere else on the page: the Now card holds every mention.
+        const count = (text: string) => text.split("Chapter").length - 1;
+        expect(count(screenText(tree))).toBe(count(drawnText(now)));
+      } finally {
+        eventsNow.value = { events: [], now: Date.now() };
+      }
     });
 
     it("says nothing is due, with a quiet check and no zero", () => {
@@ -1378,15 +1428,13 @@ describe("Activity screen (#3897)", () => {
 
     it("turns the cards off from More", () => {
       nudge.data = { card: CARD, tray: [] };
-      const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
       const tree = render();
       act(() => {
         pressable(tree, "activity-nudge-more").props.onPress();
       });
-      const buttons = alert.mock.calls.at(-1)?.[2] ?? [];
-      act(() => buttons.find((b) => b.text === "Turn these off")?.onPress?.());
+      expect(currentItemMenu()!.title).toBe("This card");
+      act(() => pickItemMenuAction("Turn these off"));
       expect(nudge.setEnabled).toHaveBeenCalledWith(false);
-      alert.mockRestore();
     });
 
     it("offers Ask about this only where the member has Ask", () => {
@@ -2532,73 +2580,61 @@ describe("Activity screen (#3897)", () => {
       alert.mockRestore();
     });
 
-    it("offers Snooze on a row that waits on the member, and snoozes from the sheet", async () => {
-      // Whichever platform the test runs as: iOS's sheet or Android's dialog.
-      const sheet = vi
-        .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-        .mockImplementation((_options, pick) => pick(0));
-      const dialog = vi
-        .spyOn(Alert, "alert")
-        .mockImplementation((_title, _body, buttons) => {
-          buttons?.[0]?.onPress?.();
-        });
+    it("offers Snooze on a row that waits on the member, and snoozes from its menu", async () => {
+      snoozeWrites.snooze.mockClear();
       const tree = render();
       const press = rowPress(tree, "Food bank");
       await act(async () => {
         press.props.onLongPress();
       });
-      expect(sheet.mock.calls.length + dialog.mock.calls.length).toBe(1);
-      dialog.mockRestore();
+      const menu = currentItemMenu()!;
+      expect(menu.title).toBe("Snooze until");
+      expect(snoozeWrites.snooze).not.toHaveBeenCalled();
+      await act(async () => pickItemMenuAction(menu.actions[0]!.label));
       expect(snoozeWrites.snooze).toHaveBeenCalledWith(
         expect.objectContaining({ kind: "hours_entry" }),
         expect.any(Date),
       );
-      sheet.mockRestore();
     });
 
-    // Pinned per platform (#5168): iOS's sheet names the row and keeps the
-    // system's appearance; Android's dialog names it in the body and draws
-    // only the first three times, because it drops a fourth button.
-    it("draws the snooze menu each platform's own way", async () => {
-      const sheet = vi
-        .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-        .mockImplementation(() => undefined);
-      const dialog = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    // One glass menu on both platforms (owner, 2026-11-20): the row named
+    // under the caption, every time offered (no three-button cap), none red.
+    it("draws the same snooze menu on iOS and Android, every time offered", async () => {
       const platform = Platform as { OS: string };
       const os = platform.OS;
+      const seen: unknown[] = [];
+      snoozeWrites.snooze.mockClear();
       try {
         const tree = render();
-        // A Monday morning offers all four times, so the cap shows.
+        // A Monday morning offers all four times.
         vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 10, 16, 9) });
-        platform.OS = "ios";
-        await act(async () => {
-          rowPress(tree, "Food bank").props.onLongPress();
-        });
-        const [options] = sheet.mock.calls.at(-1)!;
-        expect(options.title).toMatch(/^Snooze “.+” until$/);
-        expect(options).not.toHaveProperty("userInterfaceStyle");
-        expect(options).not.toHaveProperty("destructiveButtonIndex");
-        expect(options.options).toHaveLength(5);
-        expect(options.cancelButtonIndex).toBe(4);
-
-        platform.OS = "android";
-        await act(async () => {
-          rowPress(tree, "Food bank").props.onLongPress();
-        });
-        const [title, message, buttons, extra] = dialog.mock.calls.at(-1)!;
-        expect(title).toBe("Snooze until");
-        expect(options.title).toBe(`Snooze “${message}” until`);
-        expect(buttons!.map((button) => button.text)).toEqual(
-          options.options.slice(0, 3),
-        );
-        expect(buttons!.every((button) => !("style" in button))).toBe(true);
-        expect(extra).toEqual({ cancelable: true });
+        for (const each of ["ios", "android"]) {
+          platform.OS = each;
+          await act(async () => {
+            rowPress(tree, "Food bank").props.onLongPress();
+          });
+          const { title, message, actions } = currentItemMenu()!;
+          seen.push({
+            title,
+            message,
+            rows: actions.map((action) => [action.label, !!action.destructive]),
+          });
+          act(() => dismissItemMenu());
+        }
       } finally {
         vi.useRealTimers();
         platform.OS = os;
-        sheet.mockRestore();
-        dialog.mockRestore();
       }
+      expect(seen[1]).toEqual(seen[0]);
+      const times = activitySnoozeOptions(new Date(2026, 10, 16, 9));
+      expect(times).toHaveLength(4);
+      expect(seen[0]).toEqual({
+        title: "Snooze until",
+        message: expect.stringContaining("Food bank"),
+        rows: times.map((time) => [time.menuLabel, false]),
+      });
+      // A dismiss snoozes nothing.
+      expect(snoozeWrites.snooze).not.toHaveBeenCalled();
     });
 
     it("is offered to a screen reader as the row's named action", async () => {
@@ -3657,23 +3693,14 @@ describe("Activity screen (#3897)", () => {
         ...activity.value,
         data: read({ coming_up: [eventIn(3)] }),
       };
-      const sheetSpy = vi
-        .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-        .mockImplementation(() => undefined);
-      const dialog = vi.spyOn(Alert, "alert").mockImplementation(() => {});
-      try {
-        const tree = render();
-        // `Alert.alert` is the setup's mock: only this press's calls count.
-        sheetSpy.mockClear();
-        dialog.mockClear();
-        act(() => rowPress(tree, "Chapter").props.onLongPress());
-        // No glass menu: the times open at once, as before the menu.
-        expect(menuRows(tree)).toEqual([]);
-        expect(sheetSpy.mock.calls.length + dialog.mock.calls.length).toBe(1);
-      } finally {
-        sheetSpy.mockRestore();
-        dialog.mockRestore();
-      }
+      const tree = render();
+      // `Alert.alert` is the setup's mock: only this press's calls count.
+      vi.mocked(Alert.alert).mockClear();
+      act(() => rowPress(tree, "Chapter").props.onLongPress());
+      // No row menu: the times open at once.
+      expect(menuRows(tree)).toEqual([]);
+      expect(currentItemMenu()!.title).toBe("Snooze until");
+      expect(Alert.alert).not.toHaveBeenCalled();
     });
   });
 

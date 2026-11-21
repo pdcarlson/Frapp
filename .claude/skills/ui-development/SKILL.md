@@ -39,19 +39,19 @@ without being told:
 
 Reach for these before writing markup. A screen that hand-builds one of these jobs fails P8.
 
-| Job | Web (`apps/web/components/`) | Phone (`apps/mobile/components/`) |
-| --- | --- | --- |
-| Page actions in the header | `layout/page-actions.tsx` `PageActions` (moves into the page header with #5686) | `screen-shell.tsx` header, `header-button.tsx` `HeaderButton` |
-| Create ("New …") | `ui/new-button.tsx` `NewButton`; other main actions `<Button variant="action">` (both land with #5686) | `ScreenShell` `createAction` (`floating-create-button.tsx`) |
-| A record or long form | `shared/panel.tsx` `Panel` (docked) | `sheet-scaffold.tsx` |
-| Row menu | `shared/row-menu.tsx`, `ui/context-menu.tsx` | `item-actions-menu.tsx`, `glass-menu.tsx` |
-| A pick from options | `ui/select.tsx`, `ui/dropdown-menu.tsx`, `shared/searchable-picker.tsx` | `option-sheet.tsx` |
-| Date and time | `ui/date-field.tsx`, `ui/time-field.tsx` | the platform picker (see `components/tasks/due-date-field.tsx`) |
-| Grouped list | `ui/table.tsx`, `shared/section-label.tsx` | `list-section.tsx` |
-| Loading, empty, error | `shared/page-skeletons.tsx`, `shared/async-states.tsx`, `shared/nested-states.tsx` | `state-block.tsx`, `card-list-skeleton.tsx` (each route's own skeleton, pinned by `screen-skeletons.spec.tsx`) |
-| Destructive confirm | `shared/confirm-dialog.tsx` `useConfirmDialog` | `lib/action-menu.ts` |
-| Kept form drafts | `useKeptFormDraft` (`@repo/hooks`) | `useKeptSheetDraft` (`lib/kept-sheet-draft.ts`) |
-| Segmented switch, filter chips | `ui/segmented.tsx`, `shared/filter-chip.tsx` | `segmented.tsx`, `filter-chips.tsx` |
+| Job                            | Web (`apps/web/components/`)                                                                           | Phone (`apps/mobile/components/`)                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Page actions in the header     | `layout/page-actions.tsx` `PageActions` (moves into the page header with #5686)                        | `screen-shell.tsx` header, `header-button.tsx` `HeaderButton`                                                  |
+| Create ("New …")               | `ui/new-button.tsx` `NewButton`; other main actions `<Button variant="action">` (both land with #5686) | `ScreenShell` `createAction` (`floating-create-button.tsx`)                                                    |
+| A record or long form          | `shared/panel.tsx` `Panel` (docked)                                                                    | `sheet-scaffold.tsx`                                                                                           |
+| Row and action menu            | `shared/row-menu.tsx` `RowMenu`, `ActionMenuButton` (never `ui/context-menu.tsx` directly)             | `item-actions-menu.tsx`: `useItemMenu` for a row's long-press, `openItemMenu` from any other press             |
+| A pick from options            | `ui/select.tsx`, `ui/dropdown-menu.tsx`, `shared/searchable-picker.tsx`                                | `option-sheet.tsx`                                                                                             |
+| Date and time                  | `ui/date-field.tsx`, `ui/time-field.tsx`                                                               | the platform picker (see `components/tasks/due-date-field.tsx`)                                                |
+| Grouped list                   | `ui/table.tsx`, `shared/section-label.tsx`                                                             | `list-section.tsx`                                                                                             |
+| Loading, empty, error          | `shared/page-skeletons.tsx`, `shared/async-states.tsx`, `shared/nested-states.tsx`                     | `state-block.tsx`, `card-list-skeleton.tsx` (each route's own skeleton, pinned by `screen-skeletons.spec.tsx`) |
+| Destructive confirm            | `shared/confirm-dialog.tsx` `useConfirmDialog`                                                         | `confirmAlert` (`lib/minutes/meetings-on.ts`), the platform alert with Cancel and the verb                     |
+| Kept form drafts               | `useKeptFormDraft` (`@repo/hooks`)                                                                     | `useKeptSheetDraft` (`lib/kept-sheet-draft.ts`)                                                                |
+| Segmented switch, filter chips | `ui/segmented.tsx`, `shared/filter-chip.tsx`                                                           | `segmented.tsx`, `filter-chips.tsx`                                                                            |
 
 Where frontend code lives and the conventions that aren't obvious from reading it. For which
 tokens and typefaces are current, which reference board is visual truth, and how a cutover
@@ -60,13 +60,13 @@ state, and topic teardown, see [`realtime-resilience`](../realtime-resilience/SK
 
 ## Architecture overview
 
-| Layer | Location | Notes |
-|-------|----------|-------|
-| `@repo/theme` | `packages/theme/src/` | Exports `./tailwind` (shared preset), `./signet.css` (both web surfaces), `./signet` (typed tokens, what mobile reads). `src/motion.ts` is the motion scale, served through `./signet` and the preset |
-| ShadCN primitives | `apps/web/components/ui/` | Dashboard primitives and Radix composites. There is no shared web-component package |
-| Web features / pages | `apps/web/components/`, `apps/web/app/` | Next.js App Router |
-| Landing | `apps/landing/app/` | Separate Next.js app with inline Tailwind |
-| Mobile | `apps/mobile/app/` (Expo Router screens), `apps/mobile/components/` | React Native, no Tailwind classes |
+| Layer                | Location                                                            | Notes                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@repo/theme`        | `packages/theme/src/`                                               | Exports `./tailwind` (shared preset), `./signet.css` (both web surfaces), `./signet` (typed tokens, what mobile reads). `src/motion.ts` is the motion scale, served through `./signet` and the preset |
+| ShadCN primitives    | `apps/web/components/ui/`                                           | Dashboard primitives and Radix composites. There is no shared web-component package                                                                                                                   |
+| Web features / pages | `apps/web/components/`, `apps/web/app/`                             | Next.js App Router                                                                                                                                                                                    |
+| Landing              | `apps/landing/app/`                                                 | Separate Next.js app with inline Tailwind                                                                                                                                                             |
+| Mobile               | `apps/mobile/app/` (Expo Router screens), `apps/mobile/components/` | React Native, no Tailwind classes                                                                                                                                                                     |
 
 **Before writing a helper, hook, guard, constant or validation rule,** search for an existing one
 and reuse or extend it. Grep for the concept, not only your name for it, in: `packages/hooks/src/`

@@ -36,7 +36,7 @@
  *    `unconfirmed`/`recorded` rows have no replay path; the thread presents
  *    them read-only (#1910) until one exists. Do not invent a slash dispatch
  *    from here. The + sheet's forms (#3865) do post through
- *    `@repo/chat-core/dispatch`'s `postPoll`, `postTask`, `postHours` and
+ *    `@repo/chat-core/dispatch`'s `postPoll`, `postTask`, `linkTask` and
  *    `trackEventCard`, the calls web's commands make; none of them replays.
  *    Web's `dispatchSlash`, `retryUnconfirmed` and the persisted-notice merge
  *    in its channel query all hang off slash dispatch.
@@ -108,21 +108,14 @@ import {
 } from "@repo/chat-core/types";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { PollPayload } from "@repo/chat-core/polls";
-import type { SignupPayload } from "@repo/chat-core/signups";
-import type { FormPayload } from "@repo/chat-core/forms";
-import type { RolePickerPayload } from "@repo/chat-core/role-pickers";
 import {
-  postHours,
   postPoll,
-  postSignup,
-  postRolePicker,
-  postForm,
+  linkTask,
   postTask,
   SIGNED_OUT_POST_COPY,
   trackEventCard,
   type DispatchResult,
   type EventCardTrack,
-  type HoursInput,
   type TaskInput,
 } from "@repo/chat-core/dispatch";
 import { randomClientId } from "@repo/api-sdk";
@@ -298,35 +291,6 @@ export interface UseChatChannelResult {
     payload: PollPayload;
   }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
   /**
-   * The + sheet's New sign-up sheet (#3926): a `kind: "signup"` card into this
-   * channel through chat-core's `postSignup`, the call web's form makes, with
-   * `sendPoll`'s outcomes. Never rejects.
-   */
-  sendSignup: (signup: {
-    content: string;
-    payload: SignupPayload;
-  }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
-  /**
-   * The + sheet's New role picker (#4958): a `kind: "role_picker"` card into
-   * this channel through the outbox like a sign-up sheet, with `sendPoll`'s
-   * outcomes. The send route refuses it without `roles:manage`, or for a
-   * role no longer marked Non-chapter business; that refusal lands on the
-   * failed row. Never rejects.
-   */
-  sendRolePicker: (picker: {
-    content: string;
-    payload: RolePickerPayload;
-  }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
-  /**
-   * The + sheet's New form (#3926 step 3): a `kind: "form"` card into this
-   * channel through chat-core's `postForm`, with `sendPoll`'s outcomes.
-   * Never rejects.
-   */
-  sendForm: (form: {
-    content: string;
-    payload: FormPayload;
-  }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
-  /**
    * The + sheet's GIF picker (#4631): the GIF as its own message, through
    * the outbox like any message. It touches neither the draft nor the photo
    * tray. Never rejects; resolves `ok: false` with the reason it couldn't
@@ -336,15 +300,18 @@ export interface UseChatChannelResult {
     gif: OutgoingGif,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
   /**
-   * The + sheet's Task and Service hours forms (#3865): chat-core's
-   * `postTask` / `postHours` into this channel, the calls web's `/task` and
-   * `/hours log` make, so the card gets the same placeholder, the `recorded`
-   * row when it didn't post, and `unconfirmed` (never `ok: false`) when the
-   * answer was lost. Neither route dedupes, so a form closes on anything but
-   * `ok: false`. Never rejects.
+   * The + sheet's New task form (#3865): chat-core's `postTask` into this
+   * channel, the call web's `/task` makes, so the card gets the same
+   * placeholder, the `recorded` row when it didn't post, and `unconfirmed`
+   * (never `ok: false`) when the answer was lost. The route doesn't dedupe,
+   * so the form closes on anything but `ok: false`. Never rejects.
    */
   postTask: (input: TaskInput) => Promise<DispatchResult>;
-  postHours: (input: HoursInput) => Promise<DispatchResult>;
+  /**
+   * The + sheet's Task picker (#5772): chat-core's `linkTask`, posting an
+   * existing task's card into this channel. Never rejects.
+   */
+  linkTask: (task: { id: string; title: string }) => Promise<DispatchResult>;
   /**
    * The + sheet's Event form: chat-core's `trackEventCard` for this channel,
    * the timeline bookkeeping for a card the form's own `POST /v1/events`
@@ -1118,51 +1085,6 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
-  const sendSignup = useCallback(
-    async (signup: {
-      content: string;
-      payload: SignupPayload;
-    }): Promise<
-      { ok: true; warning?: string } | { ok: false; error: string }
-    > => {
-      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      const result = await postSignup(ctx, channelId, signup);
-      if (result.ok) return result;
-      return { ok: false, error: result.error };
-    },
-    [channelId, ctx],
-  );
-
-  const sendRolePicker = useCallback(
-    async (picker: {
-      content: string;
-      payload: RolePickerPayload;
-    }): Promise<
-      { ok: true; warning?: string } | { ok: false; error: string }
-    > => {
-      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      const result = await postRolePicker(ctx, channelId, picker);
-      if (result.ok) return result;
-      return { ok: false, error: result.error };
-    },
-    [channelId, ctx],
-  );
-
-  const sendForm = useCallback(
-    async (form: {
-      content: string;
-      payload: FormPayload;
-    }): Promise<
-      { ok: true; warning?: string } | { ok: false; error: string }
-    > => {
-      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      const result = await postForm(ctx, channelId, form);
-      if (result.ok) return result;
-      return { ok: false, error: result.error };
-    },
-    [channelId, ctx],
-  );
-
   const sendGif = useCallback(
     async (
       gif: OutgoingGif,
@@ -1202,15 +1124,12 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     },
     [channelId, ctx, queryClient],
   );
-  const postHoursHere = useCallback(
-    async (input: HoursInput): Promise<DispatchResult> => {
+  const linkTaskHere = useCallback(
+    async (task: { id: string; title: string }): Promise<DispatchResult> => {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      // As above, for the Service page's entries.
-      return withChatRecordRefresh(queryClient, "hours", () =>
-        postHours(ctx, channelId, input),
-      );
+      return linkTask(ctx, channelId, task);
     },
-    [channelId, ctx, queryClient],
+    [channelId, ctx],
   );
   const trackEventCardHere = useMemo(
     () =>
@@ -1568,11 +1487,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     sendInFlight,
     sendPoll,
     sendGif,
-    sendSignup,
-    sendRolePicker,
-    sendForm,
     postTask: postTaskHere,
-    postHours: postHoursHere,
+    linkTask: linkTaskHere,
     trackEventCard: trackEventCardHere,
     edit,
     remove,

@@ -87,6 +87,7 @@ import {
   type MeetingTextSection,
   type MeetingType,
   meetingTabledFromLabel,
+  minutesMetaHead,
   readEventAgenda,
 } from "@repo/validation";
 import { ErrorState } from "@/components/shared/async-states";
@@ -129,7 +130,6 @@ import { ComingUpPostReview } from "@/components/meetings/coming-up-post-review"
 import { MinutesPageSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
   meetingDayLabel,
-  meetingWhenLabel,
   sectionLabel,
 } from "@/components/meetings/meeting-copy";
 import {
@@ -599,7 +599,6 @@ function Minutes({
   const canBackfill =
     !!meeting.event_id && canMarkAttendance && meetingHasEnded(meeting);
 
-  const when = meetingWhenLabel(meeting.event_start_time);
   const typeLabel = meetingTypeLabel(
     (editing ? draft.meeting_type : base.meeting_type) as MeetingType,
     editing ? draft.other_label : base.other_label,
@@ -692,7 +691,7 @@ function Minutes({
             <p className="break-words text-caption text-muted-foreground">
               {/* The phone's line, word for word (#5562). */}
               {[
-                `${typeLabel} meeting, ${when}`,
+                minutesMetaHead(meeting, typeLabel),
                 posting
                   ? "Posting"
                   : isDraft
@@ -762,8 +761,20 @@ function Minutes({
                 ) : null}
                 {/* Nothing to post until there is something written. */}
                 {isDraft && !starting && !drafting ? (
-                  <Button disabled={busy} onClick={() => void handlePost()}>
-                    {MEETING_COPY.post}
+                  // Minutes with no meeting have nobody to post to yet: dimmed,
+                  // saying why (rulebook § 9).
+                  <Button
+                    disabled={busy || !meeting.event_id}
+                    title={
+                      meeting.event_id
+                        ? undefined
+                        : MEETING_NOTE_TAKERS_COPY.postNeedsMeeting
+                    }
+                    onClick={() => void handlePost()}
+                  >
+                    {meeting.event_id
+                      ? MEETING_COPY.post
+                      : MEETING_NOTE_TAKERS_COPY.postNeedsMeeting}
                   </Button>
                 ) : null}
               </>

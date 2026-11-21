@@ -60,7 +60,7 @@ export class ChapterGroupController {
   @VerifySessionLocally()
   @ApiOperation({
     summary:
-      "List the chapter's groups with their members: manual ones, then pledge classes and class years that have members",
+      "List the chapter's groups with their members: manual ones, then pledge classes, class years and majors that have members",
   })
   @ApiOkResponse({ type: ChapterGroupDto, isArray: true })
   async list(@CurrentChapterId() chapterId: string) {

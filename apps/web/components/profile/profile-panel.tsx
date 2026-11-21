@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import {
   profileIdentityLine,
   profileStatsErrorNote,
+  useChapterMajors,
   useCurrentUser,
   useMemberByUserId,
   useMemberDisplayNames,
@@ -23,6 +24,7 @@ import {
   GRADUATION_YEAR_MIN,
   isPhoneNumber,
   MAJOR_MAX_LENGTH,
+  majorSuggestions,
   PHONE_INVALID_MESSAGE,
   PHONE_MAX_LENGTH,
   PROFILE_ALUMNI_SECTION,
@@ -36,6 +38,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SuggestField } from "@/components/ui/suggest-field";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
@@ -95,6 +98,9 @@ export function ProfilePanel() {
   // `/v1/users/me`, behind the Directory's gate (`members:view`); a viewer
   // without it reads neither and sees no rows, as on the phone (#3939).
   const canViewMembers = can("members:view", usePermissionList());
+  // The chapter's majors, offered under Major (#5778), from the same
+  // `members:view` read as the Directory's groups.
+  const chapterMajors = useChapterMajors({ enabled: canViewMembers });
   const memberQuery = useMemberByUserId(canViewMembers ? (ownId ?? "") : "");
   const membership = memberQuery.data as
     | {
@@ -436,16 +442,18 @@ export function ProfilePanel() {
             <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
               <div className="grid gap-2">
                 <Label htmlFor="major">{PROFILE_FIELD_COPY.major.label}</Label>
-                <Input
+                <SuggestField
                   id="major"
                   value={profile.major ?? ""}
                   maxLength={MAJOR_MAX_LENGTH}
-                  onChange={(event) =>
-                    setProfileDraft((prev) => ({
-                      ...prev,
-                      major: event.target.value,
-                    }))
+                  onChange={(major) =>
+                    setProfileDraft((prev) => ({ ...prev, major }))
                   }
+                  suggestions={majorSuggestions(
+                    chapterMajors,
+                    profile.major ?? "",
+                  )}
+                  suggestionsLabel={PROFILE_FIELD_COPY.major.suggestionsLabel}
                   placeholder={PROFILE_FIELD_COPY.major.placeholder}
                 />
               </div>

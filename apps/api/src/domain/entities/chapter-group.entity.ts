@@ -1,3 +1,10 @@
+import {
+  groupKindOpensChannels as kindOpensChannels,
+  type ChapterGroupKind,
+} from '@repo/validation';
+
+export type { ChapterGroupKind };
+
 /**
  * A group (`chapter_groups`, #4076): a named set of members that holds no
  * permissions and sits in no tier. It can be `@`-mentioned and named in a
@@ -8,12 +15,14 @@
  * - `pledge_class`: one per pledge class; its members are the members in it.
  * - `class_year`: one per graduation year a member of the chapter has; its
  *   members are the members graduating that year.
+ * - `major`: one per major a member of the chapter has, matched ignoring
+ *   case and spacing (#5778); its members are the members with that major.
  *
  * An automatic group's name follows its class's or year's, and its members
  * follow the members' own data; only its color and ping switch are the
- * chapter's to change. Migration `20261113040007_chapter_groups.sql`.
+ * chapter's to change. Migrations `20261113040007_chapter_groups.sql` and
+ * `20261120215726_major_groups.sql`.
  */
-export type ChapterGroupKind = 'manual' | 'pledge_class' | 'class_year';
 
 export interface ChapterGroup {
   id: string;
@@ -30,6 +39,11 @@ export interface ChapterGroup {
   pledge_class_id: string | null;
   /** The year an automatic `class_year` group follows, else `null`. */
   class_year: number | null;
+  /**
+   * The major an automatic `major` group follows, folded (trimmed, spacing
+   * collapsed, lower case: `majorGroupKey`), else `null`.
+   */
+  major_key: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -43,17 +57,18 @@ export interface ChapterGroupMembership {
   chapter_id: string;
   group_id: string;
   user_id: string;
-  /** The group's kind, so a reader can tell a class year apart. */
+  /** The group's kind, so a reader can tell a class year or major apart. */
   kind: ChapterGroupKind;
 }
 
 /**
  * Whether a group of this kind can open a channel that lists it. A class year
- * can't: members set their own graduation year, so it is for `@`-mentions
- * only (`can_read_chat_channel` holds the same rule).
+ * or a major can't: members set their own, so they are for `@`-mentions and
+ * task audiences only (`can_read_chat_channel` holds the same rule). The one
+ * copy is `@repo/validation`'s, which the apps read too.
  */
 export function groupKindOpensChannels(kind: ChapterGroupKind): boolean {
-  return kind !== 'class_year';
+  return kindOpensChannels(kind);
 }
 
 /** A manual group's hand-picked member (`chapter_group_members`). */

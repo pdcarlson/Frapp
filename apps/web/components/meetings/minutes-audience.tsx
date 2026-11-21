@@ -18,7 +18,7 @@ export type MinutesAudience = "everyone" | "roles";
  * Who reads minutes written for a meeting that wasn't on the calendar: the
  * event made for them invites everyone or only some roles, and that is who
  * reads the minutes (`spec/behavior/meetings.md` § Writing minutes by hand).
- * New minutes and Link an event (#4935) both ask it here.
+ * Link a meeting's Add it to the calendar (#4935) asks it here.
  */
 export function MinutesAudienceField({
   audience,

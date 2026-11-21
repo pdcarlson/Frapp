@@ -141,10 +141,7 @@ function MinutesSeriesBody() {
                 type={row.meeting_type}
                 otherLabel={row.other_label}
                 time=""
-                draft={row.status === "draft"}
-                recorded={row.recorded}
-                decisions={row.decision_count}
-                actionItems={row.action_item_count}
+                facts={row}
                 gist={row.gist}
                 onPress={() =>
                   router.push({

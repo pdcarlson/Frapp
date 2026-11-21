@@ -2,10 +2,10 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { ActionSheetIOS, Alert } from "react-native";
+import { Alert } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SYSTEM_SENDER_ID, type BlockListStatus } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
@@ -152,6 +152,15 @@ vi.mock("@/lib/chat/block-actions", async (importOriginal) => ({
 }));
 
 import { ListRow } from "@/components/list-section";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
+
+afterEach(() => {
+  dismissItemMenu();
+});
 import { ScreenShell } from "@/components/screen-shell";
 import { MemberProfile, MemberProfileScreen } from "./member-profile-screen";
 import { MemberClassSheet } from "./member-class-sheet";
@@ -581,16 +590,18 @@ describe("MemberProfile ⋯ menu", () => {
     );
   }
 
-  /** Opens the ⋯ and answers the action sheet's options, minus Cancel. */
+  /** Opens the ⋯ and reads the glass menu it opened. */
   function openMenu(tree: ReactTestRenderer) {
     const [button] = moreButton(tree);
     act(() => button!.props.onPress());
-    const show = vi.mocked(ActionSheetIOS.showActionSheetWithOptions);
-    const [options, pick] = show.mock.calls.at(-1)!;
+    const menu = currentItemMenu()!;
     return {
-      labels: options.options.slice(0, -1),
-      options,
-      pick: (label: string) => act(() => pick(options.options.indexOf(label))),
+      title: menu.title,
+      labels: menu.actions.map((action) => action.label),
+      destructive: menu.actions
+        .filter((action) => action.destructive)
+        .map((action) => action.label),
+      pick: (label: string) => act(() => pickItemMenuAction(label)),
     };
   }
 
@@ -630,8 +641,9 @@ describe("MemberProfile ⋯ menu", () => {
     state.removable = new Set([ADA]);
     const tree = render(ADA);
     const menu = openMenu(tree);
+    expect(menu.title).toBe("Ada");
     expect(menu.labels).toEqual(["Block Ada", "Remove from chapter"]);
-    expect(menu.options.destructiveButtonIndex).toEqual([0, 1]);
+    expect(menu.destructive).toEqual(["Block Ada", "Remove from chapter"]);
     act(() => tree.unmount());
   });
 
@@ -647,7 +659,7 @@ describe("MemberProfile ⋯ menu", () => {
       "Remove from chapter",
     ]);
     // Only Block and Remove are destructive.
-    expect(menu.options.destructiveButtonIndex).toEqual([1, 2]);
+    expect(menu.destructive).toEqual(["Block Ada", "Remove from chapter"]);
     act(() => tree.unmount());
   });
 
@@ -865,9 +877,6 @@ describe("MemberProfile fact rows", () => {
   // #3711: a contact card, the phone first.
   it("draws the member's phone above Email, and a tap offers Call or Text", () => {
     state.phones[CARA] = "(518) 555-0142";
-    const sheet = vi
-      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
-      .mockImplementation(() => {});
     const tree = render(CARA);
     const rows = tree.root.findAllByType(ListRow).map((row) => row.props.label);
     expect(rows.slice(0, 2)).toEqual(["Phone", "Email"]);
@@ -876,10 +885,14 @@ describe("MemberProfile fact rows", () => {
       .find((row) => row.props.label === "Phone");
     expect(phoneRow?.props.value).toBe("(518) 555-0142");
     act(() => phoneRow?.props.onPress());
-    expect(sheet).toHaveBeenCalledWith(
-      expect.objectContaining({ options: ["Call", "Text", "Cancel"] }),
-      expect.any(Function),
-    );
+    const menu = currentItemMenu()!;
+    expect(menu.message).toBe("(518) 555-0142");
+    expect(
+      menu.actions.map((action) => [action.label, !!action.destructive]),
+    ).toEqual([
+      ["Call", false],
+      ["Text", false],
+    ]);
     delete state.phones[CARA];
     act(() => tree.unmount());
   });

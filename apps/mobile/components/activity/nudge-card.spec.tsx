@@ -1,10 +1,14 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
-import { Alert } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityNudge } from "@repo/hooks";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 import { NudgeCard } from "./nudge-card";
@@ -68,6 +72,10 @@ const press = (tree: ReactTestRenderer, testID: string) =>
   act(() => {
     tree.root.findByProps({ testID }).props.onPress();
   });
+
+afterEach(() => {
+  dismissItemMenu();
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -139,15 +147,22 @@ describe("NudgeCard", () => {
   });
 
   it("hides what it shows, or turns the cards off, from More", () => {
-    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
     const tree = render();
     press(tree, "activity-nudge-more");
-    const buttons = alert.mock.calls[0]?.[2] ?? [];
-    act(() => buttons.find((b) => b.text === "Hide this one")?.onPress?.());
+    const menu = currentItemMenu()!;
+    expect(menu.title).toBe("This card");
+    expect(
+      menu.actions.map((action) => [action.label, !!action.destructive]),
+    ).toEqual([
+      ["Hide this one", false],
+      ["Turn these off", true],
+    ]);
+    act(() => pickItemMenuAction("Hide this one"));
     expect(handlers.onDismiss).toHaveBeenCalledWith(EVENT);
-    act(() => buttons.find((b) => b.text === "Turn these off")?.onPress?.());
+    expect(handlers.onTurnOff).not.toHaveBeenCalled();
+    press(tree, "activity-nudge-more");
+    act(() => pickItemMenuAction("Turn these off"));
     expect(handlers.onTurnOff).toHaveBeenCalled();
-    alert.mockRestore();
   });
 
   it("draws a kind it does not know with a neutral glyph", () => {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Alert,
+  type GestureResponderEvent,
   Keyboard,
   StyleSheet,
   Text,
@@ -63,7 +64,7 @@ import {
 } from "@/components/tasks/task-facts";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
-import { showActionMenu } from "@/lib/action-menu";
+import { openItemMenu, pressAt } from "@/components/item-actions-menu";
 import { goBackTo } from "@/lib/href";
 import { leaveScreen } from "@/lib/back-target";
 import { rowIsSentBack, toTaskRow, type TaskRowModel } from "@/lib/tasks/board";
@@ -137,7 +138,7 @@ const FOLLOWER_DELETED =
  * A floating glass bar under the thumb, as Things 3 keeps a to-do's controls
  * (`TaskActionBar`). Mark done is the one thing to do and the only control in
  * the chapter accent, a pill with its verb; Edit, Remove people and More are
- * 44pt rounds. More opens the system menu: Mark not done, Give it back, Delete
+ * 44pt rounds. More opens the glass menu: Mark not done, Give it back, Delete
  * and, on a group task, Delete for everyone. Each shows only to a viewer the
  * API lets use it (`taskScreenControls`).
  *
@@ -570,8 +571,8 @@ function TaskScreen({
     otherMoreRows: restOfMore.length,
   });
   const moreRows = [
-    // Held as the round is (offline, mid-write, refused): the system menu
-    // has no disabled row, so it is left out until it can send.
+    // Held as the round is (offline, mid-write, refused): the menu has no
+    // disabled row, so it is left out until it can send.
     ...(sendBackInMore && !review.disabled
       ? [
           {
@@ -583,19 +584,21 @@ function TaskScreen({
     ...(editInMore ? [{ label: "Edit", onPress: startEdit }] : []),
     ...restOfMore,
   ];
-  // At most three, which Android's dialog can draw: Mark not done needs the
-  // task done and Give it back needs it not done, so only one of them shows
-  // beside Delete and Delete for everyone. Start needs it To do, so it never
-  // shows beside Mark not done, and with Give it back (a task taken from Up
-  // for grabs, never a group's copy) there is no Delete for everyone. Send
-  // back and Edit are an officer's on someone else's task, so none of those
-  // three is beside them, only the two deletes (`taskBarLayout`).
-  const openMore = () =>
-    showActionMenu({
-      title: row.title,
-      rows: moreRows,
-      userInterfaceStyle: "dark",
-    });
+  // The glass menu, opened above the bar's More (owner, 2026-11-20: one
+  // menu system, never the system's sheet).
+  const openMore = (event?: GestureResponderEvent) =>
+    openItemMenu(
+      {
+        title: row.title,
+        actions: moreRows.map((moreRow) => ({
+          key: moreRow.label,
+          label: moreRow.label,
+          destructive: "style" in moreRow && moreRow.style === "destructive",
+          run: moreRow.onPress,
+        })),
+      },
+      pressAt(event),
+    );
 
   const status = rowStatus(row);
   const due = formatDueDate(row.dueDate);

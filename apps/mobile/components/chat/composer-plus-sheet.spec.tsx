@@ -100,9 +100,7 @@ describe("ComposerPlusSheet (#3865)", () => {
           node.props.accessibilityLabel !== "Cancel",
       )
       .map((node) => node.props.accessibilityLabel);
-    expect(labels).toEqual(
-      expect.arrayContaining(["Photo", "Poll", "Event", "Service hours"]),
-    );
+    expect(labels).toEqual(expect.arrayContaining(["Photo", "Poll", "Event"]));
     expect(labels).not.toContain("Task");
     expect(screenText(tree)).toContain("Your role can't create tasks.");
   });
@@ -178,13 +176,13 @@ describe("presentPostOutcome", () => {
   it("titles a lost answer as unconfirmed, never as failed", () => {
     const alert = vi.fn();
     presentPostOutcome(
-      "hours",
-      { unconfirmed: true, warning: "Check the Service page." },
+      "link",
+      { unconfirmed: true, warning: "Check the channel." },
       alert,
     );
     expect(alert).toHaveBeenCalledWith(
-      "Couldn't confirm the hours",
-      "Check the Service page.",
+      "Couldn't confirm the link",
+      "Check the channel.",
     );
   });
 

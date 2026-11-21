@@ -1,20 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  SIGNUP_END_TOO_FAR_PROBLEM,
-  SIGNUP_SPOTS_PROBLEM,
-  addSignupSlot,
   canExportSignup,
   signupExportRows,
   headcountAnswerPayload,
   headcountNotePayload,
   signupDeadlineLine,
-  buildSignupMessage,
   castSignupClaim,
-  checkSignupDraft,
-  emptySignupDraft,
   readSignupPayload,
-  removeSignupSlot,
-  setSignupSlot,
   signupCardEyebrow,
   signupCardFooter,
   signupClaimPayload,
@@ -26,11 +18,7 @@ import {
   tallySignups,
   type SignupPayload,
 } from "./signups";
-import {
-  CARD_END_PASSED_PROBLEM,
-  canCloseCard,
-  isCardClosed,
-} from "./card-closing";
+import { canCloseCard, isCardClosed } from "./card-closing";
 import type { ChatMessage } from "./types";
 
 const card: SignupPayload = {
@@ -68,33 +56,6 @@ function message(
     })),
   } as unknown as ChatMessage;
 }
-
-describe("buildSignupMessage (#3926)", () => {
-  it("makes the title the message's text and gives each slot an id", () => {
-    let n = 0;
-    const built = buildSignupMessage(
-      {
-        title: "Sober drivers",
-        note: "  ",
-        slots: [
-          { label: "Friday", capacity: 2 },
-          { label: "Bring a bucket", capacity: null },
-        ],
-      },
-      () => `s${++n}`,
-    );
-    expect(built).toEqual({
-      content: "Sober drivers",
-      payload: {
-        title: "Sober drivers",
-        slots: [
-          { id: "s1", label: "Friday", capacity: 2 },
-          { id: "s2", label: "Bring a bucket", capacity: null },
-        ],
-      },
-    });
-  });
-});
 
 describe("readSignupPayload", () => {
   it("reads a card, and a limit that isn't a positive whole number as none", () => {
@@ -302,105 +263,17 @@ describe("claims", () => {
   });
 });
 
-describe("the New sign-up sheet draft", () => {
-  function filled() {
-    let draft = emptySignupDraft();
-    draft = { ...draft, title: " Sober drivers ", note: " 10pm " };
-    const [a, b] = draft.slots;
-    draft = setSignupSlot(draft, a!.key, { label: "Friday", capacity: "2" });
-    draft = setSignupSlot(draft, b!.key, { label: "Saturday", capacity: "" });
-    return draft;
-  }
-
-  it("posts the named slots, blank Spots as no limit", () => {
-    expect(checkSignupDraft(filled())).toEqual({
-      ok: true,
-      input: {
-        title: "Sober drivers",
-        note: "10pm",
-        slots: [
-          { label: "Friday", capacity: 2 },
-          { label: "Saturday", capacity: null },
-        ],
-      },
-    });
-  });
-
-  it("skips an empty row, and holds Post quietly while unfinished", () => {
-    const draft = addSignupSlot(filled());
-    expect(checkSignupDraft(draft).ok).toBe(true);
-    expect(checkSignupDraft(emptySignupDraft())).toEqual({
-      ok: false,
-      problem: null,
-    });
-  });
-
-  it("names a bad Spots value, a nameless slot and a repeated name on their row", () => {
-    const draft = filled();
-    const key = draft.slots[0]!.key;
-    for (const capacity of ["0", "1.5", "two", "101"]) {
-      expect(checkSignupDraft(setSignupSlot(draft, key, { capacity }))).toEqual(
-        {
-          ok: false,
-          problem: SIGNUP_SPOTS_PROBLEM,
-          slotKey: key,
-        },
-      );
-    }
-    expect(
-      checkSignupDraft(setSignupSlot(draft, key, { label: " " })),
-    ).toMatchObject({
-      ok: false,
-      problem: "Give this slot a name.",
-      slotKey: key,
-    });
-    expect(
-      checkSignupDraft(setSignupSlot(draft, key, { label: "saturday" })),
-    ).toMatchObject({ ok: false, slotKey: draft.slots[1]!.key });
-    // Runs of whitespace fold too (`foldOptionLabel`), as on the poll draft.
-    const nights = setSignupSlot(
-      setSignupSlot(draft, key, { label: "Friday  Night" }),
-      draft.slots[1]!.key,
-      { label: "friday night" },
-    );
-    expect(checkSignupDraft(nights)).toMatchObject({
-      ok: false,
-      slotKey: draft.slots[1]!.key,
-    });
-  });
-
-  it("keeps at least one row", () => {
-    let draft = emptySignupDraft();
-    draft = removeSignupSlot(draft, draft.slots[0]!.key);
-    draft = removeSignupSlot(draft, draft.slots[0]!.key);
-    expect(draft.slots).toHaveLength(1);
-  });
-});
-
 describe("headcount, end time and closing (#3926 step 2)", () => {
   const headcount = readSignupPayload(
-    message(
-      buildSignupMessage({ title: "Formal", slots: [], format: "headcount" })
-        .payload,
-    ),
-  )!;
-
-  it("builds a headcount with the server's two slots and an end time", () => {
-    const at = new Date("2026-11-14T23:00:00Z");
-    const built = buildSignupMessage({
+    message({
       title: "Formal",
-      slots: [{ label: "ignored", capacity: 1 }],
       format: "headcount",
-      closesAt: at,
-    });
-    expect(built.payload.format).toBe("headcount");
-    expect(built.payload.slots.map((s) => s.id)).toEqual([
-      "going",
-      "not_going",
-    ]);
-    expect(built.payload.closes_at).toBe(at.toISOString());
-    expect(headcount.format).toBe("headcount");
-  });
+      slots: [
+        { id: "going", label: "Going", capacity: null },
+        { id: "not_going", label: "Can't make it", capacity: null },
+      ],
+    }),
+  )!;
 
   it("counts going, names notes, and words the eyebrow and footer", () => {
     const m = message(headcount, [
@@ -510,26 +383,6 @@ describe("headcount, end time and closing (#3926 step 2)", () => {
     expect(
       canCloseCard({ ...row, _status: "pending" }, card, "u1", 0, false),
     ).toBe(false);
-  });
-
-  it("checks a headcount draft by its title, and refuses a past or far end time", () => {
-    const now = Date.parse("2026-11-12T12:00:00Z");
-    const draft = { ...emptySignupDraft(), format: "headcount" as const };
-    expect(checkSignupDraft(draft, now)).toEqual({ ok: false, problem: null });
-    const titled = { ...draft, title: "Formal" };
-    expect(checkSignupDraft(titled, now)).toMatchObject({
-      ok: true,
-      input: { title: "Formal", format: "headcount" },
-    });
-    expect(
-      checkSignupDraft({ ...titled, closesAt: new Date(now - 60_000) }, now),
-    ).toEqual({ ok: false, problem: CARD_END_PASSED_PROBLEM });
-    expect(
-      checkSignupDraft(
-        { ...titled, closesAt: new Date(now + 400 * 86_400_000) },
-        now,
-      ),
-    ).toEqual({ ok: false, problem: SIGNUP_END_TOO_FAR_PROBLEM });
   });
 });
 

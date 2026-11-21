@@ -29,7 +29,7 @@ import {
 } from "@repo/hooks";
 import { nextUpLine } from "@repo/formatting";
 import { TASK_AUDIENCE_COPY, canAll, isModuleEnabled } from "@repo/validation";
-import { PLUS_MENU_PERMISSIONS } from "@repo/chat-core/plus-menu";
+import { TASK_CREATE_PERMISSIONS } from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { SuggestedTasksEntry } from "@/components/tasks/suggested-tasks-entry";
@@ -148,8 +148,8 @@ export default function TasksScreen() {
   // people who assign work. The C2 pattern, verbatim.
   const permissions = usePermissionList();
   // The hint points at the quick actions' New task, so it reads that action's
-  // grant (`PLUS_MENU_PERMISSIONS.task`: `tasks:manage` under `members:view`).
-  const canManageTasks = canAll(PLUS_MENU_PERMISSIONS.task, permissions);
+  // grant (`TASK_CREATE_PERMISSIONS`: `tasks:manage` under `members:view`).
+  const canManageTasks = canAll(TASK_CREATE_PERMISSIONS, permissions);
 
   // One clock for the whole render, so the two sections cannot straddle a tick
   // and disagree about what "today" means — but re-read whenever the member
@@ -307,13 +307,11 @@ export default function TasksScreen() {
   // `/tasks?assigned=<userId>`: a posting's screen handed it to that member
   // (#5570), and the line says who has it, as after New task.
   const nameOf = useMemberLabel();
-  const {
-    [RELEASED_PARAM]: released,
-    [ASSIGNED_PARAM]: assignedTo,
-  } = useLocalSearchParams<{
-    [RELEASED_PARAM]?: string;
-    [ASSIGNED_PARAM]?: string;
-  }>();
+  const { [RELEASED_PARAM]: released, [ASSIGNED_PARAM]: assignedTo } =
+    useLocalSearchParams<{
+      [RELEASED_PARAM]?: string;
+      [ASSIGNED_PARAM]?: string;
+    }>();
   const arrival =
     released === "1"
       ? "released"

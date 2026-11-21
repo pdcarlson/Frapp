@@ -41,7 +41,10 @@ const {
 
 // usingPreviewData renders from the `event` prop and gates out AttendancePanel;
 // stub the live hooks so the sheet renders without a query client / API.
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  // The event's Now pill (#5777) runs for real.
+  eventNowPill: (await importOriginal<typeof import("@repo/hooks")>())
+    .eventNowPill,
   useNow: () => Date.now(),
   useEvent: () => ({
     data: eventQueryState.data,
@@ -1123,5 +1126,40 @@ describe("EventDetailSheet excuses (#3735)", () => {
     permissionsState.value = ["events:update", "members:view"];
     renderLive({ ...baseEvent, created_by: "someone-else" });
     expect(screen.getByTestId("excuse-review")).toBeInTheDocument();
+  });
+});
+
+describe("EventDetailSheet Now pill (#5777)", () => {
+  it("says the event is on until its end, and nothing for one long over", () => {
+    const { unmount } = render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={{
+          ...baseEvent,
+          start_time: new Date(Date.now() - 40 * 60_000).toISOString(),
+          end_time: new Date(Date.now() + 20 * 60_000).toISOString(),
+        }}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("event-now-pill")).toHaveTextContent(
+      /^Now · until /,
+    );
+    unmount();
+
+    render(
+      <EventDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        event={baseEvent}
+        onRequestEdit={() => {}}
+        onEventDeleted={() => {}}
+      />,
+    );
+    expect(screen.queryByTestId("event-now-pill")).toBeNull();
   });
 });

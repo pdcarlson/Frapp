@@ -9,7 +9,11 @@ import {
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { GROUP_MEMBERS_MAX, GROUP_NAME_MAX_LENGTH } from '@repo/validation';
+import {
+  CHAPTER_GROUP_KINDS,
+  GROUP_MEMBERS_MAX,
+  GROUP_NAME_MAX_LENGTH,
+} from '@repo/validation';
 import {
   IsRoleColor,
   ROLE_COLOR_API_DESCRIPTION,
@@ -25,15 +29,15 @@ export class ChapterGroupDto {
   chapter_id: string;
 
   @ApiProperty({
-    enum: ['manual', 'pledge_class', 'class_year'],
+    enum: CHAPTER_GROUP_KINDS,
     description:
-      '`manual`: an officer picks its members. `pledge_class` and `class_year`: Frapp keeps one per pledge class and per graduation year, and its members follow the members’ own data; only its color and ping switch can change.',
+      '`manual`: an officer picks its members. `pledge_class`, `class_year` and `major`: Frapp keeps one per pledge class, per graduation year and per major (matched ignoring case and spacing), and its members follow the members’ own data; only its color and ping switch can change. A `class_year` or `major` group can’t go on a channel list or be what a task is from: members set their own.',
   })
   kind: string;
 
   @ApiProperty({
     description:
-      "The group's name, which `@` mentions it. An automatic group's is its pledge class's, or \"Class of\" and the year.",
+      "The group's name, which `@` mentions it. An automatic group's is its pledge class's, \"Class of\" and the year, or the major as most of its members write it.",
   })
   name: string;
 
@@ -64,6 +68,14 @@ export class ChapterGroupDto {
     description: 'The graduation year a `class_year` group follows.',
   })
   class_year: number | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The major a `major` group follows, folded: trimmed, spacing collapsed, lower case.',
+  })
+  major_key: string | null;
 
   @ApiProperty({
     type: [String],
@@ -127,7 +139,7 @@ export class UpdateChapterGroupDto {
   @ApiPropertyOptional({
     maxLength: GROUP_NAME_MAX_LENGTH,
     description:
-      "A manual group's new name, under the same rules as a new one. An automatic group's name follows its class or year and is refused here.",
+      "A manual group's new name, under the same rules as a new one. An automatic group's name follows its class, year or major and is refused here.",
   })
   @IsOptional()
   @IsString()

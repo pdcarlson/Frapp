@@ -7,12 +7,13 @@
  * does.
  *
  * Left out, as the API refuses or nothing would come of them: a class year
- * (an automatic group that opens nothing), and the tier holding the Everyone
+ * or a major (automatic groups members set themselves, which open nothing), and the tier holding the Everyone
  * role, which is the whole chapter.
  */
 
 import {
   TASK_FOLLOWER_COPY,
+  groupKindOpensChannels,
   isEveryoneRole,
   parseTaskFollower,
   taskFollowerEntry,
@@ -52,15 +53,18 @@ export function followerChoices(
      * leaving it out.
      */
     roles: unknown;
-    /** `GET /v1/groups`, likewise: which groups are class years. */
+    /**
+     * `GET /v1/groups`, likewise: which groups are class years or majors,
+     * which open nothing (`groupKindOpensChannels`).
+     */
     groups: readonly WhoGroupSource[] | null;
   },
 ): FollowerChoice[] {
   const viewer = directory.people.find((person) => person.isViewer)?.userId;
   if (!viewer) return [];
-  const classYears = new Set(
+  const selfSet = new Set(
     (reads.groups ?? [])
-      .filter((group) => group.kind === "class_year")
+      .filter((group) => group.kind && !groupKindOpensChannels(group.kind))
       .map((group) => group.id),
   );
   const everyoneTiers = new Set(
@@ -92,7 +96,7 @@ export function followerChoices(
     add("role", role.id, role.name, role.memberIds);
   }
   for (const group of directory.groups) {
-    if (!classYears.has(group.id)) {
+    if (!selfSet.has(group.id)) {
       add("group", group.id, group.name, group.memberIds);
     }
   }

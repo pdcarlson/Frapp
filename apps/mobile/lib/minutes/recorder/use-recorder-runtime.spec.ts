@@ -28,6 +28,8 @@ const session = vi.hoisted(() => ({
   recorder: { setApi: vi.fn(), tick: vi.fn() },
 }));
 vi.mock("./session", () => ({ bindMeetingRecorder: session.bind }));
+// The beat has its own spec (`live-beat.spec.ts`).
+vi.mock("./live-beat", () => ({ useLiveRecordingBeat: () => undefined }));
 const betaOff = vi.hoisted(() => ({ keys: [] as string[] }));
 vi.mock("@repo/validation", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/validation")>()),

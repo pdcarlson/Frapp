@@ -12,7 +12,6 @@ import {
   useRequestServiceProofUploadUrl,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import type { DispatchResult, HoursInput } from "@repo/chat-core/dispatch";
 import { SERVICE_DESCRIPTION_MAX_LENGTH } from "@repo/validation";
 import { FilterChips } from "@/components/filter-chips";
 import { CameraGlyph } from "@/components/service-hours/camera-glyph";
@@ -34,10 +33,7 @@ import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
-import {
-  useKeptSheetDraft,
-  useKeptSheetOpening,
-} from "@/lib/kept-sheet-draft";
+import { useKeptSheetDraft, useKeptSheetOpening } from "@/lib/kept-sheet-draft";
 import {
   DEFAULT_DURATION_MINUTES,
   DEFAULT_SERVICE_DATE_CHOICE,
@@ -153,16 +149,6 @@ export interface LogHoursSheetProps {
    */
   onLogged?: () => void;
   /**
-   * Set when the sheet was opened from a chat's + (#3865): the entry goes
-   * through chat-core's `postHours` into that channel, the call web's
-   * `/hours log` makes, with the proof the one-liner can't attach. A refusal
-   * keeps the entry, as a log from elsewhere does; anything else is an entry
-   * that may exist (the route doesn't dedupe), so the sheet closes and hands
-   * the result to `onPosted` to say what it carries.
-   */
-  postToChannel?: (input: HoursInput) => Promise<DispatchResult>;
-  onPosted?: (result: DispatchResult) => void;
-  /**
    * Keeps the entry past this sheet's host, under this name (#4593): the
    * Service hours screen's sheet goes when the member goes back, and its
    * entry is there the next time they log from that screen.
@@ -179,18 +165,13 @@ type KeptEntry = {
 };
 
 export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
-  function LogHoursSheet(
-    { now, onLogged, postToChannel, onPosted, keptDraft },
-    ref,
-  ) {
+  function LogHoursSheet({ now, onLogged, keptDraft }, ref) {
     const closeSheet = useSheetClose(ref);
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
     const styles = createStyles(tokens, accent);
     const backgroundStyle = useSheetBackgroundStyle();
     const createEntry = useCreateServiceEntry();
-    // `postToChannel` isn't a mutation, so its flight is held here.
-    const [posting, setPosting] = useState(false);
     const requestProofUploadUrl = useRequestServiceProofUploadUrl();
     // Its hosts (the composer among them) dismiss it on a blur or a channel
     // switch, up or not (#5059): the ref they hold only reaches a sheet that
@@ -278,7 +259,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
      */
     const [receiptRequired, setReceiptRequired] = useState(false);
 
-    const pending = createEntry.isPending || uploading || posting;
+    const pending = createEntry.isPending || uploading;
     const canSubmit =
       description.trim().length > 0 &&
       writeBlockedReason === null &&
@@ -399,18 +380,16 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
       sentFrom: number,
     ) => {
       const handlers = {
-        onSuccess: (posted?: DispatchResult) => {
+        onSuccess: () => {
           sending.current = false;
           // The confirming action (`spec/ui/mobile/README.md` § Native-feel
-          // rules), felt once the entry is filed; not for a lost answer,
-          // whose entry may not exist.
-          if (!posted?.unconfirmed) successHaptic();
+          // rules), felt once the entry is filed.
+          successHaptic();
           clearEntry();
           onLogged?.();
           // A sheet closed and reopened since is the member's new visit,
           // and the save doesn't close it under them.
           if (isSameVisit(sentFrom)) dismiss();
-          if (posted) onPosted?.(posted);
         },
         onError: (error: unknown) => {
           sending.current = false;
@@ -449,31 +428,13 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
           setSubmitFailed(true);
         },
       };
-      if (!postToChannel) {
-        // `mutate`'s callbacks don't run once the sheet has unmounted, so an
-        // entry whose save was running when the member left the screen stays
-        // out of the kept store: it is not offered to send twice.
-        createEntry.mutate(body, {
-          onSuccess: () => handlers.onSuccess(),
-          onError: handlers.onError,
-        });
-        return;
-      }
-      setPosting(true);
-      void postToChannel(body)
-        .catch((cause: unknown): DispatchResult => ({
-          ok: false,
-          error: "Couldn't log hours",
-          cause,
-        }))
-        .then((result) => {
-          setPosting(false);
-          if (!result.ok) {
-            handlers.onError(result.cause ?? new Error(result.error));
-            return;
-          }
-          handlers.onSuccess(result);
-        });
+      // `mutate`'s callbacks don't run once the sheet has unmounted, so an
+      // entry whose save was running when the member left the screen stays
+      // out of the kept store: it is not offered to send twice.
+      createEntry.mutate(body, {
+        onSuccess: () => handlers.onSuccess(),
+        onError: handlers.onError,
+      });
     };
 
     const hours = formatServiceHours(minutes);

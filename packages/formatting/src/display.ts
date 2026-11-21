@@ -173,8 +173,14 @@ export function formatEventWindow(
   const days = dayDelta(now, from);
   let day: string;
   if (days === 0) {
-    // "Tonight" only when it reads true; a 9am meeting today is not tonight.
-    day = from.getHours() >= 17 ? "Tonight" : "Today";
+    // "Tonight" only when it reads true: a 9am meeting today is not tonight,
+    // and one that has ended is no longer ahead (#5777: "Tonight" over an
+    // event that ended an hour ago read as still to come).
+    const ended = toDate(end);
+    day =
+      from.getHours() >= 17 && !(ended && ended.getTime() <= now.getTime())
+        ? "Tonight"
+        : "Today";
   } else if (days === 1) {
     day = "Tomorrow";
   } else if (days > 1 && days < 7) {

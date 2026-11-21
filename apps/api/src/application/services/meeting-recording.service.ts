@@ -215,6 +215,35 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
 
   onModuleInit(): void {
     this.registry.register(this);
+    // Minutes recorded before they had a meeting tell its members once they
+    // get one (`meetings.md` § Recording notice).
+    this.meetings.onMinutesLinked((meeting) => this.tellOnLink(meeting));
+  }
+
+  /**
+   * The notice owed for a recording uploaded while the minutes had no
+   * meeting, once they are linked to one: who uploaded it tells the members
+   * the meeting's own rule names, as the upload would have.
+   */
+  private async tellOnLink(meeting: Meeting): Promise<void> {
+    const recording = await this.recordings.find(
+      meeting.chapter_id,
+      meeting.id,
+    );
+    if (
+      !recording ||
+      recording.status === 'failed' ||
+      recording.status === 'uploading' ||
+      recording.attendees_notified_at ||
+      !recording.uploaded_by
+    ) {
+      return;
+    }
+    await this.tellAttendees(
+      meeting.chapter_id,
+      meeting,
+      recording.uploaded_by,
+    );
   }
 
   /**
@@ -454,7 +483,13 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
       throw error;
     }
 
-    await this.tellAttendees(chapterId, meeting, userId);
+    // Read again: minutes linked to a meeting while this upload was being
+    // confirmed skipped their notice then (`tellOnLink` leaves an uploading
+    // recording to this step), so it goes out here with the meeting.
+    const now = await this.meetings
+      .editableBy(chapterId, meetingId, userId)
+      .catch(() => meeting);
+    await this.tellAttendees(chapterId, now, userId);
     return this.stateFor(chapterId, userId, current);
   }
 
@@ -865,6 +900,9 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
     meeting: Meeting,
     uploaderId: string,
   ): Promise<void> {
+    // Minutes with no meeting have nobody to tell yet; the notice goes when
+    // they are linked to one (`tellOnLink`), so nothing is claimed now.
+    if (!meeting.event_id) return;
     let claimed = false;
     try {
       claimed = await this.recordings.claimAttendeeNotice(

@@ -73,6 +73,12 @@ function refusal(message: string) {
   return new MemberFacingError(message);
 }
 
+const fromForm = (name: string) => ({
+  name,
+  point_value: 7,
+  is_mandatory: false,
+});
+
 const TYPES = [
   eventType("t-1", "Chapter meeting", 10, true),
   eventType("t-2", "Social", 1, false),
@@ -82,7 +88,13 @@ async function openEditor(types: EventType[] = TYPES, onOuterSubmit = vi.fn()) {
   typesState.data = types;
   render(
     <form onSubmit={onOuterSubmit}>
-      <EventTypeRow value={null} onPick={vi.fn()} canManage showSets />
+      <EventTypeRow
+        value={null}
+        onPick={vi.fn()}
+        canManage
+        showSets
+        typeFromForm={fromForm}
+      />
     </form>,
   );
   await userEvent.click(screen.getByRole("button", { name: "Edit types" }));
@@ -108,6 +120,7 @@ describe("EventTypeRow's Edit types", () => {
         onPick={vi.fn()}
         canManage
         showSets
+        typeFromForm={fromForm}
         disabled
       />,
     );
@@ -425,9 +438,7 @@ describe("EventTypeRow's Edit types", () => {
     `);
 
     await userEvent.click(within(item).getByRole("button", { name: "Keep" }));
-    expect(
-      within(item).getByText("10 points · Required"),
-    ).toBeInTheDocument();
+    expect(within(item).getByText("10 points · Required")).toBeInTheDocument();
 
     await userEvent.click(
       within(item).getByRole("button", { name: "Delete Chapter meeting" }),
@@ -477,5 +488,83 @@ describe("EventTypeRow's Edit types", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await userEvent.click(screen.getByRole("button", { name: "Edit types" }));
     expect(screen.queryByLabelText("Name")).toBeNull();
+  });
+});
+
+describe("EventTypeRow's Create in place (Paul 2026-11-20)", () => {
+  async function openMenu(onPick = vi.fn(), canManage = true) {
+    render(
+      <EventTypeRow
+        value={null}
+        onPick={onPick}
+        canManage={canManage}
+        showSets
+        typeFromForm={fromForm}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Type: none" }));
+    return onPick;
+  }
+
+  it("offers Create for a name no type has, and makes it from the form", async () => {
+    const created = eventType("t-9", "Work party", 7, false);
+    mockCreate.mockResolvedValue(created);
+    const onPick = await openMenu();
+    await userEvent.type(
+      screen.getByPlaceholderText("Find or add a type"),
+      "Work party",
+    );
+    await userEvent.click(
+      screen.getByRole("option", { name: "Create \u201cWork party\u201d" }),
+    );
+    expect(mockCreate).toHaveBeenCalledWith({
+      name: "Work party",
+      point_value: 7,
+      is_mandatory: false,
+    });
+    await waitFor(() => expect(onPick).toHaveBeenCalledWith(created, true));
+  });
+
+  it("opens on an empty search after a pick", async () => {
+    await openMenu();
+    await userEvent.type(
+      screen.getByPlaceholderText("Find or add a type"),
+      "soc",
+    );
+    await userEvent.click(screen.getByRole("option", { name: /Social/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Type: none" }));
+    expect(screen.getByPlaceholderText("Find or add a type")).toHaveValue("");
+    expect(screen.getByRole("option", { name: "No type" })).toBeInTheDocument();
+  });
+
+  it("offers no Create for a name a type already has, in any case", async () => {
+    await openMenu();
+    await userEvent.type(
+      screen.getByPlaceholderText("Find or add a type"),
+      "social",
+    );
+    expect(screen.queryByRole("option", { name: /^Create/ })).toBeNull();
+    expect(screen.getByRole("option", { name: /Social/ })).toBeInTheDocument();
+  });
+
+  it("says so in the menu when the type can't be made", async () => {
+    mockCreate.mockRejectedValue(refusal("That name is taken."));
+    const onPick = await openMenu();
+    await userEvent.type(
+      screen.getByPlaceholderText("Find or add a type"),
+      "Rush",
+    );
+    await userEvent.click(
+      screen.getByRole("option", { name: "Create \u201cRush\u201d" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That name is taken.",
+    );
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("gives a member, who can't make types, no search under the threshold", async () => {
+    await openMenu(vi.fn(), false);
+    expect(screen.queryByPlaceholderText(/type/)).toBeNull();
   });
 });

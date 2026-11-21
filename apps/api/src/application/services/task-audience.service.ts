@@ -30,7 +30,7 @@ import { RbacService } from './rbac.service';
 /**
  * Who a task goes to, or who may claim one up for grabs (Paul, 2026-11-18):
  * the chapter, a role's holders, a chapter group's members (manual or
- * automatic: a pledge class's, a class year's), everyone holding a role in a
+ * automatic: a pledge class's, a class year's, a major's), everyone holding a role in a
  * tier (#5473), or people picked one by one.
  */
 export type TaskAudienceTarget =
@@ -394,8 +394,8 @@ export class TaskAudienceService {
    * A follower for a new or edited task, checked (#5473): an entry naming a
    * tier, role or group of the chapter that `userId` is in, so "From Exec
    * board" is true when an officer sets it. Not the Everyone or Alumni role
-   * (the chapter, or nobody), nor a class year, which opens no channel
-   * either. Returns the entry as stored; 400 otherwise.
+   * (the chapter, or nobody), nor a class year or a major, which open no
+   * channel either. Returns the entry as stored; 400 otherwise.
    */
   async checkedFollower(
     chapterId: string,
@@ -412,7 +412,7 @@ export class TaskAudienceService {
     const exists = await this.followerExists(chapterId, parsed.kind, parsed.id);
     if (!exists) {
       // Gone, another chapter's, or one that means the whole chapter (the
-      // Everyone role, its tier) or opens nothing (a class year).
+      // Everyone role, its tier) or opens nothing (a class year, a major).
       throw new BadRequestException(
         `That ${parsed.kind} can't be what a task is from. Pick one of this chapter's tiers, roles or groups.`,
       );

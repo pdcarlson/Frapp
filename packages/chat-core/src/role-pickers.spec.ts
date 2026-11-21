@@ -1,23 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildRolePickerMessage,
-  readRolePickerPayload,
-  rolePickerRows,
-} from "./role-pickers";
+import { readRolePickerPayload, rolePickerRows } from "./role-pickers";
 
 describe("role pickers (#4958)", () => {
-  it("posts its title as content, with a default and no repeated role", () => {
-    expect(
-      buildRolePickerMessage({ title: "  ", roleIds: ["a", "b", "a"] }),
-    ).toEqual({
-      content: "Pick your roles",
-      payload: { title: "Pick your roles", role_ids: ["a", "b"] },
-    });
-    expect(
-      buildRolePickerMessage({ title: " Teams ", roleIds: ["a"] }).content,
-    ).toBe("Teams");
-  });
-
   it("reads a payload, and refuses one with no roles", () => {
     expect(
       readRolePickerPayload({ payload: { title: "T", role_ids: ["a", 3] } }),

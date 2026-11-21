@@ -136,6 +136,9 @@ describe('MeetingService', () => {
   let service: MeetingService;
   // Drafts with a recording row (`meeting_recordings`) that hasn't failed.
   let recordedDrafts: Set<string>;
+  // Drafts someone has written notes on, and who is recording which now.
+  let notedDrafts: Set<string>;
+  let liveRecorders: Map<string, { userId: string; seenAt: string }>;
 
   const has = (userId: string, permission: string) => {
     const held = PERMISSIONS[userId] ?? [];
@@ -153,8 +156,13 @@ describe('MeetingService', () => {
     ]);
     rows = new Map();
     recordedDrafts = new Set();
+    notedDrafts = new Set();
+    liveRecorders = new Map();
     repo = {
       findById: jest.fn(async (_chapterId, id) => rows.get(id) ?? null),
+      findByIds: jest.fn(async (_chapterId: string, ids: readonly string[]) =>
+        ids.flatMap((id) => rows.get(id) ?? []),
+      ),
       findByEvent: jest.fn(
         async (_chapterId, eventId) =>
           [...rows.values()].find((row) => row.event_id === eventId) ?? null,
@@ -200,6 +208,43 @@ describe('MeetingService', () => {
       findRecordedIds: jest.fn(
         async (_chapterId: string, ids: readonly string[]) =>
           new Set(ids.filter((id) => recordedDrafts.has(id))),
+      ),
+      findWithNotesIds: jest.fn(
+        async (_chapterId: string, ids: readonly string[]) =>
+          new Set(ids.filter((id) => notedDrafts.has(id))),
+      ),
+      // Both honour the cutoff, as the Supabase repository's `seen_at >=`
+      // filter does, so a beat older than it reads as stopped.
+      findLiveRecorders: jest.fn(
+        async (_chapterId: string, ids: readonly string[], since: string) =>
+          new Map(
+            [...liveRecorders]
+              .filter(([id, row]) => ids.includes(id) && row.seenAt >= since)
+              .map(([id, row]) => [id, row.userId]),
+          ),
+      ),
+      findLiveRecordings: jest.fn(async (_chapterId: string, since: string) =>
+        [...liveRecorders]
+          .filter(([, row]) => row.seenAt >= since)
+          .map(([meetingId, row]) => ({
+            meeting_id: meetingId,
+            chapter_id: CHAPTER,
+            user_id: row.userId,
+            started_at: row.seenAt,
+            seen_at: row.seenAt,
+          })),
+      ),
+      markLiveRecording: jest.fn(
+        async (_chapterId: string, id: string, userId: string, now: string) => {
+          liveRecorders.set(id, { userId, seenAt: now });
+        },
+      ),
+      clearLiveRecording: jest.fn(
+        async (_chapterId: string, id: string, userId: string) => {
+          if (liveRecorders.get(id)?.userId === userId) {
+            liveRecorders.delete(id);
+          }
+        },
       ),
       findTemplate: jest.fn().mockResolvedValue(null),
       upsertTemplate: jest.fn(async (chapterId, sections, updatedBy) => ({
@@ -339,6 +384,8 @@ describe('MeetingService', () => {
         action_item_count: 2,
         recorded: true,
         gist: 'Dues are due Friday.',
+        started: true,
+        recording_by: null,
       });
       expect(facts.get('mtg-one')).toEqual({
         series_key: null,
@@ -347,6 +394,8 @@ describe('MeetingService', () => {
         action_item_count: 0,
         recorded: true,
         gist: null,
+        started: true,
+        recording_by: null,
       });
     });
 
@@ -1258,6 +1307,161 @@ describe('MeetingService', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+  describe('minutes with no meeting (Paul, 2026-11-20)', () => {
+    it('starts a draft with no event, dated now, that only its author reads', async () => {
+      const view = await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'other',
+      });
+      expect(view.meeting.event_id).toBeNull();
+      expect(view.meeting.event_name).toBe('Minutes');
+      expect(view.attendees).toBeNull();
+      expect(eventService.create).not.toHaveBeenCalled();
+      const id = view.meeting.id;
+      await expect(service.canRead(CHAPTER, id, SECRETARY)).resolves.toBe(true);
+      await expect(service.canRead(CHAPTER, id, VP)).resolves.toBe(false);
+      await expect(service.canRead(CHAPTER, id, PRESIDENT)).resolves.toBe(true);
+      const { rows: listed } = await service.listWithFacts(CHAPTER, SECRETARY);
+      expect(listed.map((row) => row.id)).toEqual([id]);
+    });
+
+    it('lets the author edit it and link it to a meeting, but not post it before then', async () => {
+      const started = await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'other',
+      });
+      const id = started.meeting.id;
+      const saved = await service.update(CHAPTER, id, SECRETARY, {
+        expected_updated_at: started.meeting.updated_at,
+        content: { summary: 'Budget passed.' },
+      });
+      await expect(
+        service.post(CHAPTER, id, SECRETARY, saved.meeting.updated_at),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'meeting.no_event' }),
+      });
+      expect(notifyMembers).not.toHaveBeenCalled();
+      const linked = await service.linkEvent(CHAPTER, id, SECRETARY, {
+        event_id: CHAPTER_EVENT.id,
+      });
+      expect(linked.meeting.event_name).toBe(CHAPTER_EVENT.name);
+      // Started as Other with no name, they are filed by the meeting's name.
+      expect(linked.meeting.meeting_type).toBe('chapter');
+      const posted = await service.post(
+        CHAPTER,
+        id,
+        SECRETARY,
+        linked.meeting.updated_at,
+      );
+      expect(posted.meeting.status).toBe('posted');
+    });
+
+    it('tells the linked listeners once minutes get their meeting', async () => {
+      const heard: string[] = [];
+      service.onMinutesLinked(async (row) => {
+        heard.push(row.event_id ?? 'none');
+      });
+      const started = await service.start(CHAPTER, SECRETARY, {
+        meeting_type: 'other',
+      });
+      await service.linkEvent(CHAPTER, started.meeting.id, SECRETARY, {
+        event_id: CHAPTER_EVENT.id,
+      });
+      expect(heard).toEqual([CHAPTER_EVENT.id]);
+    });
+
+    it('still refuses an event_id and new_event together', async () => {
+      await expect(
+        service.start(CHAPTER, SECRETARY, {
+          meeting_type: 'chapter',
+          event_id: CHAPTER_EVENT.id,
+          new_event: {
+            name: 'Chapter meeting',
+            start_time: '2026-11-11T00:00:00.000Z',
+            end_time: '2026-11-11T01:00:00.000Z',
+          },
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('draft states on the list (Paul, 2026-11-20)', () => {
+    it('says a draft with nothing in it is not started, and one with words, notes or a recording is', async () => {
+      rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+      rows.set(
+        'mtg-2',
+        meeting({ id: 'mtg-2', content: { summary: 'Dues are due.' } }),
+      );
+      rows.set('mtg-3', meeting({ id: 'mtg-3' }));
+      notedDrafts.add('mtg-3');
+      const { facts } = await service.listWithFacts(CHAPTER, PRESIDENT);
+      expect(facts.get('mtg-1')?.started).toBe(false);
+      expect(facts.get('mtg-2')?.started).toBe(true);
+      expect(facts.get('mtg-3')?.started).toBe(true);
+    });
+
+    it('names who is recording, until their phone says it stopped', async () => {
+      rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+      await service.markLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+      let { facts } = await service.listWithFacts(CHAPTER, PRESIDENT);
+      expect(facts.get('mtg-1')?.recording_by).toBe(SECRETARY);
+      await service.clearLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+      ({ facts } = await service.listWithFacts(CHAPTER, PRESIDENT));
+      expect(facts.get('mtg-1')?.recording_by).toBeNull();
+    });
+
+    it('reads a phone that stopped beating for three minutes as stopped', async () => {
+      jest.useFakeTimers({ now: new Date('2026-11-20T21:00:00.000Z') });
+      try {
+        rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+        await service.markLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+        jest.setSystemTime(new Date('2026-11-20T21:02:59.000Z'));
+        let { facts } = await service.listWithFacts(CHAPTER, PRESIDENT);
+        expect(facts.get('mtg-1')?.recording_by).toBe(SECRETARY);
+        expect(
+          await service.liveRecordingsVisibleTo(CHAPTER, JAKE),
+        ).toHaveLength(1);
+        // The phone died without saying so: no beat for over three minutes.
+        jest.setSystemTime(new Date('2026-11-20T21:03:01.000Z'));
+        ({ facts } = await service.listWithFacts(CHAPTER, PRESIDENT));
+        expect(facts.get('mtg-1')?.recording_by).toBeNull();
+        expect(await service.liveRecordingsVisibleTo(CHAPTER, JAKE)).toEqual(
+          [],
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('tells anyone the meeting invites who is recording it, but not someone it leaves out', async () => {
+      rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+      rows.set(
+        'mtg-2',
+        meeting({
+          id: 'mtg-2',
+          event_id: EXEC_EVENT.id,
+          created_by: PRESIDENT,
+        }),
+      );
+      await service.markLiveRecording(CHAPTER, 'mtg-1', SECRETARY);
+      await service.markLiveRecording(CHAPTER, 'mtg-2', PRESIDENT);
+      const forJake = await service.liveRecordingsVisibleTo(CHAPTER, JAKE);
+      expect(forJake).toEqual([
+        expect.objectContaining({
+          meeting_id: 'mtg-1',
+          event_id: CHAPTER_EVENT.id,
+          user_id: SECRETARY,
+        }),
+      ]);
+    });
+
+    it('lets only someone who may edit the minutes say they are recording them', async () => {
+      rows.set('mtg-1', meeting({ id: 'mtg-1' }));
+      await expect(
+        service.markLiveRecording(CHAPTER, 'mtg-1', VP),
+      ).rejects.toBeDefined();
+      expect(repo.markLiveRecording).not.toHaveBeenCalled();
+    });
+  });
+
   describe('linking an event (#4935)', () => {
     it('links minutes whose event is gone to an event without minutes', async () => {
       rows.set('mtg-1', meeting({ event_id: null }));

@@ -1,10 +1,15 @@
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { Alert } from "react-native";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   confirmRemoveMember,
   memberMenuActions,
   showMemberMenu,
 } from "./member-menu";
+import {
+  currentItemMenu,
+  dismissItemMenu,
+  pickItemMenuAction,
+} from "@/components/item-actions-menu";
 
 type AlertButton = { text?: string; style?: string; onPress?: () => void };
 
@@ -37,34 +42,42 @@ describe("memberMenuActions", () => {
   });
 });
 
-// The sheet's spec runs as iOS; Android draws the menu as a dialog.
-describe("showMemberMenu on Android", () => {
-  const os = Platform.OS;
+describe("showMemberMenu", () => {
   afterEach(() => {
-    (Platform as { OS: string }).OS = os;
+    dismissItemMenu();
     vi.mocked(Alert.alert).mockClear();
-    vi.mocked(ActionSheetIOS.showActionSheetWithOptions).mockClear();
   });
 
   it("lists each action, destructive ones marked, and runs the one tapped", () => {
-    (Platform as { OS: string }).OS = "android";
     const onPick = vi.fn();
-    showMemberMenu("Ada", ["block", "remove"], onPick);
+    showMemberMenu("Ada", ["unblock", "block", "remove"], onPick);
 
-    expect(ActionSheetIOS.showActionSheetWithOptions).not.toHaveBeenCalled();
-    const { title, buttons } = lastAlert();
-    expect(title).toBe("Ada");
-    expect(buttons.map((b) => [b.text, b.style])).toEqual([
-      ["Block Ada", "destructive"],
-      ["Remove from chapter", "destructive"],
+    const menu = currentItemMenu()!;
+    expect(menu.title).toBe("Ada");
+    expect(
+      menu.actions.map((action) => [action.label, action.destructive]),
+    ).toEqual([
+      ["Unblock Ada", false],
+      ["Block Ada", true],
+      ["Remove from chapter", true],
     ]);
-    buttons[1]!.onPress!();
+    expect(Alert.alert).not.toHaveBeenCalled();
+    pickItemMenuAction("Remove from chapter");
     expect(onPick).toHaveBeenCalledWith("remove");
+    expect(currentItemMenu()).toBeNull();
+  });
+
+  it("picks nothing when it is dismissed", () => {
+    const onPick = vi.fn();
+    showMemberMenu("Ada", ["block"], onPick);
+    dismissItemMenu();
+    expect(onPick).not.toHaveBeenCalled();
+    expect(currentItemMenu()).toBeNull();
   });
 
   it("opens nothing with nothing to offer", () => {
-    (Platform as { OS: string }).OS = "android";
     showMemberMenu("Ada", [], vi.fn());
+    expect(currentItemMenu()).toBeNull();
     expect(Alert.alert).not.toHaveBeenCalled();
   });
 });

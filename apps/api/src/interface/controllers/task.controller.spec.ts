@@ -35,6 +35,7 @@ describe('TaskController', () => {
       rejectCompletion: jest.fn(),
       delete: jest.fn(),
       getPhotoDownloadUrl: jest.fn(),
+      shareToChat: jest.fn().mockResolvedValue(undefined),
       // Who may read a task (#5473): its assignee, an officer, or a member
       // of the group following it, here `role:followers`.
       mayRead: jest.fn((task, _chapterId, userId, isAdmin) =>
@@ -156,6 +157,42 @@ describe('TaskController', () => {
         },
         [],
       );
+    });
+  });
+
+  describe('share (#5772)', () => {
+    const body = {
+      channel_id: '11111111-1111-4111-8111-111111111111',
+      client_message_id: '22222222-2222-4222-8222-222222222222',
+    };
+
+    it('posts the card, as the member, for a task they can read', async () => {
+      const task = { id: 'task-1', assignee_id: 'user-1' } as any;
+      taskService.findById.mockResolvedValue(task);
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+
+      await expect(
+        controller.share('chapter-1', 'user-1', 'task-1', body),
+      ).resolves.toEqual({ card_posted: true });
+      expect(taskService.shareToChat).toHaveBeenCalledWith(task, {
+        chapter_id: 'chapter-1',
+        channel_id: body.channel_id,
+        sender_id: 'user-1',
+        client_message_id: body.client_message_id,
+      });
+    });
+
+    it("refuses a task the member can't read, and posts nothing", async () => {
+      taskService.findById.mockResolvedValue({
+        id: 'task-1',
+        assignee_id: 'someone-else',
+      } as any);
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+
+      await expect(
+        controller.share('chapter-1', 'user-2', 'task-1', body),
+      ).rejects.toThrow(ForbiddenException);
+      expect(taskService.shareToChat).not.toHaveBeenCalled();
     });
   });
 

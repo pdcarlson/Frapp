@@ -569,8 +569,7 @@ export interface TaskBarLayout {
  *   an officer's usual review two rounds, Send back and More, beside
  *   "Confirm · +10 pts".
  * - Send back is a round while the bar holds fewer than three others, else
- *   More's first row. More then holds at most three rows, which Android's
- *   dialog can draw: Send back or Edit with Delete and Delete for everyone.
+ *   More's first row: Send back or Edit, then Delete and Delete for everyone.
  */
 export function taskBarLayout({
   controls,
