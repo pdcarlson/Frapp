@@ -15,12 +15,16 @@
 const JOIN_FROM_SIGN_IN = "sign-in";
 
 /**
- * A phone visit to `/join` that chose Continue in the browser over the app
- * (#4002), marked in the URL as `web=1` so the choice survives what it starts:
- * the sign-in or sign-up round trip (whose `redirectTo` carries the query), an
- * OAuth or email-confirm return, Sign in as someone else, and a refresh.
- * Without it, the page would offer the app again right after the member
- * signed in on the web.
+ * A phone visit to `/join` that goes on in the browser, marked `web=1`.
+ *
+ * Nobody chooses it on this page any more: on a phone the app is the only
+ * way in (Paul, 2026-11-21), so the page's "Join on the web instead" is gone.
+ * Phone builds from before #4341 (2026-11-20) still send a member's invite to
+ * another chapter here in an in-app browser with this mark, because they
+ * can't join a second chapter themselves; without it the page would hand the
+ * invite straight back to the app, which would send it here again. The mark
+ * survives the sign-in round trip (whose `redirectTo` carries the query).
+ * Drop it once no supported build predates #4341.
  */
 export const JOIN_IN_BROWSER_KEY = "web";
 export const JOIN_IN_BROWSER_VALUE = "1";
