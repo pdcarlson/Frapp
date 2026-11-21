@@ -31,7 +31,7 @@ export class SupabaseGifFavoriteRepository implements IGifFavoriteRepository {
       .eq('provider', provider)
       .order('created_at', { ascending: false });
     if (error) throw new SupabaseQueryError(error);
-    return (data ?? []) as GifFavorite[];
+    return data ?? [];
   }
 
   async countByUser(userId: string, provider: string): Promise<number> {

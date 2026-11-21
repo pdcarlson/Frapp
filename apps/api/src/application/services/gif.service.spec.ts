@@ -246,14 +246,14 @@ describe('GifService', () => {
       expect(page.next_page).toBeNull();
       expect(page.results).toHaveLength(1);
       const [gif] = page.results;
-      expect(gif!.preview).toEqual(dance.preview);
+      expect(gif.preview).toEqual(dance.preview);
       expect(() =>
         service.messageGif({
-          id: gif!.id,
-          url: gif!.full.url,
-          width: gif!.full.width,
-          height: gif!.full.height,
-          token: gif!.token,
+          id: gif.id,
+          url: gif.full.url,
+          width: gif.full.width,
+          height: gif.full.height,
+          token: gif.token,
         }),
       ).not.toThrow();
     });
@@ -269,7 +269,7 @@ describe('GifService', () => {
       const favorites = fakeFavorites();
       const service = new GifService(fakeSearch(), favorites);
       const [signed] = (await service.trending(1)).results;
-      await service.addFavorite('u1', signed!);
+      await service.addFavorite('u1', signed);
       expect(favorites.add).toHaveBeenCalledWith(
         'u1',
         expect.objectContaining({
@@ -280,12 +280,12 @@ describe('GifService', () => {
         }),
       );
       await expect(
-        service.addFavorite('u1', { ...signed!, token: 'forged' }),
+        service.addFavorite('u1', { ...signed, token: 'forged' }),
       ).rejects.toThrow(BadRequestException);
       await expect(
         service.addFavorite('u1', {
-          ...signed!,
-          preview: { ...signed!.preview, url: 'https://evil.test/s.webp' },
+          ...signed,
+          preview: { ...signed.preview, url: 'https://evil.test/s.webp' },
         }),
       ).rejects.toThrow(BadRequestException);
     });
@@ -294,7 +294,7 @@ describe('GifService', () => {
       const favorites = fakeFavorites([], GIF_FAVORITES_MAX);
       const service = new GifService(fakeSearch(), favorites);
       const [signed] = (await service.trending(1)).results;
-      await expect(service.addFavorite('u1', signed!)).rejects.toThrow(
+      await expect(service.addFavorite('u1', signed)).rejects.toThrow(
         /up to 200 favorite GIFs/,
       );
       expect(favorites.add).not.toHaveBeenCalled();
@@ -305,7 +305,7 @@ describe('GifService', () => {
       const favorites = fakeFavorites([], GIF_FAVORITES_MAX, true);
       const service = new GifService(fakeSearch(), favorites);
       const [signed] = (await service.trending(1)).results;
-      await expect(service.addFavorite('u1', signed!)).resolves.toBeUndefined();
+      await expect(service.addFavorite('u1', signed)).resolves.toBeUndefined();
       expect(favorites.has).toHaveBeenCalledWith('u1', 'klipy', 'dance');
       expect(favorites.add).not.toHaveBeenCalled();
     });
