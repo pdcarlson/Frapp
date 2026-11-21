@@ -50,8 +50,8 @@ Errors omit a hardcoded `/rush` so a chapter whose term is Intake is not toasted
 
 Every slash command also has a button and a visual form; typing the command stays the shortcut (Shawn's rule, [#3865](https://github.com/pdcarlson/Frapp/issues/3865), layout A picked 2026-11-09).
 The web composer's toolbar is **+ · emoji · help**: one **+** replaced the paperclip and the slash-palette button, and typing `/` in the message box (or Cmd/Ctrl+/) still opens the palette.
-The **+** opens one card (`apps/web/components/chat/composer-plus-card.tsx`, [#3983](https://github.com/pdcarlson/Frapp/issues/3983)) whose first view is a menu: Attach a file, then a row each for Poll, Event and Task, each showing its shortcut in mono.
-The rows are Poll (`/poll`), Event (`/event`) and Task (`/task`), and nothing else (Paul, 2026-11-20, [#5772](https://github.com/pdcarlson/Frapp/issues/5772): photos and GIFs are what members post, and every further row made the menu read half-built). GIF stays the toolbar's own button on web.
+The **+** opens one card (`apps/web/components/chat/composer-plus-card.tsx`, [#3983](https://github.com/pdcarlson/Frapp/issues/3983)) whose first view is a menu: Attach a file and GIF, then a row each for Poll, Event and Task, each showing its shortcut in mono.
+The rows are Poll (`/poll`), Event (`/event`) and Task (`/task`), and nothing else (Paul, 2026-11-20, [#5772](https://github.com/pdcarlson/Frapp/issues/5772): photos and GIFs are what members post, and every further row made the menu read half-built). GIF, which first stayed only the toolbar's own button on web, is a row too since the favorites change ([#5772](https://github.com/pdcarlson/Frapp/issues/5772)), so web and phone list the same five things; it closes the card and opens the GIF picker. The toolbar's GIF button stays.
 Sign-up sheet, Form and Role picker can no longer be made from chat; the cards already posted still draw and answer as before ([§ Sign-up sheet cards](#sign-up-sheet-cards), [§ Form cards](#form-cards), [§ Role picker cards](#role-picker-cards)).
 Service hours and Points left the menu too; on web, `/hours` and `/points` typed bare still open their forms in the card.
 Picking a row turns the card into that form in place, above the +, with no dialog and no scrim, so the chat stays readable and live behind it (Paul, 2026-11-10; the card's size and step are [`components.md`](../../ui/design-system/components.md) § Surface size).
@@ -90,7 +90,7 @@ What a row does follows [`README.md` §5](../../ui/design-system/README.md#5-ent
   While permissions load, a row is left out without the line; if that read fails, the footer says the role couldn't be checked.
 - **The chapter turned the module off:** left out, with "Polls are turned off in this chapter's Settings."
 - **It can't work this second:** shown greyed with the reason beside it and its shortcut still shown, the typed command's refusals: "Reconnect first" offline (not Poll, which queues, unless the module read has nothing cached), "Send the file first" with a file staged, "Not while replying" with a reply staged, and "Still loading" or "Couldn't check Settings" while the module read hasn't answered.
-- The menu always opens, even when Attach a file is all it holds, so the footer can say why.
+- The menu always opens, even when Attach a file (and GIF, where GIFs are set up) is all it holds, so the footer can say why.
 
 **The phone** ([#3865](https://github.com/pdcarlson/Frapp/issues/3865), s05 in [`screens.md`](../../ui/mobile/screens.md)): the composer's **+** opens a bottom sheet on the New poll sheet's chrome (`apps/mobile/components/chat/composer-plus-sheet.tsx`, "Add to the conversation") with **Photo** and **GIF**, then Poll, Event and Task, in web's order and by the same model and footer lines.
 The phone has no slash commands, so rows show no shortcut and there is no tip line.
