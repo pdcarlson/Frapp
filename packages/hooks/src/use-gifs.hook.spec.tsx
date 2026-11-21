@@ -30,7 +30,7 @@ const refused = {
   response: { ok: false, status: 400 },
 };
 
-function both() {
+function useBoth() {
   return { favorites: useGifFavorites(), toggle: useToggleGifFavorite() };
 }
 
@@ -42,7 +42,7 @@ describe("GIF favorites (#5772)", () => {
       POST: vi.fn(() => new Promise((resolve) => (answer = resolve))),
     };
     const wrapper = createHookWrapper({ client, chapterId: "chapter-1" });
-    const { result } = renderHook(both, { wrapper });
+    const { result } = renderHook(useBoth, { wrapper });
     await waitFor(() =>
       expect(result.current.favorites.isStarred("wave")).toBe(true),
     );
@@ -67,7 +67,7 @@ describe("GIF favorites (#5772)", () => {
       POST: vi.fn().mockResolvedValue(refused),
     };
     const wrapper = createHookWrapper({ client, chapterId: "chapter-1" });
-    const { result } = renderHook(both, { wrapper });
+    const { result } = renderHook(useBoth, { wrapper });
     await waitFor(() =>
       expect(result.current.favorites.isStarred("wave")).toBe(true),
     );
@@ -103,7 +103,7 @@ describe("GIF favorites (#5772)", () => {
       }),
     };
     const wrapper = createHookWrapper({ client, chapterId: "chapter-1" });
-    const { result } = renderHook(both, { wrapper });
+    const { result } = renderHook(useBoth, { wrapper });
     await waitFor(() => expect(client.GET).toHaveBeenCalled());
 
     act(() =>
