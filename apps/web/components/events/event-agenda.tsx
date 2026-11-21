@@ -1,14 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState, type FormEvent } from "react";
-import {
-  FileText,
-  GripVertical,
-  Link2,
-  Loader2,
-  Plus,
-  X,
-} from "lucide-react";
+import { FileText, GripVertical, Link2, Loader2, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
@@ -91,7 +84,10 @@ export function EventMeetingLists({
    * shows only then.
    */
   upcoming: boolean;
-  /** The meeting has started, so its items can be checked off. */
+  /**
+   * The meeting has started: its items can be checked off, and no longer
+   * added, moved or removed.
+   */
   checkOffOpen: boolean;
   documentsOn: DocumentsModule;
 }) {
@@ -110,7 +106,8 @@ export function EventMeetingLists({
   // While an Add is out the agenda's controls wait: the server is writing
   // the list, and an edit now would send the copy without the new item.
   const [adding, setAdding] = useState(false);
-  const showSuggestions = editable && upcoming;
+  // Suggestions add items, so they go once the agenda is locked.
+  const showSuggestions = editable && upcoming && !checkOffOpen;
   return (
     <>
       {editor.agenda.length > 0 || editable ? (
@@ -120,6 +117,7 @@ export function EventMeetingLists({
             agenda={editor.agenda}
             canEdit={editable}
             checkOffOpen={checkOffOpen}
+            itemsLocked={checkOffOpen}
             locked={adding}
             onChange={(update) => editor.change("agenda", update)}
           />
@@ -156,6 +154,7 @@ export function EventAgendaSection({
   canEdit,
   checkOffOpen = true,
   checkable = true,
+  itemsLocked = false,
   locked = false,
   bare = false,
   draft: heldDraft,
@@ -174,6 +173,12 @@ export function EventAgendaSection({
   checkOffOpen?: boolean;
   /** Draw checkboxes at all (not on the form's list). */
   checkable?: boolean;
+  /**
+   * The meeting has started: items are checked off but no longer added,
+   * moved or removed (Paul 2026-11-20, "lock agenda edits once the meeting
+   * has started"). The API refuses such a change too.
+   */
+  itemsLocked?: boolean;
   /** The controls show but wait (a suggestion is being added). */
   locked?: boolean;
   /** No heading: the form's row names the list. */
@@ -186,9 +191,11 @@ export function EventAgendaSection({
   const setDraft = onDraftChange ?? setOwnDraft;
   const inputId = useId();
   const lockNoteId = useId();
+  // Who may add, move and remove items: an editor, until the meeting starts.
+  const reshape = canEdit && !itemsLocked;
   const sortable = useSortableList({
     count: agenda.length,
-    disabled: locked || !canEdit,
+    disabled: locked || !reshape,
     // By id, against the list as it stands when the update runs: a save
     // or a suggestion may have landed since this one was drawn.
     onMove: (from, to) => {
@@ -203,7 +210,7 @@ export function EventAgendaSection({
       );
     },
   });
-  if (agenda.length === 0 && !canEdit) return null;
+  if (agenda.length === 0 && !reshape) return null;
 
   function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -257,7 +264,7 @@ export function EventAgendaSection({
                   "bg-surface-1 shadow-lg ring-1 ring-border",
               )}
             >
-              {canEdit ? (
+              {reshape ? (
                 <button
                   type="button"
                   {...sortable.handleProps(index, item.text)}
@@ -309,7 +316,7 @@ export function EventAgendaSection({
                   <TabledFromLink from={item.tabled_from} />
                 ) : null}
               </span>
-              {canEdit ? (
+              {reshape ? (
                 <IconButton
                   label={`Remove "${item.text}"`}
                   disabled={locked}
@@ -327,12 +334,12 @@ export function EventAgendaSection({
           ))}
         </ol>
       ) : null}
-      {canEdit ? (
+      {reshape ? (
         <p aria-live="polite" className="sr-only">
           {sortable.announcement}
         </p>
       ) : null}
-      {canEdit && !full ? (
+      {reshape && !full ? (
         <form onSubmit={add} className="flex items-center gap-1.5">
           <label htmlFor={inputId} className="sr-only">
             Add an agenda item
@@ -361,7 +368,7 @@ export function EventAgendaSection({
           />
         </form>
       ) : null}
-      {canEdit && full ? (
+      {reshape && full ? (
         <p className={LABEL}>An agenda holds {EVENT_AGENDA_MAX} items.</p>
       ) : null}
     </section>

@@ -80,6 +80,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { pageSurfaces } from "@/lib/surfaces";
 import { InlineNote } from "@/components/inline-note";
+import { ListPanel } from "@/components/list-section";
 import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
 import { EventMeetingLists } from "@/components/events/event-agenda";
 import { EventFormGlyph } from "@/components/events/event-form-rows";
@@ -679,46 +680,51 @@ function DetailsSection({ event, now }: { event: EventDetail; now: Date }) {
   return (
     <View style={styles.section} accessibilityLabel="Details">
       <Text style={styles.sectionLabel}>DETAILS</Text>
-      {key ? (
-        <DetailRow glyph="repeat" label={EVENT_FORM_ROW_LABELS.repeat}>
-          <View style={styles.detailInline}>
-            <Text style={styles.detailValue}>
-              {cadence ?? "Part of a series"}
-            </Text>
-            {next ? (
-              <Pressable
-                accessibilityRole="link"
-                accessibilityLabel={`Next meeting, ${formatDayTime(next.start_time, now) ?? ""}`}
-                hitSlop={8}
-                onPress={() =>
-                  router.push({
-                    pathname: "/event-details",
-                    params: { id: next.id },
-                  })
-                }
-                style={({ pressed }) => (pressed ? styles.pressed : null)}
-              >
-                <Text style={styles.detailLink}>
-                  Next {formatDayTime(next.start_time, now) ?? ""}
-                </Text>
-              </Pressable>
-            ) : null}
-          </View>
+      <ListPanel>
+        {key ? (
+          <DetailRow glyph="repeat" label={EVENT_FORM_ROW_LABELS.repeat}>
+            <View style={styles.detailInline}>
+              <Text style={styles.detailValue}>
+                {cadence ?? "Part of a series"}
+              </Text>
+              {next ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`Next meeting, ${formatDayTime(next.start_time, now) ?? ""}`}
+                  hitSlop={8}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/event-details",
+                      params: { id: next.id },
+                    })
+                  }
+                  style={({ pressed }) => (pressed ? styles.pressed : null)}
+                >
+                  <Text style={styles.detailLink}>
+                    Next {formatDayTime(next.start_time, now) ?? ""}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </DetailRow>
+        ) : null}
+        <DetailRow glyph="attendance" label={EVENT_FORM_ROW_LABELS.attendance}>
+          <Text style={styles.detailValue}>
+            {describeAttendance(
+              attendanceFromEvent(event.attendance),
+              roleName,
+            )}
+          </Text>
         </DetailRow>
-      ) : null}
-      <DetailRow glyph="attendance" label={EVENT_FORM_ROW_LABELS.attendance}>
-        <Text style={styles.detailValue}>
-          {describeAttendance(attendanceFromEvent(event.attendance), roleName)}
-        </Text>
-      </DetailRow>
-      {event.description ? (
-        <DetailRow
-          glyph="description"
-          label={EVENT_FORM_ROW_LABELS.description}
-        >
-          <Text style={styles.detailValue}>{event.description}</Text>
-        </DetailRow>
-      ) : null}
+        {event.description ? (
+          <DetailRow
+            glyph="description"
+            label={EVENT_FORM_ROW_LABELS.description}
+          >
+            <Text style={styles.detailValue}>{event.description}</Text>
+          </DetailRow>
+        ) : null}
+      </ListPanel>
     </View>
   );
 }
@@ -763,7 +769,9 @@ function DetailSection({
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>{label}</Text>
-      <Text style={styles.sectionBody}>{body}</Text>
+      <ListPanel>
+        <Text style={styles.sectionBody}>{body}</Text>
+      </ListPanel>
     </View>
   );
 }

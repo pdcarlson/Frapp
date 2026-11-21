@@ -1,0 +1,1 @@
+A meeting's agenda is set once the meeting starts: items can still be checked off, but not added, moved or removed. On the phone, an event's details, agenda, attachments and notes now sit on raised panels.

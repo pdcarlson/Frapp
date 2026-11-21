@@ -88,7 +88,11 @@ export class AgendaSuggestionController {
   @Post(':suggestionId/add')
   @HttpCode(200)
   @ThrottleFanOutWrite()
-  @ApiOperation({ summary: 'Add a suggestion to the end of the agenda' })
+  @ApiOperation({
+    summary: 'Add a suggestion to the end of the agenda',
+    description:
+      '409 `event.agenda_locked` once the meeting has started: its agenda takes check-offs only.',
+  })
   @ApiOkResponse({ type: AddAgendaSuggestionResponseDto })
   add(
     @CurrentChapterId() chapterId: string,

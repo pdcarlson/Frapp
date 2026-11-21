@@ -1062,6 +1062,13 @@ describe("Event details agenda and attachments (#4934)", () => {
     notes: "Bring dues",
   };
 
+  // A meeting that hasn't started: its agenda is still edited (Paul
+  // 2026-11-20 locks it to check-offs at the start).
+  const NOT_STARTED = {
+    start_time: "2099-01-01T18:00:00.000Z",
+    end_time: "2099-01-01T19:00:00.000Z",
+  };
+
   function labelled(tree: ReactTestRenderer, label: string) {
     return tree.root.findAll(
       (node) =>
@@ -1226,6 +1233,7 @@ describe("Event details agenda and attachments (#4934)", () => {
   });
 
   it("adds an item from the field under the list", () => {
+    event = { ...EVENT, ...NOT_STARTED };
     permissions = ["members:view", "events:update"];
     const tree = render();
     // An editor sees the empty agenda, to start it.
@@ -1253,6 +1261,27 @@ describe("Event details agenda and attachments (#4934)", () => {
     const next = update([]);
     expect(next).toHaveLength(1);
     expect(next[0]).toMatchObject({ text: "Rush plans", done: false });
+  });
+
+  it("locks a started meeting's agenda to check-offs (Paul 2026-11-20)", () => {
+    event = WITH_LISTS;
+    permissions = ["members:view", "events:update"];
+    const tree = render();
+    expect(labelled(tree, "Add an agenda item")).toHaveLength(0);
+    expect(labelled(tree, 'Remove "Formal date"')).toHaveLength(0);
+    expect(
+      tree.root.findAll((node) => (node.type as unknown) === "GestureDetector"),
+    ).toHaveLength(0);
+    // Checked off, and attachments still change.
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityRole === "checkbox" &&
+          node.props.accessibilityLabel === "Formal date" &&
+          node.props.disabled === false,
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(labelled(tree, 'Remove "Budget"').length).toBeGreaterThan(0);
   });
 
   it("offers no Chapter Files picker while that module is off", () => {
@@ -1324,7 +1353,7 @@ describe("Event details agenda and attachments (#4934)", () => {
   }
 
   it("moves an item up by dragging its grip (Paul 2026-11-19)", () => {
-    event = WITH_LISTS;
+    event = { ...WITH_LISTS, ...NOT_STARTED };
     permissions = ["members:view", "events:update"];
     const tree = render();
     agendaRows(tree);
@@ -1345,7 +1374,7 @@ describe("Event details agenda and attachments (#4934)", () => {
   });
 
   it("leaves the order alone for a drag that doesn't pass a neighbour", () => {
-    event = WITH_LISTS;
+    event = { ...WITH_LISTS, ...NOT_STARTED };
     permissions = ["members:view", "events:update"];
     const tree = render();
     agendaRows(tree);
@@ -1363,7 +1392,7 @@ describe("Event details agenda and attachments (#4934)", () => {
   });
 
   it("moves an item with a screen reader's Move up", () => {
-    event = WITH_LISTS;
+    event = { ...WITH_LISTS, ...NOT_STARTED };
     permissions = ["members:view", "events:update"];
     const tree = render();
     const [first, second] = agendaRows(tree);

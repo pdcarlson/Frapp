@@ -229,6 +229,26 @@ export function agendaCheckOffOpen(start: unknown, now: Date): boolean {
   return Number.isNaN(at) || at <= now.getTime();
 }
 
+/**
+ * Whether `next` adds, removes, moves or rewords an item of `stored`, rather
+ * than only checking items off. Once a meeting has started its agenda is
+ * locked to check-offs (Paul 2026-11-20, "lock agenda edits once the meeting
+ * has started"): the API refuses any other change, and both apps stop
+ * offering one.
+ */
+export function agendaItemsChanged(
+  next: readonly Pick<EventAgendaItem, "id" | "text">[],
+  stored: readonly Pick<EventAgendaItem, "id" | "text">[],
+): boolean {
+  return (
+    next.length !== stored.length ||
+    next.some(
+      (item, index) =>
+        item.id !== stored[index]?.id || item.text !== stored[index]?.text,
+    )
+  );
+}
+
 /** Why an agenda's checkboxes wait, said where they are. */
 export const AGENDA_CHECK_OFF_LOCKED_COPY =
   "Items can be checked off once the meeting starts.";

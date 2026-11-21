@@ -18,6 +18,11 @@ describe('EventService — agenda and attachments', () => {
   let mockDocumentRepo: EventServiceFixture['mockDocumentRepo'];
 
   const DOC_ID = '11111111-1111-4111-8111-111111111111';
+  const upcoming: Event = {
+    ...baseEvent,
+    start_time: '2099-01-01T18:00:00.000Z',
+    end_time: '2099-01-01T19:00:00.000Z',
+  };
   const createBase = {
     chapter_id: 'ch-1',
     name: 'Chapter Meeting',
@@ -33,7 +38,8 @@ describe('EventService — agenda and attachments', () => {
       ...row,
       id: 'evt-new',
     }));
-    mockEventRepo.findById.mockResolvedValue(baseEvent);
+    // A meeting that hasn't started: its agenda is open to any change.
+    mockEventRepo.findById.mockResolvedValue(upcoming);
     mockEventRepo.update.mockImplementation(async (id, _chapterId, data) => ({
       ...baseEvent,
       ...data,
@@ -197,6 +203,78 @@ describe('EventService — agenda and attachments', () => {
         ),
       );
       expect(mockEventRepo.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('once the meeting has started (Paul 2026-11-20)', () => {
+    const started: Event = {
+      ...baseEvent,
+      start_time: '2026-01-01T18:00:00.000Z',
+      end_time: '2026-01-01T19:00:00.000Z',
+      agenda: [
+        { id: 'a1', text: 'Vote', done: false },
+        { id: 'a2', text: 'Rush recap', done: false },
+      ],
+    };
+    const locked = expect.objectContaining({
+      response: expect.objectContaining({ code: 'event.agenda_locked' }),
+    });
+
+    beforeEach(() => {
+      mockEventRepo.findById.mockResolvedValue(started);
+    });
+
+    it('still takes check-offs', async () => {
+      await service.update('evt-1', 'ch-1', {
+        agenda: [
+          { id: 'a1', text: 'Vote', done: true },
+          { id: 'a2', text: 'Rush recap', done: false },
+        ],
+      });
+      expect(mockEventRepo.update).toHaveBeenCalledWith('evt-1', 'ch-1', {
+        agenda: [
+          { id: 'a1', text: 'Vote', done: true },
+          { id: 'a2', text: 'Rush recap', done: false },
+        ],
+      });
+    });
+
+    it.each([
+      [
+        'adding an item',
+        [...started.agenda, { id: 'a3', text: 'New', done: false }],
+      ],
+      ['removing an item', [started.agenda[0]]],
+      ['moving an item', [started.agenda[1], started.agenda[0]]],
+      [
+        'rewording an item',
+        [{ id: 'a1', text: 'Revote', done: false }, started.agenda[1]],
+      ],
+    ])('refuses %s', async (_label, agenda) => {
+      await expect(service.update('evt-1', 'ch-1', { agenda })).rejects.toEqual(
+        locked,
+      );
+      expect(mockEventRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('opens again when the same write moves the meeting later', async () => {
+      await service.update('evt-1', 'ch-1', {
+        start_time: '2099-02-01T18:00:00.000Z',
+        end_time: '2099-02-01T19:00:00.000Z',
+        agenda: [started.agenda[1]],
+      });
+      expect(mockEventRepo.update).toHaveBeenCalled();
+    });
+
+    it('refuses a suggestion added to its agenda', async () => {
+      await expect(
+        service.appendAgendaItem('evt-1', 'ch-1', {
+          id: 'a3',
+          text: 'Tabled matter',
+          done: false,
+        }),
+      ).rejects.toEqual(locked);
+      expect(mockEventRepo.update).not.toHaveBeenCalled();
     });
   });
 
