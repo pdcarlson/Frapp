@@ -216,6 +216,7 @@ describe("Settings shows each viewer what they can use", () => {
       "Semester",
       "Privacy",
       "Plan and billing",
+      "Logs",
       "Roles and groups",
       "Pledge class",
       "Member fields",

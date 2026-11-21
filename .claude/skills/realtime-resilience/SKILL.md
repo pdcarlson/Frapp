@@ -24,7 +24,7 @@ One implementation per concern; don't fork another:
 | Connection indicator copy (both surfaces) | `connectionIndicator` in `packages/validation/src/connection-state.ts`; the open chat reports its transport through `useReportOpenChatTransport` (`packages/hooks/src/open-chat-transport.ts`) |
 | Mobile connection state / write gating | `apps/mobile/lib/connection/` |
 | Chat outbox network port | Mobile: `createMonitorNetworkState(connectionMonitor)`. Web: chat-core `NetworkState`. |
-| API worker subscriptions (chat push, audit mirror) | `apps/api/src/application/workers/worker-subscription.ts`: `WorkerSubscription` reopens after `CLOSED` and reports outages, and `releaseChannel` is the API's `releaseTopic`. `realtime-js-contract.spec.ts` beside it pins what it assumes about realtime-js. |
+| API worker subscriptions (chat push) | `apps/api/src/application/workers/worker-subscription.ts`: `WorkerSubscription` reopens after `CLOSED` and reports outages, and `releaseChannel` is the API's `releaseTopic`. `realtime-js-contract.spec.ts` beside it pins what it assumes about realtime-js. |
 
 ## 1. Reopening a topic requires a completed teardown
 

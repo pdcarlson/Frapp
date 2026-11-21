@@ -1,5 +1,9 @@
 import { MODULE_CATALOG } from "@repo/org-archetypes";
-import { canAll, isBetaOffModule } from "@repo/validation";
+import {
+  CHAPTER_LOGS_PERMISSIONS,
+  canAll,
+  isBetaOffModule,
+} from "@repo/validation";
 
 /**
  * Settings search: one list of every setting a member can change, with the
@@ -36,7 +40,7 @@ import { canAll, isBetaOffModule } from "@repo/validation";
 export type SettingsArea = "chapter" | "personal";
 
 export type SettingPhoneScreen =
-  "/chapter-settings" | "/chapter-roles" | "/preferences";
+  "/chapter-settings" | "/chapter-roles" | "/chapter-logs" | "/preferences";
 
 export type SettingEntry = {
   /** Stable; it is the `?setting=` value a link carries. */
@@ -414,6 +418,18 @@ const CHAPTER_ENTRIES: readonly SettingEntry[] = [
     keywords: ["analytics", "tracking", "telemetry", "privacy", "opt out"],
     requires: CONFIG,
     web: { page: "privacy", anchor: "settings-privacy" },
+  },
+  {
+    // The record of officer changes (Paul, 2026-11-21), which was the
+    // `#chapter-audit` channel. Read-only, so `requires` is what reading takes.
+    id: "logs",
+    label: "Logs",
+    area: "chapter",
+    section: "Logs",
+    keywords: ["audit", "audit log", "history", "changes", "who changed"],
+    requires: CHAPTER_LOGS_PERMISSIONS,
+    web: { page: "logs" },
+    phone: { screen: "/chapter-logs" },
   },
   {
     id: "chapter-ai",

@@ -44,6 +44,8 @@ Chat channel names are not wired to this yet ([#1504](https://github.com/pdcarls
 
 Officer changes (dues, modules, roles) post into a `#chapter-audit` system channel that all members can read. Trust by default — members can see what officers change without having to ask.
 
+*(Changed 2026-11-21, Paul's call: chapter audit "should maybe not even be a channel but rather a 'logs' thing for admins". The `#chapter-audit` channel was removed; officer changes are recorded in `chapter_audit_log` and read on the Logs page in Chapter settings by those who hold `chapter-config:view` and `members:view`, so members who read the channel no longer see the record. See [`settings/README.md` § Audit Rules](../behavior/settings/README.md#audit-rules).)*
+
 ## Officer onboarding with directory autofill
 
 The first-officer flow is school search → chapter search → archetype confirm → invite members. A new officer types something like "Sigma Phi Epsilon @ UCLA" and the wizard autofills chapter identity (Greek letters, designation, school short, founded year, default colors) from a curated Greek-life directory. Target: under 90 seconds from signup to a chapter the officer can use, for a chapter that exists in the directory. Subsequent ops setup (enabling paid modules, configuring dues, setting workflows) is optional and surfaced as inline nudges rather than a mandatory gate.

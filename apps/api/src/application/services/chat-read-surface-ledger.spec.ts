@@ -818,8 +818,6 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
 const API_SUBSCRIPTIONS: Record<string, string> = {
   chat_messages:
     'chat-push-worker. Its audience drops blockers (PUSH_LEDGER above).',
-  chapter_audit_log:
-    'chat-bridge-worker. Posts into #chapter-audit as the system actor, which cannot be blocked.',
 };
 
 /**

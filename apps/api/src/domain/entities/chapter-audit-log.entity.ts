@@ -3,9 +3,9 @@
  * `chapter_audit_log` (`20260523130000_audit_log.sql`).
  *
  * The table has no `updated_at` by design — RLS policies deny UPDATE and
- * DELETE outright, so a row is written once and never revised. The
- * ChatBridgeWorker subscribes to INSERTs here and mirrors member-visible
- * entries into `#chapter-audit` (ADR-08).
+ * DELETE outright, so a row is written once and never revised. Officers
+ * read it on the Logs page in Chapter settings (`GET /v1/audit-log`); the
+ * `#chapter-audit` mirror it once fed was removed on 2026-11-21 (#5807).
  */
 export interface ChapterAuditLog {
   id: string;

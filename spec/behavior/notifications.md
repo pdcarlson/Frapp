@@ -276,8 +276,7 @@ they are not part of, which would confirm that channel exists.
 `GET /v1/channels/notification-preferences` returns the caller's **effective** level for every
 channel they can read — the stored row where one exists, otherwise that channel's default from
 `defaultLevelFor`. It deliberately does not return "stored rows only": the defaults are not
-uniform (`#general` and `#announcements` are `all`, `#chapter-audit` is `off`, all three are
-seeded into every chapter, and officers can set any channel's default), so a client assuming `mentions` for an absent row would misreport exactly the
+uniform (`#general` and `#announcements` are `all`, both seeded into every chapter, and officers can set any channel's default), so a client assuming `mentions` for an absent row would misreport exactly the
 channels members most want to turn down, and the popover — which suppresses a write for the
 level it already shows as current — would then swallow the corrective click. Resolving the
 default server-side keeps one implementation of it, the one the push worker already uses.
@@ -302,7 +301,7 @@ not refetch it on every channel switch (that coupling was two extra round trips 
 each re-running the accessible-channel predicate). The hook still observes the channel list
 and fingerprints each readable channel's `id` plus every field the server's default reads
 (`name`, `type`, `is_read_only`, `default_notification_level`); a Discord import, a rename to or
-from `general` / `announcements` / `chapter-audit`, a read-only toggle or an officer's default
+from `general` / `announcements`, a read-only toggle or an officer's default
 that lands in that list — including via that mark-read invalidation — invalidates the prefs
 query. The key itself does not change, so already-known
 channels keep their mute control while the new GET is in flight; a brand-new channel stays
@@ -311,7 +310,7 @@ See #1401.
 
 Two states the control must not fake. When the effective level is **not yet known** — the read
 has not landed, or failed — the trigger is disabled and announces "Notification level
-unavailable" rather than standing in `mentions`, because on `#announcements` or `#chapter-audit`
+unavailable" rather than standing in `mentions`, because on `#announcements`
 that stand-in states the wrong level. On the phone the `⋯` menu also holds the channel's own
 actions (Pinned messages, Saved messages, Catch me up; #3723), so there the menu still opens and
 only its level rows are disabled, as they are while writes are blocked offline; the trigger is
@@ -374,7 +373,7 @@ Defaults when no row is set (see ADR-06; the `defaultLevelFor` helper encodes th
 | A channel with an officer-set default | that default                                                                                                                       |
 | The announcements channel (below)     | `all`                                                                                                                              |
 | `#general`                            | `all`                                                                                                                              |
-| `#chapter-audit`                      | `off`                                                                                                                              |
+| `#chapter-audit` (removed 2026-11-21) | `off` (`builtInChannelDefault` still matches the name until its removal, #5808)                                               |
 | Every other channel                   | `mentions`                                                                                                                         |
 
 **Officers set a channel's default; a member's own choice always wins** (owner decision
@@ -387,7 +386,7 @@ rows are what the decision calls seeded, and seeding them by rule means no row i
 cost is that they follow the name, so renaming `#general` drops it to `mentions` unless an
 officer has set its default. The API refuses a default on a DM or group DM, which has no
 officer and always defaults to `all`, like any messenger's DMs. A kind default outranks an
-officer's: `#chapter-audit` set to `all` still pages nobody with audit rows.
+officer's: a channel set to `all` still pages nobody with `system_audit` rows.
 
 Precedence in the push worker is **channel-pref ▶ kind-pref ▶ chapter-wide level ▶ default**, so an officer's
 default never overrides a level a member stored. **In a DM or group DM a kind row can make it
@@ -396,7 +395,7 @@ were pushed by a separate path that never read it until #2771, so letting a `tex
 `mentions` apply would silently stop every DM for a member who set it to calm `#general`. A kind
 row quieter than the DM's default is therefore ignored there, and a DM is muted from the DM
 itself. One louder than it still counts, so the `system_audit` opt-in below keeps reaching
-system messages posted into DMs (a DM poll's expiry; the invite-accept notice was one until #5625 made it a notification). A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to `system_audit` pushes; otherwise those messages never page anyone. The opt-in reaches the server's own notices only, never an audit-bridge mirror: `decidePush` refuses a mirror row (`isAuditMirrorRow`, `client_message_id = 'audit:<id>'`) ahead of every preference, the member's channel-scope `all` on `#chapter-audit` included (owner decision, 2026-11-06: audit entries arrive silently). That opt-in is reachable from `PUT /v1/channels/notification-preferences/kinds/system_audit` (see **Write paths** above); until that route shipped the kind arm was readable by the worker but writable by nobody, so the branch always evaluated an empty set.
+system messages posted into DMs (a DM poll's expiry; the invite-accept notice was one until #5625 made it a notification). A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to `system_audit` pushes; otherwise those messages never page anyone. The opt-in reached only the server's own notices, never a `#chapter-audit` mirror row, while that channel existed (owner decision, 2026-11-06: audit entries arrive silently); the channel and its mirror were removed on 2026-11-21, and `decidePush` no longer has a mirror check. That opt-in is reachable from `PUT /v1/channels/notification-preferences/kinds/system_audit` (see **Write paths** above); until that route shipped the kind arm was readable by the worker but writable by nobody, so the branch always evaluated an empty set.
 
 ### Chapter-wide chat level
 
@@ -405,7 +404,7 @@ system messages posted into DMs (a DM poll's expiry; the invite-accept notice wa
 - **All messages**: each channel at its own default (the table above). This is the absence of a row; choosing it deletes one.
 - **Mentions and DMs only**: every ordinary channel acts as `mentions`, so it notifies only for an @mention of you, and a reply to your message counts as one (#3844, § Per-Channel Mute). DMs, group DMs and the announcements channel (URGENT) still notify every message.
 
-It is stored as a `scope='chapter'` row with `level='mentions'`, and `resolveLevel` reads it after the channel and kind rows, so **a level the member set on one channel, or on a message kind, still wins**: that is how a member keeps one busy channel loud. It only ever **lowers** a channel's default: it never reaches a DM, a group DM or the announcements channel, and a channel whose default is already quieter (`#chapter-audit`, an officer's `off`, the `system_audit` kind) stays as it is.
+It is stored as a `scope='chapter'` row with `level='mentions'`, and `resolveLevel` reads it after the channel and kind rows, so **a level the member set on one channel, or on a message kind, still wins**: that is how a member keeps one busy channel loud. It only ever **lowers** a channel's default: it never reaches a DM, a group DM or the announcements channel, and a channel whose default is already quieter (an officer's `off`, the `system_audit` kind) stays as it is.
 
 The per-channel read reports the result, with `from_chapter_level: true` on a channel the chapter-wide level decided, and every channel notification menu labels that option "Only @mentions (your default)": the phone's thread header and long-press menus, and web's channel header `⋯` → Notifications panel and the rail's right-click Notifications submenu (#4124).
 
@@ -415,7 +414,7 @@ The phone shipped it first, since push is phone-only; web's Settings → Chapter
 
 **The push worker is the only chat push path** (#2771). `ChatService` used to push DMs and announcements itself as well, so an announcement reached an away member twice, a DM that mentioned its recipient did the same, and a DM the member had muted pushed anyway, since that path never read `chat_notification_preferences`. Every chat push now goes through the rule chain above, once per recipient.
 
-**Every chat push names its sender.** The title is `<Sender> in #<channel>` for a channel, `<Sender>` for a DM, `<Sender> in <group>` for a group DM with a name, and `Announcement from <Sender>` for an announcement, bundled or not; the body is the first 200 characters (or `<N> new messages` for a burst). A message with no text, a photo or file sent on its own, says what was sent: `Sent an attachment`, `Sent <N> attachments` (#3846), or `Sent a GIF` for a GIF message (#4631, [`chat/README.md` § GIFs](chat/README.md#gifs)). A DM's stored name (`dm-<uuid>-<uuid>`) and an unnamed group DM's (`group-dm-<timestamp>`) never reach a title. With no sender name to show (a blank display name, or a lookup that failed, which costs the name and not the push), the titles fall back to `New message in #<channel>`, the group's name for a named group DM, `New Message` for any other DM, and `New Announcement`, bundled or not. The system actor (`SYSTEM_SENDER_ID`, "Frapp System": the audit bridge, poll-expiry notices) is never named, so its pushes keep those fallback titles.
+**Every chat push names its sender.** The title is `<Sender> in #<channel>` for a channel, `<Sender>` for a DM, `<Sender> in <group>` for a group DM with a name, and `Announcement from <Sender>` for an announcement, bundled or not; the body is the first 200 characters (or `<N> new messages` for a burst). A message with no text, a photo or file sent on its own, says what was sent: `Sent an attachment`, `Sent <N> attachments` (#3846), or `Sent a GIF` for a GIF message (#4631, [`chat/README.md` § GIFs](chat/README.md#gifs)). A DM's stored name (`dm-<uuid>-<uuid>`) and an unnamed group DM's (`group-dm-<timestamp>`) never reach a title. With no sender name to show (a blank display name, or a lookup that failed, which costs the name and not the push), the titles fall back to `New message in #<channel>`, the group's name for a named group DM, `New Message` for any other DM, and `New Announcement`, bundled or not. The system actor (`SYSTEM_SENDER_ID`, "Frapp System": poll-expiry notices, the chapter welcome) is never named, so its pushes keep those fallback titles.
 
 **What the worker counts as an announcement** — a message in an announcements channel: a PUBLIC, read-only channel whose name contains `announcements`, the seeded `#announcements` included (`isAnnouncementChannel` in `@repo/validation`, which the activity feed and web `/announce` use too) — decides the push's title, its URGENT priority, and its `announcements` category together, from one predicate. All three, because they must not disagree: the category once keyed on `kind` alone, so an ordinary message in an `announcements` channel went out titled "New Announcement" at URGENT while labelled `category: 'chat'`. Once URGENT became exempt from the category gate (#1041), that mismatch let those pushes escape the member's coarse **Chat** switch — the only control that had been silencing them. Only the tiers and roles on such a channel's who-can-post list can write in its timeline (`is_read_only` is kept equal to having that list, #3722), which is what makes a chapter-wide URGENT push sound. Any reader may reply in a message thread there (#3785), so **a thread reply is never an announcement push**: it goes out as an ordinary chat push, to the thread's followers only (`decidePush`'s `skip-thread` for everyone else, an @mention excepted), never above the channel's level ([`chat/README.md` § Message threads](chat/README.md)). Until #2771 the worker also accepted any channel merely _named_ `announcements`, so a group DM given that name, or `#announcements` with read-only switched off, let any member send URGENT pushes that skip quiet hours; neither qualifies now, and each gets ordinary channel pushes at its ordinary default. The message's `kind` no longer counts either: the client sets it, and any member could post `kind: 'announcement'` in `#general` or a DM to send the same URGENT push. The predicate is still name-keyed, so a rename changes it; narrowing it is part of #1323.
 
@@ -423,16 +422,7 @@ The phone shipped it first, since push is phone-only; web's Settings → Chapter
 
 ## Audit-log → `#chapter-audit` bridge
 
-The bridge worker (see ADR-08) subscribes to `chapter_audit_log` INSERT via Supabase Realtime and posts a `kind='system_audit'` message into the chapter's `#chapter-audit` channel as the system sender (`00000000-0000-0000-0000-000000000000`). Rows with `member_visible=false` are skipped — internal-scope rows stay out of the channel.
-
-Message shape:
-
-- `sender_id`: the system sender.
-- `content`: human summary (`"<action>: <diff keys>"`).
-- `kind`: `system_audit`.
-- `payload`: `{ action, actor_user_id, diff }` — the renderer reads from `payload`, not the prose `content`.
-
-Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge logs and continues. The audit row itself is always the source of truth.
+Removed on 2026-11-21. Officer changes are no longer mirrored into chat: the `#chapter-audit` channel and its bridge worker (`ChatBridgeWorkerService`, ADR-08) are gone, and officers read `chapter_audit_log` on the Logs page in Chapter settings ([`settings/README.md` § Audit Rules](settings/README.md#audit-rules)). An audit row sends no push.
 
 ## What a push says
 

@@ -442,15 +442,16 @@ export type SeededChannelAccess = {
  * - `#announcements`: officers post (the top two starting tiers), everyone
  *   reads. Before #3722 it took `announcements:post`, which no seeded role
  *   held, so only the President could post in a new chapter.
- * - `#chapter-audit`: everyone reads, nobody posts. The audit flag (#3909)
- *   refuses every member's write anyway; the empty list says so in the data.
+ *
+ * No `#chapter-audit` since 2026-11-21: the record of officer changes is the
+ * Logs page in Chapter settings, which reads `chapter_audit_log` itself.
  * - `#alumni`: every starting tier and the Alumni role read and post, which
  *   is what lets alumni post there (`spec/behavior/alumni.md`).
  *
  * `description` is the line the channel header shows beside the name and the
  * channel start repeats ("Welcome to #general"). Officers edit it in Chat
  * admin. Migration `20261105210000_default_channel_descriptions.sql` wrote the
- * same four lines into chapters created before they were seeded. Changing one
+ * same lines into chapters created before they were seeded. Changing one
  * here only reaches new chapters: to change existing ones, add a new forward
  * migration (never edit the shipped one), and update the Channel header row in
  * `spec/ui/design-system/writing.md`.
@@ -467,18 +468,6 @@ export const DEFAULT_CHANNELS = [
     description: 'News from officers. Everyone gets notified.',
     who_can_see: null,
     who_can_post: { tiers: [0, 1] },
-  },
-  // System-write, member-read audit feed. The Chunk 02 audit bridge and the
-  // onboarding welcome message post system_audit messages here / to #general.
-  {
-    name: 'chapter-audit',
-    description:
-      'Officer changes to dues, roles and settings, posted automatically.',
-    // System-write only (#3909): no member posts here, whatever their
-    // roles, and the audit mirror finds the channel by this flag.
-    is_audit_log: true,
-    who_can_see: null,
-    who_can_post: { tiers: [] },
   },
   {
     name: 'alumni',

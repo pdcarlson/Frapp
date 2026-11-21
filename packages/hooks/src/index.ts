@@ -15,6 +15,7 @@ export * from "./channel-row-actions";
 export * from "./channel-sections";
 export * from "./channel-sidebar";
 export * from "./chapter-goals";
+export * from "./chapter-logs";
 export * from "./chapter-query-keys";
 export * from "./chapter-scope";
 export * from "./chat-activity";

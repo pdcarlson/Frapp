@@ -829,8 +829,8 @@ describe('ChapterService', () => {
 
     expect(mockChannelRepo.createMany).toHaveBeenCalledTimes(1);
     // Spelled out rather than read off `DEFAULT_CHANNELS`, so the test pins
-    // who can see and post in each seeded channel (#3722) and which one the
-    // seeder flags as the audit log (#3909), instead of echoing the constant.
+    // who can see and post in each seeded channel (#3722), instead of echoing
+    // the constant. No `#chapter-audit` since the Logs page (2026-11-21).
     const alumni = `role:${mockRoleIdForName('Alumni').toLowerCase()}`;
     const base = { chapter_id: chapter.id };
     expect(mockChannelRepo.createMany).toHaveBeenCalledWith([
@@ -841,7 +841,6 @@ describe('ChapterService', () => {
         who_can_see: null,
         who_can_post: null,
         is_read_only: false,
-        is_audit_log: false,
       }),
       expect.objectContaining({
         ...base,
@@ -851,16 +850,6 @@ describe('ChapterService', () => {
         // The top two starting tiers: officers announce, everyone reads.
         who_can_post: ['tier:tier-1', 'tier:tier-2'],
         is_read_only: true,
-        is_audit_log: false,
-      }),
-      expect.objectContaining({
-        ...base,
-        name: 'chapter-audit',
-        type: 'PUBLIC',
-        who_can_see: null,
-        who_can_post: [],
-        is_read_only: true,
-        is_audit_log: true,
       }),
       expect.objectContaining({
         ...base,
@@ -877,7 +866,6 @@ describe('ChapterService', () => {
         ].sort(),
         who_can_post: null,
         is_read_only: false,
-        is_audit_log: false,
       }),
     ]);
     for (const row of mockChannelRepo.createMany.mock.calls[0][0]) {
