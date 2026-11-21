@@ -136,6 +136,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A member's profile now leads with their three highest roles, and +N more opens the rest right where they are.",
       "The chapter's record of officer changes moved out of chat into Logs in Chapter settings, where officers can filter it by kind, person and time.",
       "Someone who joins now holds only Everyone, which opens the channels the whole chapter can see, until an officer gives them New Member, Actives or Alumni, and a member holds just one of those three at a time.",
+      "Activity now shows just what you have to do and what you have running, with your week as a small ring beside the title, This semester on your profile, and each channel's sign-up links in its own menu.",
+      "Officers can filter Members to the people with no base role yet, and the join notice says when someone arrives without one.",
+      "When a photo chat background can't be set, you now see why, such as a file that's too large or the wrong type, instead of \"Try again in a moment\".",
     ],
     web: [
       "Right-click a document for its actions.",
